@@ -1,0 +1,49 @@
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - README.md
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - README.md
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+          cache: "gradle"
+
+      - name: Build
+        run: ./gradlew assembleRelease
+
+      - name: Sign APK
+        run: |
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
+          $ANDROID_HOME/build-tools/34.0.0/zipalign -c -v 4 app/build/outputs/apk/release/app-release-unsigned.apk
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks keystore.jks \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - run: cp app/build/outputs/apk/release/app-release-unsigned.apk appmixer.apk
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          path: appmixer.apk
+          archive: false

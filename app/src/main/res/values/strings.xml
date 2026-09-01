@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">AppMixer</string>
+    <string name="accessibility_service_description">Keep AppMixer running in background, and provide quick access to it via accessibility button or physical volume button.</string>
+    <string name="group_active">Active</string>
+    <string name="group_inactive">Inactive</string>
+    <string name="group_hidden">Hidden</string>
+    <string name="group_other">Non-players</string>
+    <string name="group_system">System apps</string>
+    <string name="test_crash">Test Crash</string>
+    <string name="close">Close</string>
+    <string name="about">About</string>
+    <string name="about_version">Version: %s</string>
+    <string name="about_author">Author: %s</string>
+    <string name="about_based_on">Based on VolumeManager by %s (GPLv2)</string>
+    <string name="about_github">View on GitHub</string>
+    <string name="jump_to_group">Jump to group</string>
+    <string name="stream_media">Media</string>
+    <string name="stream_ring">Ring</string>
+    <string name="stream_call">Call</string>
+    <string name="stream_alarm">Alarm</string>
+    <string name="stream_notification">Notification</string>
+    <string name="show_slider">Show %1$s slider</string>
+    <string name="hide_slider">Hide %1$s slider</string>
+    <string name="enable_vibrate_mode">Enable vibrate mode</string>
+    <string name="disable_vibrate_mode">Disable vibrate mode</string>
+    <string name="enable_do_not_disturb">Enable Do Not Disturb</string>
+    <string name="disable_do_not_disturb">Disable Do Not Disturb</string>
+</resources>
