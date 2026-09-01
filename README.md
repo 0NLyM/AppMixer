@@ -20,7 +20,7 @@ Development builds can be produced from [action artifacts](https://github.com/0N
 3. It should automatically enable its accessibility service
 4. You can change volume either from
    1. The main interface
-   2. Press any volume button and a popup should appear, completely replace the default volume popup
+   2. Press any volume button: a compact media volume popup appears at the edge of the screen (replacing the default volume popup), with a button to expand it into the full per-app mixer
    3. Enable accessibility button and click the button
 
 ## Compare to [SoundMaster from ShizuTools](https://github.com/legendsayantan/ShizuTools/wiki/SoundMaster)
