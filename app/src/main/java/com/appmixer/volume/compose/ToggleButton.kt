@@ -43,7 +43,7 @@ fun ToggleButton(
             onClick = { onCheckedChange(!checked) },
             modifier = Modifier
                 .background(
-                    color = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.background,
+                    color = if (checked) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.background,
                     shape = CircleShape
                 )
                 .border(
@@ -54,7 +54,7 @@ fun ToggleButton(
             Icon(
                 if (checked) checkedIcon else uncheckedIcon,
                 contentDescription = description,
-                tint = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground
+                tint = if (checked) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onBackground
             )
         }
     }

@@ -41,5 +41,21 @@ source since the fork was created.
   can be installed as an update over the previous one. The keystore itself
   is not committed to the repository.
 
+## 2026-09-01 — Black/white base, red as accent only; collapsed volume popup
+
+- Rebalanced the Nothing OS theme so red is a genuine *accent* rather than
+  the dominant color: `primary` (which drives slider fills and filled
+  buttons) is now white-on-black/black-on-white, and red lives only on
+  `tertiary`, referenced explicitly by the few detail elements (`NothingDot`,
+  the active `ToggleButton` state, and a new small red handle marker at a
+  slider's fill edge in `TrackSlider`).
+- Changed the volume-key popup (`Service.kt`) to open collapsed by default:
+  just the media stream slider, anchored to the screen edge
+  (`Gravity.CENTER_VERTICAL or Gravity.END`, like the stock Android popup)
+  instead of the full per-app mixer centered on screen. A button next to it
+  expands to the previous full panel (system streams + active app sliders)
+  for the lifetime of that popup; it resets to collapsed the next time the
+  popup is shown from scratch.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

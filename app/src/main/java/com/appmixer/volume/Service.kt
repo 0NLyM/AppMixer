@@ -26,14 +26,27 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.AbstractComposeView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
@@ -43,6 +56,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.appmixer.volume.compose.AppVolumeList
+import com.appmixer.volume.compose.StreamVolumeSlider
 import com.appmixer.volume.compose.SystemVolumePanel
 import com.appmixer.volume.compose.VolumeChangeObserver
 import com.appmixer.volume.system.ActivityTaskManagerProxy
@@ -184,29 +198,61 @@ class Service : AccessibilityService() {
             @Composable
             override fun Content() {
                 return AppMixerTheme {
+                    // Starts collapsed every time a fresh overlay window is
+                    // created (i.e. each time the popup reappears after
+                    // being fully hidden) -- only expands for the duration
+                    // this particular window stays up.
+                    var expanded by remember { mutableStateOf(false) }
+
                     Surface(
                         color = Color(1f, 1f, 1f, 0.3f),
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         shape = RoundedCornerShape(40f)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(20.dp, 16.dp)
-                        ) {
-                            AppVolumeList(
-                                apps = manager.apps.values,
-                                showAll = false,
-                                onChange = this@Service.handler::startIdleTimer
+                        if (expanded) {
+                            Column(
+                                modifier = Modifier.padding(20.dp, 16.dp)
                             ) {
-                                item("system_volume_panel") {
-                                    SystemVolumePanel(
-                                        audioManager = manager.audioManager,
-                                        notificationManagerProxy = manager.notificationManagerProxy,
-                                        showCallVolumeAlways = false,
-                                        applyVisibilityFilter = true,
-                                        allowVisibilityConfig = false,
-                                        isSliderVisible = manager::isSystemSliderVisible,
-                                        onSliderVisibilityChange = manager::setSystemSliderVisible,
-                                        onChange = this@Service.handler::startIdleTimer
+                                AppVolumeList(
+                                    apps = manager.apps.values,
+                                    showAll = false,
+                                    onChange = this@Service.handler::startIdleTimer
+                                ) {
+                                    item("system_volume_panel") {
+                                        SystemVolumePanel(
+                                            audioManager = manager.audioManager,
+                                            notificationManagerProxy = manager.notificationManagerProxy,
+                                            showCallVolumeAlways = false,
+                                            applyVisibilityFilter = true,
+                                            allowVisibilityConfig = false,
+                                            isSliderVisible = manager::isSystemSliderVisible,
+                                            onSliderVisibilityChange = manager::setSystemSliderVisible,
+                                            onChange = this@Service.handler::startIdleTimer
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.padding(12.dp, 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                StreamVolumeSlider(
+                                    modifier = Modifier.width(200.dp),
+                                    streamType = AudioManager.STREAM_MUSIC,
+                                    icon = Icons.Default.VolumeUp,
+                                    name = stringResource(R.string.stream_media),
+                                    audioManager = manager.audioManager,
+                                    onChange = this@Service.handler::startIdleTimer
+                                )
+
+                                IconButton(onClick = {
+                                    expanded = true
+                                    this@Service.handler.startIdleTimer()
+                                }) {
+                                    Icon(
+                                        Icons.Default.UnfoldMore,
+                                        contentDescription = stringResource(R.string.show_full_mixer)
                                     )
                                 }
                             }
@@ -218,6 +264,13 @@ class Service : AccessibilityService() {
     }
 
     private val layoutParams by lazy {
+        // Anchored to the edge, vertically centered -- like the stock volume
+        // popup -- rather than dead center, since the collapsed view (the
+        // common case) is meant to sit unobtrusively off to the side.
+        // Gravity.END follows layout direction, so this mirrors correctly
+        // in RTL locales.
+        val edgeMarginPx = (16 * resources.displayMetrics.density).toInt()
+
         WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, // Width
             WindowManager.LayoutParams.WRAP_CONTENT, // Height
@@ -225,7 +278,8 @@ class Service : AccessibilityService() {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT // Make the background translucent
         ).apply {
-            gravity = Gravity.CENTER // Center the view
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            x = edgeMarginPx
         }
     }
 

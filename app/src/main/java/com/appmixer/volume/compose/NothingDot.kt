@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 fun NothingDot(
     modifier: Modifier = Modifier,
     size: Dp = 6.dp,
-    color: Color = MaterialTheme.colorScheme.primary
+    color: Color = MaterialTheme.colorScheme.tertiary
 ) {
     Box(
         modifier = modifier

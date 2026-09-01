@@ -1,6 +1,7 @@
 package com.appmixer.volume.compose
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -17,7 +18,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -36,6 +39,9 @@ fun TrackSlider(
     onFillColor: Color = MaterialTheme.colorScheme.onPrimary,
     borderColor: Color = MaterialTheme.colorScheme.outline,
     borderWidth: Dp = 1.dp,
+    // The one red detail on an otherwise black/white slider: a thin marker
+    // at the fill's leading edge, standing in for a handle.
+    accentColor: Color = MaterialTheme.colorScheme.tertiary,
     cornerRadius: Dp = 8.dp,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     content: @Composable BoxScope.() -> Unit = {}
@@ -117,6 +123,21 @@ fun TrackSlider(
         ) {
             CompositionLocalProvider(LocalContentColor provides onFillColor) {
                 content()
+            }
+        }
+
+        if (fillWidthPercentage > 0.015f && fillWidthPercentage < 0.985f) {
+            val handleWidthPx = with(density) { 3.dp.toPx() }
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val handleHeight = size.height * 0.5f
+                val x = (fillWidthPercentage * size.width - handleWidthPx / 2f)
+                    .coerceIn(0f, size.width - handleWidthPx)
+                drawRoundRect(
+                    color = accentColor,
+                    topLeft = Offset(x, (size.height - handleHeight) / 2f),
+                    size = Size(handleWidthPx, handleHeight),
+                    cornerRadius = CornerRadius(handleWidthPx / 2f)
+                )
             }
         }
     }

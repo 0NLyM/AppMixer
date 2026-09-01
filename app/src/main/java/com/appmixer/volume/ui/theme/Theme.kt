@@ -12,18 +12,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
-// Nothing OS style: near-black surfaces, off-white text, red as the only
-// accent. Every role Material3 components actually read from is set
-// explicitly here -- leaving a role unset falls back to M3's own purple
-// baseline, not to our primary color, which would break the look on
-// sliders, chips and containers.
+// Nothing OS style: the UI itself is black and white -- buttons, slider
+// fills, containers all read from `primary`/`secondary`, which are mapped to
+// white-on-black (black-on-white in light mode). Red is deliberately kept
+// out of `primary` and lives only on `tertiary`, which the few components
+// that should carry a red *detail* (NothingDot, the active ToggleButton
+// state, the slider handle accent) reference explicitly -- everything else
+// inherits the black/white base automatically.
 private val NothingDarkColorScheme = darkColorScheme(
-    primary = NothingRed,
-    onPrimary = NothingWhite,
+    primary = NothingWhite,
+    onPrimary = NothingBlack,
     primaryContainer = NothingSurfaceDarkAlt,
     onPrimaryContainer = NothingWhite,
-    secondary = NothingWhite,
-    onSecondary = NothingBlack,
+    secondary = NothingSurfaceDarkAlt,
+    onSecondary = NothingWhite,
     secondaryContainer = NothingSurfaceDarkAlt,
     onSecondaryContainer = NothingWhite,
     tertiary = NothingRed,
@@ -44,14 +46,15 @@ private val NothingDarkColorScheme = darkColorScheme(
     outlineVariant = NothingSurfaceDarkAlt
 )
 
-// Inverted for light mode: white surfaces, black text, same red accent.
+// Inverted for light mode: white surfaces, black-on-white base, same red
+// accent role.
 private val NothingLightColorScheme = lightColorScheme(
-    primary = NothingRed,
+    primary = NothingBlack,
     onPrimary = NothingWhite,
     primaryContainer = NothingSurfaceLightAlt,
     onPrimaryContainer = NothingBlack,
-    secondary = NothingBlack,
-    onSecondary = NothingWhite,
+    secondary = NothingSurfaceLightAlt,
+    onSecondary = NothingBlack,
     secondaryContainer = NothingSurfaceLightAlt,
     onSecondaryContainer = NothingBlack,
     tertiary = NothingRed,

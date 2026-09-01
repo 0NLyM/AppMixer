@@ -81,6 +81,7 @@ fun StreamVolumeSlider(
     icon: ImageVector,
     name: String,
     audioManager: AudioManager,
+    modifier: Modifier = Modifier,
     footer: (@Composable () -> Unit)? = null,
     onChange: (() -> Unit)? = null
 ) {
@@ -106,6 +107,7 @@ fun StreamVolumeSlider(
     }
 
     Row(
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
