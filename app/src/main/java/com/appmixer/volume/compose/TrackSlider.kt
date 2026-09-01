@@ -1,6 +1,8 @@
 package com.appmixer.volume.compose
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -32,6 +34,8 @@ fun TrackSlider(
     onTrackColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     fillColor: Color = MaterialTheme.colorScheme.primary,
     onFillColor: Color = MaterialTheme.colorScheme.onPrimary,
+    borderColor: Color = MaterialTheme.colorScheme.outline,
+    borderWidth: Dp = 1.dp,
     cornerRadius: Dp = 8.dp,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     content: @Composable BoxScope.() -> Unit = {}
@@ -55,6 +59,16 @@ fun TrackSlider(
                 )
             })
             .background(trackColor)
+            .border(
+                BorderStroke(borderWidth, borderColor),
+                GenericShape { size, _ ->
+                    addRoundRect(
+                        RoundRect(
+                            0f, 0f, size.width, size.height, cornerRadius = CornerRadius(cornerRadiusPx)
+                        )
+                    )
+                }
+            )
             .pointerInput(enabled) {
                 if (enabled) {
                     var startValue = 0f

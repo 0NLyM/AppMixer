@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +16,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,14 +50,11 @@ fun LazyListScope.group(
 ) {
     if (apps.isNotEmpty()) {
         stickyHeader {
-            Text(
-                text = header(),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(top = 8.dp)
                     .then(
                         if (onHeaderClick != null) {
                             Modifier.clickable { onHeaderClick() }
@@ -63,7 +62,21 @@ fun LazyListScope.group(
                             Modifier
                         }
                     )
-            )
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                ) {
+                    NothingDot()
+                    Text(
+                        text = header().uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
         }
 
         items(
@@ -161,7 +174,7 @@ fun AppVolumeList(
                         ),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(text = "No active players")
+                        Text(text = "NO ACTIVE PLAYERS", style = MaterialTheme.typography.titleMedium)
 
                         Button(onClick = { onShowAll?.invoke() }) {
                             Text(text = "Show all apps")

@@ -21,6 +21,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -33,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -41,6 +43,7 @@ import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +63,7 @@ import androidx.core.net.toUri
 import com.appmixer.volume.compose.AboutDialog
 import com.appmixer.volume.compose.AppVolumeList
 import com.appmixer.volume.compose.CrashReportDialog
+import com.appmixer.volume.compose.NothingDot
 import com.appmixer.volume.compose.SystemVolumePanel
 import com.appmixer.volume.compose.ToggleButton
 import com.appmixer.volume.ui.theme.AppMixerTheme
@@ -194,7 +198,25 @@ class MainActivity : ComponentActivity() {
             AppMixerTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(), topBar = {
-                        TopAppBar(title = { Text("AppMixer") }, actions = {
+                        TopAppBar(
+                            title = {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    NothingDot(size = 8.dp)
+                                    Text(
+                                        "APPMIXER",
+                                        style = MaterialTheme.typography.titleLarge
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.background,
+                                scrolledContainerColor = MaterialTheme.colorScheme.background,
+                                titleContentColor = MaterialTheme.colorScheme.onBackground
+                            ),
+                            actions = {
                             if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
                                 ToggleButton(
                                     checked = showAll,
@@ -256,7 +278,7 @@ class MainActivity : ComponentActivity() {
                                         16.dp, Alignment.CenterVertically
                                     )
                                 ) {
-                                    Text("Shizuku not installed")
+                                    Text("SHIZUKU NOT INSTALLED", style = MaterialTheme.typography.titleLarge)
                                     Text(
                                         textAlign = TextAlign.Center,
                                         text = "Please install Shizuku from the Play Store or GitHub"
@@ -293,7 +315,7 @@ class MainActivity : ComponentActivity() {
                                     16.dp, Alignment.CenterVertically
                                 )
                             ) {
-                                Text("Waiting for Shizuku...")
+                                Text("WAITING FOR SHIZUKU", style = MaterialTheme.typography.titleLarge)
                                 Text(
                                     textAlign = TextAlign.Center,
                                     text = "Make sure Shizuku is installed and enabled"
@@ -307,7 +329,7 @@ class MainActivity : ComponentActivity() {
                                     16.dp, Alignment.CenterVertically
                                 )
                             ) {
-                                Text("Shizuku is installed and enabled")
+                                Text("SHIZUKU READY", style = MaterialTheme.typography.titleLarge)
                                 Text(
                                     textAlign = TextAlign.Center,
                                     text = "Allow AppMixer to access Shizuku?"
