@@ -25,5 +25,21 @@ source since the fork was created.
   to reflect the new name, while keeping a visible credit and link back to
   the original VolumeManager project and its author.
 
+## 2026-09-01 — Nothing OS restyle and release signing
+
+- Filled in the full Material3 color role set (containers, surfaces,
+  outlines) for the Nothing OS theme, added a shared pill-shaped `Shapes`
+  set, and restyled `TrackSlider`, `ToggleButton` and the app list/top bar
+  with the black/white/red look (dot accents, uppercase dot-matrix
+  headers).
+- Added `.github/workflows/release.yml` to publish downloadable builds as
+  GitHub Releases.
+- Generated AppMixer's release signing keystore (RSA 4096, 30-year
+  validity) and wired `app/build.gradle.kts` plus both CI workflows to sign
+  release builds from it via `KEYSTORE_FILE`/`KEYSTORE_PASSWORD`/
+  `KEY_ALIAS`/`KEY_PASSWORD` repository secrets, so every future release
+  can be installed as an update over the previous one. The keystore itself
+  is not committed to the repository.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

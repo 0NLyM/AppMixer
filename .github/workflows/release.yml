@@ -5,15 +5,14 @@ on:
     inputs:
       tag:
         description: "Release tag (e.g. v0.1.0)"
-        required: false
-        default: "v0.1.0"
+        required: true
 
 permissions:
   contents: write
 
 jobs:
   build-and-release:
-    name: Build debug APK and publish release
+    name: Build signed APK and publish release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,13 +25,22 @@ jobs:
           java-version: "21"
           cache: "gradle"
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Decode signing keystore
+        run: echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > "${{ runner.temp }}/appmixer-release.jks"
 
-      - name: Rename artifact
+      - name: Build signed release APK
+        env:
+          APPMIXER_KEYSTORE_PATH: ${{ runner.temp }}/appmixer-release.jks
+          APPMIXER_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          APPMIXER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          APPMIXER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Collect artifact
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk "out/appmixer-${{ github.event.inputs.tag }}.apk"
+          apk=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          cp "$apk" "out/appmixer-${{ github.event.inputs.tag }}.apk"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -40,9 +48,7 @@ jobs:
           tag_name: ${{ github.event.inputs.tag }}
           name: "AppMixer ${{ github.event.inputs.tag }}"
           body: |
-            First downloadable build of **AppMixer**, a fork of [yume-chan/VolumeManager](https://github.com/yume-chan/VolumeManager) reworked with a Nothing OS inspired black/white/red theme.
-
-            This is an **unsigned debug build** (self-signed with Android's default debug key), meant for early testing. To install it you'll need to allow "install from unknown sources" for the app you download it with.
+            AppMixer build, signed with the project's release key so it can be installed over previous signed releases as a normal update.
 
             Requires Android 13+ and [Shizuku](https://shizuku.rikka.app/).
           prerelease: true

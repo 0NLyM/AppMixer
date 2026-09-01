@@ -51,6 +51,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release signing is read from environment variables rather than being
+    // hardcoded, so the real keystore never has to touch the repo: CI decodes
+    // the KEYSTORE_FILE secret to a file and exports these vars before
+    // running `./gradlew assembleRelease`. Without them, a release build
+    // still succeeds locally, just unsigned -- keeps `assembleRelease` usable
+    // for anyone building from source without the signing key.
+    val releaseKeystorePath = System.getenv("APPMIXER_KEYSTORE_PATH")
+    signingConfigs {
+        if (releaseKeystorePath != null) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = System.getenv("APPMIXER_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("APPMIXER_KEY_ALIAS")
+                keyPassword = System.getenv("APPMIXER_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -58,6 +76,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (releaseKeystorePath != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

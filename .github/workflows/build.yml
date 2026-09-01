@@ -26,24 +26,29 @@ jobs:
           java-version: "21"
           cache: "gradle"
 
-      - name: Build
-        run: ./gradlew assembleRelease
+      # Only the base repo has the signing secrets (forks/PRs don't), so this
+      # step is skipped there and assembleRelease below falls back to an
+      # unsigned build -- still useful to validate the build itself.
+      - name: Decode signing keystore
+        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        run: echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > "${{ runner.temp }}/appmixer-release.jks"
 
-      - name: Sign APK
+      - name: Build release APK
+        env:
+          APPMIXER_KEYSTORE_PATH: ${{ secrets.KEYSTORE_FILE != '' && format('{0}/appmixer-release.jks', runner.temp) || '' }}
+          APPMIXER_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          APPMIXER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          APPMIXER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Collect APK
         run: |
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
-          $ANDROID_HOME/build-tools/34.0.0/zipalign -c -v 4 app/build/outputs/apk/release/app-release-unsigned.apk
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-            --ks keystore.jks \
-            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            app/build/outputs/apk/release/app-release-unsigned.apk
-
-      - run: cp app/build/outputs/apk/release/app-release-unsigned.apk appmixer.apk
+          mkdir -p out
+          apk=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          cp "$apk" out/appmixer.apk
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          path: appmixer.apk
+          path: out/appmixer.apk
           archive: false
