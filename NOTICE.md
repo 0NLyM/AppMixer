@@ -57,5 +57,15 @@ source since the fork was created.
   for the lifetime of that popup; it resets to collapsed the next time the
   popup is shown from scratch.
 
+## 2026-09-01 — Corrected signing keystore
+
+The initial RSA 4096 release keystore hit a known Android Gradle Plugin bug
+(`KeytoolException: Tag number over 30 is not supported`) — AGP's signing
+metadata reader can't parse certain certificate extensions newer `keytool`
+builds add for large keys. Replaced it with an RSA 2048 keystore (the size
+Google Play Console itself defaults to for app signing; no security
+downside). No code changes were needed, only the `KEYSTORE_FILE` /
+`KEYSTORE_PASSWORD` / `KEY_PASSWORD` repository secrets.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
