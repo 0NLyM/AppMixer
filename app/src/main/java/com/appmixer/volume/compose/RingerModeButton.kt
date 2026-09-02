@@ -1,9 +1,5 @@
 package com.appmixer.volume.compose
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.media.AudioManager
 import android.util.Log
 import androidx.compose.foundation.BorderStroke
@@ -18,13 +14,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
@@ -42,24 +36,10 @@ fun RingerModeButton(
     modifier: Modifier = Modifier,
     onChange: (() -> Unit)? = null
 ) {
-    val context = LocalContext.current
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
 
-    DisposableEffect(context) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                ringerMode = audioManager.ringerMode
-            }
-        }
-
-        context.registerReceiver(
-            receiver,
-            IntentFilter(AudioManager.RINGER_MODE_CHANGED_ACTION),
-            Context.RECEIVER_NOT_EXPORTED
-        )
-        onDispose {
-            context.unregisterReceiver(receiver)
-        }
+    SystemBroadcastEffect(AudioManager.RINGER_MODE_CHANGED_ACTION) {
+        ringerMode = audioManager.ringerMode
     }
 
     val (icon, descriptionRes) = when (ringerMode) {

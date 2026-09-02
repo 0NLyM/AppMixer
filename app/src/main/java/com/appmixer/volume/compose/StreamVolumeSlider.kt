@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -29,13 +30,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.ui.theme.Typography
-import java.util.concurrent.atomic.AtomicInteger
 
 private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
 
+/**
+ * One shared receiver for system volume changes, kept alive while at least
+ * one slider is on screen.
+ *
+ * Whether a receiver is live is tracked by [receiver] rather than by the
+ * reference count alone: if registration ever fails, or the framework tears
+ * the receiver down first, the count and reality disagree and the following
+ * unregister throws `IllegalArgumentException: Receiver not registered`.
+ * The count also can't go negative, so an unbalanced stop can't leave the
+ * observer permanently unable to register again.
+ */
 @SuppressLint("StaticFieldLeak")
 internal object VolumeChangeObserver {
-    private val refCount = AtomicInteger(0)
+    private const val TAG = "AppMixer.VolumeObserver"
+
+    private var refCount = 0
     private var receiver: BroadcastReceiver? = null
     private var registeredContext: Context? = null
     private var _volumeChangedCount by mutableIntStateOf(0)
@@ -43,30 +56,53 @@ internal object VolumeChangeObserver {
 
     @Synchronized
     fun startObserving(context: Context) {
-        if (refCount.incrementAndGet() == 1) {
-            registeredContext = context.applicationContext
-            receiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    _volumeChangedCount++
-                }
+        refCount++
+
+        if (receiver != null) {
+            return
+        }
+
+        val appContext = context.applicationContext
+        val newReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                _volumeChangedCount++
             }
-            registeredContext!!.registerReceiver(
-                receiver!!,
+        }
+
+        try {
+            appContext.registerReceiver(
+                newReceiver,
                 IntentFilter(VOLUME_CHANGED_ACTION),
                 Context.RECEIVER_NOT_EXPORTED
             )
+            receiver = newReceiver
+            registeredContext = appContext
+        } catch (e: Exception) {
+            // Leave `receiver` null so we never try to unregister something
+            // that isn't actually registered.
+            Log.e(TAG, "Can't observe volume changes", e)
         }
     }
 
     @Synchronized
     fun stopObserving() {
-        if (refCount.decrementAndGet() == 0) {
-            receiver?.let {
-                registeredContext!!.unregisterReceiver(it)
-                receiver = null
-            }
-            registeredContext = null
+        if (refCount > 0) {
+            refCount--
         }
+
+        if (refCount > 0) {
+            return
+        }
+
+        val current = receiver ?: return
+        try {
+            registeredContext?.unregisterReceiver(current)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Volume observer was already unregistered", e)
+        }
+
+        receiver = null
+        registeredContext = null
     }
 
     fun notifyVolumeChanged() {

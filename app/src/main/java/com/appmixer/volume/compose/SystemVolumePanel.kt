@@ -1,10 +1,6 @@
 package com.appmixer.volume.compose
 
 import android.app.NotificationManager
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.media.AudioManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -192,26 +188,15 @@ private fun RingFooter(
     onSliderVisibilityChange: (String, Boolean) -> Unit,
     onChange: (() -> Unit)? = null
 ) {
-    val context = LocalContext.current
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
     var interruptionFilter by remember { mutableIntStateOf(notificationManagerProxy.getCurrentInterruptionFilter()) }
 
-    DisposableEffect(context) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                ringerMode = audioManager.ringerMode
-                interruptionFilter = notificationManagerProxy.getCurrentInterruptionFilter()
-            }
-        }
-
-        val filter = IntentFilter().apply {
-            addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
-            addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
-        }
-        context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        onDispose {
-            context.unregisterReceiver(receiver)
-        }
+    SystemBroadcastEffect(
+        AudioManager.RINGER_MODE_CHANGED_ACTION,
+        NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED
+    ) {
+        ringerMode = audioManager.ringerMode
+        interruptionFilter = notificationManagerProxy.getCurrentInterruptionFilter()
     }
 
     Row(
