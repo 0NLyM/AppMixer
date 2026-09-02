@@ -150,5 +150,16 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   translucent mode, since the platform's background blur drawable is a
   rounded rectangle that can neither follow a circle nor dissolve.
 
+## 2026-09-02 — Disc backdrop, opacity gating, horizontal expand gesture
+
+- `VolumeDisc` insets the disc inside its box so the radial backdrop has a
+  ring of its own to fade across. Drawn edge to edge, the backdrop sat
+  entirely underneath the disc body and read as no background at all.
+- The background opacity slider is hidden again for translucent bars, but
+  stays available for the disc, which uses it to weight its own fade.
+- The expand swipe is axis-aware: the horizontal bar opens the full mixer
+  on an up or down swipe, while the vertical bar and the disc still use an
+  inward one. The hint string describes both.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
