@@ -210,5 +210,25 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   customization preview slides between anchors on an animated bias, and
   mixer list items animate as apps move between groups.
 
+## 2026-09-02 — Popup-only colors, consistent translucency
+
+- The five color choices apply to the volume popup only. `AppMixerTheme`
+  takes an `applyColorOverrides` flag (the overlay sets it; the app doesn't)
+  and a new `PopupColors` wrapper paints the customization preview in the
+  popup's palette.
+- The color picker gained an opacity slider; 0% disables a role, which
+  `withOverrides` applies without touching the matching `on*` colors.
+  Swatches sit on a chequerboard.
+- Translucent always paints a scrim as well as requesting the window blur,
+  which the platform grants only intermittently -- the cause of the popup
+  background alternating between invisible and a flat tint. Panel colors are
+  animated, so background changes crossfade.
+- Replaced the expand `AnimatedContent`/`SizeTransform` with a single
+  keyed appearance animation: a `WRAP_CONTENT` overlay can't animate its own
+  size without the window resizing every frame and measuring to the union of
+  both panels.
+- `RingerModeButton` uses one theme color per mode: containers (silent),
+  text-and-fills (vibrate), accent (ringing).
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
