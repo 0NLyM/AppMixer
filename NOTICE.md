@@ -87,5 +87,22 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
 - Fixed `.github/workflows/build.yml`, which used the `secrets` context in a
   step `if:` condition and therefore failed to parse.
 
+## 2026-09-02 — Popup refinements
+
+- Style chips wrap (`FlowRow`) instead of being squeezed, and the position
+  preview is a fixed silhouette instead of an `aspectRatio` that overflowed
+  inside the scrolling column.
+- `VolumeDisc` became a vertical-drag control that renders as a half-moon
+  on edge anchors and a full circle on centered ones, replacing the rotary
+  gesture.
+- The popup's two stacked backgrounds (window blur + composable fill) were
+  unified into one panel, selectable as translucent or solid, with the
+  configured corner radius applied to both.
+- Added `compose/RingerModeButton.kt`, a ring/vibrate/silent switch shown
+  alongside the collapsed popup.
+- Slider corner radius flows through `LocalSliderCornerRadius` so it also
+  applies to the full mixer, whose readouts now use the same monospace
+  style as the collapsed popup.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
