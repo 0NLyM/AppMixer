@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
 import com.appmixer.volume.data.PopupAnchor
 import com.appmixer.volume.ui.theme.Motion
+import com.appmixer.volume.ui.theme.PopupColors
 import com.appmixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.appmixer.volume.data.PopupBackground
 import com.appmixer.volume.data.PopupStyle
@@ -240,121 +241,126 @@ private fun PopupPreview(preferences: UiPreferences) {
             .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
-        // Fixed phone silhouette: an aspectRatio inside a scrolling column
-        // resolves against the unbounded height and overflows onto the rows
-        // above it.
-        Box(
-            modifier = Modifier
-                .width(130.dp)
-                .height(260.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.background)
-                .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp))
-        ) {
+        // Painted in the popup's own palette, not the app's: the color
+        // choices apply to the overlay only, and this preview is where
+        // you see them.
+        PopupColors(preferences) {
+            // Fixed phone silhouette: an aspectRatio inside a scrolling column
+            // resolves against the unbounded height and overflows onto the rows
+            // above it.
             Box(
                 modifier = Modifier
-                    .align(alignment)
-                    // Switching style changes the silhouette's size; let it
-                    // resize into the new shape rather than cutting to it.
-                    .animateContentSize(
-                        animationSpec = tween(
-                            durationMillis = Motion.MorphMillis,
-                            easing = Motion.Emphasized
-                        )
-                    )
-                    .padding(
-                        start = if (horizontalSign > 0) (preferences.popupOffsetX * previewScale).dp else 0.dp,
-                        end = if (horizontalSign < 0) (preferences.popupOffsetX * previewScale).dp else 0.dp,
-                        top = if (verticalSign > 0) (preferences.popupOffsetY * previewScale).dp else 0.dp,
-                        bottom = if (verticalSign < 0) (preferences.popupOffsetY * previewScale).dp else 0.dp
-                    )
+                    .width(130.dp)
+                    .height(260.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.background)
+                    .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp))
             ) {
-                val scale = preferences.popupScale * previewScale
-                when (preferences.popupStyle) {
-                    PopupStyle.VerticalBar -> Box(
-                        modifier = Modifier
-                            .width((64 * scale * 1.6f).dp)
-                            .height((250 * scale * 1.6f).dp)
-                            .clip(RoundedCornerShape((preferences.popupCornerRadius * scale * 1.6f).dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.outline,
-                                RoundedCornerShape((preferences.popupCornerRadius * scale * 1.6f).dp)
+                Box(
+                    modifier = Modifier
+                        .align(alignment)
+                        // Switching style changes the silhouette's size; let it
+                        // resize into the new shape rather than cutting to it.
+                        .animateContentSize(
+                            animationSpec = tween(
+                                durationMillis = Motion.MorphMillis,
+                                easing = Motion.Emphasized
                             )
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .height((250 * scale * 1.6f * 0.55f).dp)
-                                .background(MaterialTheme.colorScheme.primary)
                         )
-                    }
-
-                    PopupStyle.HorizontalBar -> Box(
-                        modifier = Modifier
-                            .width((240 * scale * 1.6f).dp)
-                            .height((56 * scale * 1.6f).dp)
-                            .clip(RoundedCornerShape((preferences.popupCornerRadius * scale * 1.6f).dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.outline,
-                                RoundedCornerShape((preferences.popupCornerRadius * scale * 1.6f).dp)
-                            )
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.CenterStart)
-                                .fillMaxWidth(0.55f)
-                                .height((56 * scale * 1.6f).dp)
-                                .background(MaterialTheme.colorScheme.primary)
+                        .padding(
+                            start = if (horizontalSign > 0) (preferences.popupOffsetX * previewScale).dp else 0.dp,
+                            end = if (horizontalSign < 0) (preferences.popupOffsetX * previewScale).dp else 0.dp,
+                            top = if (verticalSign > 0) (preferences.popupOffsetY * previewScale).dp else 0.dp,
+                            bottom = if (verticalSign < 0) (preferences.popupOffsetY * previewScale).dp else 0.dp
                         )
-                    }
-
-                    PopupStyle.Disc -> {
-                        // Edge anchors give a half-moon flush with the edge;
-                        // a horizontally centered anchor gives a full disc.
-                        val half = preferences.popupAnchor.discHalf()
-                        val diameter = (220 * scale * 1.6f).dp
-                        val roundedSide = (diameter / 2)
-                        val shape = when (half) {
-                            DiscHalf.None -> CircleShape
-                            DiscHalf.Left -> RoundedCornerShape(
-                                topStart = roundedSide,
-                                bottomStart = roundedSide,
-                                topEnd = 0.dp,
-                                bottomEnd = 0.dp
-                            )
-
-                            DiscHalf.Right -> RoundedCornerShape(
-                                topStart = 0.dp,
-                                bottomStart = 0.dp,
-                                topEnd = roundedSide,
-                                bottomEnd = roundedSide
-                            )
-                        }
-
-                        Box(
+                ) {
+                    val scale = preferences.popupScale * previewScale
+                    when (preferences.popupStyle) {
+                        PopupStyle.VerticalBar -> Box(
                             modifier = Modifier
-                                .width(if (half == DiscHalf.None) diameter else diameter / 2)
-                                .height(diameter)
-                                .clip(shape)
+                                .width((64 * scale * 1.6f).dp)
+                                .height((250 * scale * 1.6f).dp)
+                                .clip(RoundedCornerShape((preferences.popupCornerRadius * scale * 1.6f).dp))
                                 .background(MaterialTheme.colorScheme.primaryContainer)
                                 .border(
-                                    (6 * scale * 1.6f).dp,
-                                    MaterialTheme.colorScheme.primary,
-                                    shape
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline,
+                                    RoundedCornerShape((preferences.popupCornerRadius * scale * 1.6f).dp)
                                 )
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .size((10 * scale * 1.6f).dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.tertiary)
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .height((250 * scale * 1.6f * 0.55f).dp)
+                                    .background(MaterialTheme.colorScheme.primary)
                             )
+                        }
+
+                        PopupStyle.HorizontalBar -> Box(
+                            modifier = Modifier
+                                .width((240 * scale * 1.6f).dp)
+                                .height((56 * scale * 1.6f).dp)
+                                .clip(RoundedCornerShape((preferences.popupCornerRadius * scale * 1.6f).dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline,
+                                    RoundedCornerShape((preferences.popupCornerRadius * scale * 1.6f).dp)
+                                )
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .fillMaxWidth(0.55f)
+                                    .height((56 * scale * 1.6f).dp)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
+
+                        PopupStyle.Disc -> {
+                            // Edge anchors give a half-moon flush with the edge;
+                            // a horizontally centered anchor gives a full disc.
+                            val half = preferences.popupAnchor.discHalf()
+                            val diameter = (220 * scale * 1.6f).dp
+                            val roundedSide = (diameter / 2)
+                            val shape = when (half) {
+                                DiscHalf.None -> CircleShape
+                                DiscHalf.Left -> RoundedCornerShape(
+                                    topStart = roundedSide,
+                                    bottomStart = roundedSide,
+                                    topEnd = 0.dp,
+                                    bottomEnd = 0.dp
+                                )
+
+                                DiscHalf.Right -> RoundedCornerShape(
+                                    topStart = 0.dp,
+                                    bottomStart = 0.dp,
+                                    topEnd = roundedSide,
+                                    bottomEnd = roundedSide
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .width(if (half == DiscHalf.None) diameter else diameter / 2)
+                                    .height(diameter)
+                                    .clip(shape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .border(
+                                        (6 * scale * 1.6f).dp,
+                                        MaterialTheme.colorScheme.primary,
+                                        shape
+                                    )
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .size((10 * scale * 1.6f).dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.tertiary)
+                                )
+                            }
                         }
                     }
                 }

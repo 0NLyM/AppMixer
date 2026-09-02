@@ -46,6 +46,8 @@
     <string name="color_foreground">文字与填充</string>
     <string name="color_surface">容器</string>
     <string name="color_outline">描边</string>
+    <string name="color_opacity">不透明度</string>
+    <string name="color_disabled">关闭 — 不绘制</string>
     <string name="reset_colors">重置所有颜色</string>
 
     <string name="popup">音量弹窗</string>

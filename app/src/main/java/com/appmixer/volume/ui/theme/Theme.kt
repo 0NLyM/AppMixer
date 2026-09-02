@@ -121,34 +121,42 @@ fun baseColorScheme(darkTheme: Boolean): ColorScheme =
  * Applies the user's color choices on top of [base]. Each override is
  * `null` until the user picks something, so an untouched setting keeps the
  * stock Nothing OS role exactly as designed.
+ *
+ * A fully transparent choice means "don't paint this at all" -- the fill,
+ * the track, the panel or the outline simply isn't drawn. In that case the
+ * matching `on*` colors are left alone: they're what text is drawn in, and
+ * turning off a surface shouldn't take the label on top of it with it.
  */
 fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
     var scheme = this
 
     preferences.backgroundColor?.let { argb ->
         val color = Color(argb)
-        val on = contentColorOn(color)
         scheme = scheme.copy(
             background = color,
-            onBackground = on,
             surface = color,
-            onSurface = on,
             surfaceContainerLow = color
         )
+        if (color.alpha > 0f) {
+            val on = contentColorOn(color)
+            scheme = scheme.copy(onBackground = on, onSurface = on)
+        }
     }
 
     preferences.foregroundColor?.let { argb ->
         val color = Color(argb)
         // `primary` is what fills sliders and filled buttons, so the
         // foreground choice drives both text and those fills.
-        scheme = scheme.copy(
-            primary = color,
-            onPrimary = contentColorOn(color),
-            onBackground = color,
-            onSurface = color,
-            onPrimaryContainer = color,
-            onSecondaryContainer = color
-        )
+        scheme = scheme.copy(primary = color)
+        if (color.alpha > 0f) {
+            scheme = scheme.copy(
+                onPrimary = contentColorOn(color),
+                onBackground = color,
+                onSurface = color,
+                onPrimaryContainer = color,
+                onSecondaryContainer = color
+            )
+        }
     }
 
     preferences.surfaceColor?.let { argb ->
@@ -165,11 +173,10 @@ fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
 
     preferences.accentColor?.let { argb ->
         val color = Color(argb)
-        scheme = scheme.copy(
-            tertiary = color,
-            onTertiary = contentColorOn(color),
-            tertiaryContainer = color
-        )
+        scheme = scheme.copy(tertiary = color, tertiaryContainer = color)
+        if (color.alpha > 0f) {
+            scheme = scheme.copy(onTertiary = contentColorOn(color))
+        }
     }
 
     preferences.outlineColor?.let { argb ->
@@ -247,6 +254,13 @@ private fun ColorScheme.animated(): ColorScheme {
 @Composable
 fun AppMixerTheme(
     preferences: UiPreferences = UiPreferences(),
+    /**
+     * Whether the user's five color choices apply here. They belong to the
+     * volume popup, not to the app: the settings screen has to stay legible
+     * while you're picking a color for something else, and a palette chosen
+     * for a slider over a wallpaper rarely reads well as a whole app.
+     */
+    applyColorOverrides: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val darkTheme = when (preferences.themeMode) {
@@ -260,11 +274,31 @@ fun AppMixerTheme(
         LocalButtonCornerPercent provides
             (preferences.popupCornerRadius * 50 / POPUP_CORNER_RADIUS_MAX).coerceIn(0, 50)
     ) {
+        val scheme = baseColorScheme(darkTheme).let { base ->
+            if (applyColorOverrides) base.withOverrides(preferences) else base
+        }
+
         MaterialTheme(
-            colorScheme = baseColorScheme(darkTheme).withOverrides(preferences).animated(),
+            colorScheme = scheme.animated(),
             typography = Typography,
             shapes = AppMixerShapes,
             content = content
         )
     }
+}
+
+/**
+ * Paints [content] in the popup's palette -- the user's color choices on top
+ * of the current theme -- without touching the surrounding app. Used by the
+ * customization screen's preview, which has to show what the popup will look
+ * like while the screen around it stays in the app's own colors.
+ */
+@Composable
+fun PopupColors(preferences: UiPreferences, content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = MaterialTheme.colorScheme.withOverrides(preferences).animated(),
+        typography = MaterialTheme.typography,
+        shapes = MaterialTheme.shapes,
+        content = content
+    )
 }

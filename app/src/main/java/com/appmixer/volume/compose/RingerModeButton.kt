@@ -56,11 +56,12 @@ private fun ringerFace(mode: Int): Pair<ImageVector, Int> = when (mode) {
 }
 
 /**
- * Cycles ring -> vibrate -> silent -> ring, colored like the sliders it sits
- * next to: the container color while the phone rings normally, the fill
- * color once it's been silenced or set to vibrate. Its corners follow the
- * same radius setting, as a share of its own size so the top of the range is
- * a full circle.
+ * Cycles ring -> vibrate -> silent -> ring, with one theme color per mode so
+ * the state is readable at a glance without looking at the glyph: silent
+ * takes the container color (the quietest thing on screen, the same as an
+ * empty slider track), vibrate takes text-and-fills, and ringing takes the
+ * accent. Its corners follow the same radius setting, as a share of its own
+ * size so the top of the range is a full circle.
  *
  * Each mode announces itself the way it sounds: the bell swings, vibrate
  * buzzes in place, and silent drops away. All of it is a few degrees and a
@@ -79,24 +80,27 @@ fun RingerModeButton(
         ringerMode = audioManager.ringerMode
     }
 
-    val isMuted = ringerMode != AudioManager.RINGER_MODE_NORMAL
     val shape = RoundedCornerShape(percent = LocalButtonCornerPercent.current)
 
+    val scheme = MaterialTheme.colorScheme
+    val targetContainer = when (ringerMode) {
+        AudioManager.RINGER_MODE_SILENT -> scheme.primaryContainer
+        AudioManager.RINGER_MODE_VIBRATE -> scheme.primary
+        else -> scheme.tertiary
+    }
+    val targetContent = when (ringerMode) {
+        AudioManager.RINGER_MODE_SILENT -> scheme.onPrimaryContainer
+        AudioManager.RINGER_MODE_VIBRATE -> scheme.onPrimary
+        else -> scheme.onTertiary
+    }
+
     val containerColor by animateColorAsState(
-        targetValue = if (isMuted) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.primaryContainer
-        },
+        targetValue = targetContainer,
         animationSpec = Motion.ColorShift,
         label = "ringerContainer"
     )
     val contentColor by animateColorAsState(
-        targetValue = if (isMuted) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        },
+        targetValue = targetContent,
         animationSpec = Motion.ColorShift,
         label = "ringerContent"
     )

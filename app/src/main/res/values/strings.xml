@@ -45,6 +45,8 @@
     <string name="color_foreground">Text and fills</string>
     <string name="color_surface">Containers</string>
     <string name="color_outline">Outlines</string>
+    <string name="color_opacity">Opacity</string>
+    <string name="color_disabled">Off — not painted</string>
     <string name="reset_colors">Reset all colors</string>
 
     <string name="popup">Volume popup</string>

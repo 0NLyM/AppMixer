@@ -20,6 +20,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,13 +32,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
 import java.util.Locale
@@ -67,6 +71,37 @@ private fun Color.toHsv(): Triple<Float, Float, Float> {
 private fun Color.toHex(): String =
     String.format(Locale.US, "%06X", toArgb() and 0xFFFFFF)
 
+/**
+ * The grey chequerboard that shows through a partly transparent swatch, so
+ * "disabled" doesn't just look like a black square.
+ */
+private fun Modifier.checkerboard(square: Dp = 6.dp): Modifier = drawBehind {
+    val step = square.toPx()
+    drawRect(color = Color(0xFFE8E8E8))
+    var row = 0
+    var y = 0f
+    while (y < size.height) {
+        var column = 0
+        var x = 0f
+        while (x < size.width) {
+            if ((row + column) % 2 == 0) {
+                drawRect(
+                    color = Color(0xFFBDBDBD),
+                    topLeft = Offset(x, y),
+                    size = Size(
+                        width = minOf(step, size.width - x),
+                        height = minOf(step, size.height - y)
+                    )
+                )
+            }
+            x += step
+            column++
+        }
+        y += step
+        row++
+    }
+}
+
 private fun parseHex(text: String): Color? {
     val cleaned = text.removePrefix("#").trim()
     if (cleaned.length != 6) {
@@ -95,8 +130,9 @@ fun ColorPickerDialog(
     var saturation by remember { mutableFloatStateOf(initialHsv.second) }
     var value by remember { mutableFloatStateOf(initialHsv.third) }
     var hexText by remember { mutableStateOf(initialColor.toHex()) }
+    var alpha by remember(initialColor) { mutableFloatStateOf(initialColor.alpha) }
 
-    val color = Color.hsv(hue, saturation, value)
+    val color = Color.hsv(hue, saturation, value).copy(alpha = alpha)
 
     fun setColor(newColor: Color) {
         val hsv = newColor.toHsv()
@@ -216,6 +252,7 @@ fun ColorPickerDialog(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(RoundedCornerShape(12.dp))
+                            .checkerboard()
                             .background(color)
                             .border(
                                 1.dp,
@@ -245,6 +282,35 @@ fun ColorPickerDialog(
                     )
                 }
 
+                // Opacity, with 0% meaning "don't paint this at all" -- the
+                // way to switch one color of the popup off rather than
+                // replace it.
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.color_opacity),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = if (alpha <= 0f) {
+                                stringResource(R.string.color_disabled)
+                            } else {
+                                "${(alpha * 100).roundToInt()}%"
+                            },
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                    Slider(
+                        value = alpha,
+                        onValueChange = { alpha = it },
+                        valueRange = 0f..1f
+                    )
+                }
+
                 // Presets.
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     PresetColors.chunked(6).forEach { row ->
@@ -256,8 +322,8 @@ fun ColorPickerDialog(
                                         .clip(CircleShape)
                                         .background(preset)
                                         .border(
-                                            width = if (preset.toArgb() == color.toArgb()) 3.dp else 1.dp,
-                                            color = if (preset.toArgb() == color.toArgb()) {
+                                            width = if (preset.toHex() == color.toHex()) 3.dp else 1.dp,
+                                            color = if (preset.toHex() == color.toHex()) {
                                                 MaterialTheme.colorScheme.tertiary
                                             } else {
                                                 MaterialTheme.colorScheme.outline
@@ -315,6 +381,7 @@ fun ColorSettingRow(
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
+                .checkerboard(square = 5.dp)
                 .background(color)
                 .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
         )
@@ -322,10 +389,13 @@ fun ColorSettingRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(text = label, style = MaterialTheme.typography.bodyLarge)
             Text(
-                text = if (isCustom) {
-                    "#${color.toHex()}"
-                } else {
-                    stringResource(R.string.color_default, color.toHex())
+                text = when {
+                    color.alpha <= 0f -> stringResource(R.string.color_disabled)
+                    isCustom && color.alpha < 1f ->
+                        "#${color.toHex()} · ${(color.alpha * 100).roundToInt()}%"
+
+                    isCustom -> "#${color.toHex()}"
+                    else -> stringResource(R.string.color_default, color.toHex())
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

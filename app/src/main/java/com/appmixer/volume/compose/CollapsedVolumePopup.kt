@@ -1,6 +1,7 @@
 package com.appmixer.volume.compose
 
 import android.media.AudioManager
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +45,7 @@ import com.appmixer.volume.data.PopupAnchor
 import com.appmixer.volume.data.PopupStyle
 import com.appmixer.volume.data.UiPreferences
 import com.appmixer.volume.data.paintedPanelAlpha
+import com.appmixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -131,12 +133,6 @@ private fun Modifier.expandOnSwipe(
 fun CollapsedVolumePopup(
     audioManager: AudioManager,
     preferences: UiPreferences,
-    /**
-     * Whether the overlay window really is painting the frosted panel. Not
-     * every device can blur, and where it can't this popup has to paint a
-     * fill of its own instead of leaving the background empty.
-     */
-    blurred: Boolean,
     onExpand: () -> Unit,
     onInteract: () -> Unit
 ) {
@@ -187,24 +183,34 @@ fun CollapsedVolumePopup(
     val panelShape = if (isDisc) RectangleShape else RoundedCornerShape(cornerRadius)
     val panelPadding = if (isDisc) PaddingValues(0.dp) else PaddingValues(10.dp)
 
-    // One background object. For the bars: the system blur in translucent
-    // mode (so the composable adds no fill), or this panel in solid mode.
-    // For the disc it's always the radial backdrop below.
-    val panelColor = when {
-        isDisc -> Color.Transparent
-        blurred -> Color.Transparent
-        else -> MaterialTheme.colorScheme.background.copy(
-            alpha = preferences.paintedPanelAlpha()
-        )
-    }
+    // One background object: this panel, with the system blur behind it in
+    // translucent mode. The disc paints its own round backdrop below
+    // instead, since a rectangular panel can't follow a circle.
+    //
+    // Both the fill and the backdrop are animated, so switching between
+    // translucent and solid -- or nudging the opacity -- bleeds from one to
+    // the other rather than cutting.
+    val panelColor by animateColorAsState(
+        targetValue = if (isDisc) {
+            Color.Transparent
+        } else {
+            MaterialTheme.colorScheme.background.copy(alpha = preferences.paintedPanelAlpha())
+        },
+        animationSpec = Motion.ColorShift,
+        label = "popupPanel"
+    )
 
     // The disc's backdrop always dissolves at the rim; the two modes differ
     // in how much it lets through. It can't use the system blur the bars get
     // in translucent mode -- that drawable is a rounded rectangle, so it can
     // neither follow the circle nor fade -- so translucent here means a
     // lighter tint instead of a frosted one.
-    val discBackdrop = MaterialTheme.colorScheme.background.copy(
-        alpha = preferences.paintedPanelAlpha()
+    val discBackdrop by animateColorAsState(
+        targetValue = MaterialTheme.colorScheme.background.copy(
+            alpha = preferences.paintedPanelAlpha()
+        ),
+        animationSpec = Motion.ColorShift,
+        label = "discBackdrop"
     )
 
     Surface(

@@ -24,15 +24,9 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -42,11 +36,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.AbstractComposeView
@@ -194,12 +188,13 @@ class Service : AccessibilityService() {
             }
 
             /**
-             * Whether the frosted panel is actually up. Not every device can
-             * blur, so the composables read this rather than the preference
-             * to decide whether they still have to paint a fill of their own.
+             * Whether the blur drawable is currently installed, so it isn't
+             * rebuilt on every recomposition. The composables no longer read
+             * it: they paint their panel either way, because the platform
+             * grants the blur only sometimes and a panel that counts on it is
+             * invisible the rest of the time.
              */
-            var blurred by mutableStateOf(false)
-                private set
+            private var blurred = false
 
             /**
              * The blur *is* the panel in translucent mode, so the composable
@@ -264,7 +259,9 @@ class Service : AccessibilityService() {
             override fun Content() {
                 val preferences = manager.uiPreferences
 
-                return AppMixerTheme(preferences = preferences) {
+                // The overlay is the one place the user's color choices
+                // apply: they're picked for the popup, not for the app.
+                return AppMixerTheme(preferences = preferences, applyColorOverrides = true) {
                     // Starts collapsed every time a fresh overlay window is
                     // created (i.e. each time the popup reappears after
                     // being fully hidden) -- only expands for the duration
@@ -277,106 +274,96 @@ class Service : AccessibilityService() {
                         applyWindowBlur(preferences.usesWindowBlur(expanded = expanded))
                     }
 
-                    // The popup grows out of the screen edge it hugs
-                    // rather than appearing at full size in the middle of
-                    // its own fade-in.
-                    val entrance = remember { Animatable(0f) }
-                    LaunchedEffect(Unit) {
-                        entrance.animateTo(
-                            targetValue = 1f,
-                            animationSpec = tween(
-                                durationMillis = Motion.MorphMillis,
-                                easing = Motion.Emphasized
-                            )
-                        )
-                    }
+                    // Animated, so switching translucent/solid or nudging the
+                    // opacity bleeds from one background to the other.
+                    val panelColor by animateColorAsState(
+                        targetValue = MaterialTheme.colorScheme.background.copy(
+                            alpha = preferences.paintedPanelAlpha()
+                        ),
+                        animationSpec = Motion.ColorShift,
+                        label = "mixerPanel"
+                    )
+
+                    // One animation for "a panel appeared", replayed when
+                    // the popup morphs into the mixer because the key
+                    // changes with it.
+                    //
+                    // Deliberately not an AnimatedContent with a
+                    // SizeTransform: this window is WRAP_CONTENT, so an
+                    // animated size makes the window itself resize on every
+                    // frame, and while both panels are alive it measures to
+                    // the union of the two. The result was a window that
+                    // jumped to the full mixer's size before the mixer had
+                    // faded in. Swapping outright and animating only what's
+                    // on screen keeps the window's own size a single step.
                     val origin = preferences.popupAnchor.transformOrigin()
 
-                    Box(
-                        modifier = Modifier.graphicsLayer {
-                            val grown = 0.86f + 0.14f * entrance.value
-                            scaleX = grown
-                            scaleY = grown
-                            transformOrigin = origin
-                        }
-                    ) {
-                        AnimatedContent(
-                            targetState = expanded,
-                            transitionSpec = {
-                                val arrive = tween<Float>(
+                    key(expanded) {
+                        val appear = remember { Animatable(0f) }
+                        LaunchedEffect(Unit) {
+                            appear.animateTo(
+                                targetValue = 1f,
+                                animationSpec = tween(
                                     durationMillis = Motion.MorphMillis,
                                     easing = Motion.Emphasized
                                 )
-                                (fadeIn(arrive) + scaleIn(arrive, initialScale = 0.94f))
-                                    .togetherWith(
-                                        fadeOut(tween(140)) +
-                                            scaleOut(tween(180), targetScale = 0.94f)
-                                    )
-                                    // The panel morphs between the two
-                                    // sizes; the window is wrap-content, so
-                                    // it follows along.
-                                    .using(
-                                        SizeTransform(clip = false) { _, _ ->
-                                            tween(
-                                                durationMillis = Motion.MorphMillis,
-                                                easing = Motion.Emphasized
-                                            )
-                                        }
-                                    )
-                            },
-                            label = "popupMode"
-                        ) { isExpanded ->
-                                if (isExpanded) {
-                                    Surface(
-                                        // Transparent only where the blur really is the
-                                        // panel; otherwise this fill is the whole
-                                        // background, and leaving it out made the popup
-                                        // invisible.
-                                        color = if (blurred) {
-                                            Color.Transparent
-                                        } else {
-                                            MaterialTheme.colorScheme.background.copy(
-                                                alpha = preferences.paintedPanelAlpha()
-                                            )
-                                        },
-                                        contentColor = MaterialTheme.colorScheme.onBackground,
-                                        shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier.graphicsLayer {
+                                val grown = 0.9f + 0.1f * appear.value
+                                alpha = appear.value
+                                scaleX = grown
+                                scaleY = grown
+                                // Grows out of the screen edge it hugs.
+                                transformOrigin = origin
+                            }
+                        ) {
+                            if (expanded) {
+                                Surface(
+                                    // Painted whether or not the blur landed:
+                                    // the system grants it only sometimes, and
+                                    // a panel that leaves the background to it
+                                    // is invisible the rest of the time.
+                                    color = panelColor,
+                                    contentColor = MaterialTheme.colorScheme.onBackground,
+                                    shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(20.dp, 16.dp)
                                     ) {
-                                        Column(
-                                            modifier = Modifier.padding(20.dp, 16.dp)
+                                        AppVolumeList(
+                                            apps = manager.apps.values,
+                                            showAll = false,
+                                            onChange = this@Service.handler::startIdleTimer
                                         ) {
-                                            AppVolumeList(
-                                                apps = manager.apps.values,
-                                                showAll = false,
-                                                onChange = this@Service.handler::startIdleTimer
-                                            ) {
-                                                item("system_volume_panel") {
-                                                    SystemVolumePanel(
-                                                        audioManager = manager.audioManager,
-                                                        notificationManagerProxy = manager.notificationManagerProxy,
-                                                        showCallVolumeAlways = false,
-                                                        applyVisibilityFilter = true,
-                                                        allowVisibilityConfig = false,
-                                                        isSliderVisible = manager::isSystemSliderVisible,
-                                                        onSliderVisibilityChange = manager::setSystemSliderVisible,
-                                                        onChange = this@Service.handler::startIdleTimer
-                                                    )
-                                                }
+                                            item("system_volume_panel") {
+                                                SystemVolumePanel(
+                                                    audioManager = manager.audioManager,
+                                                    notificationManagerProxy = manager.notificationManagerProxy,
+                                                    showCallVolumeAlways = false,
+                                                    applyVisibilityFilter = true,
+                                                    allowVisibilityConfig = false,
+                                                    isSliderVisible = manager::isSystemSliderVisible,
+                                                    onSliderVisibilityChange = manager::setSystemSliderVisible,
+                                                    onChange = this@Service.handler::startIdleTimer
+                                                )
                                             }
                                         }
                                     }
-                                } else {
-                                    CollapsedVolumePopup(
-                                        audioManager = manager.audioManager,
-                                        preferences = preferences,
-                                        blurred = blurred,
-                                        onExpand = {
-                                            expanded = true
-                                            this@Service.handler.startIdleTimer()
-                                        },
-                                        onInteract = this@Service.handler::startIdleTimer
-                                    )
                                 }
+                            } else {
+                                CollapsedVolumePopup(
+                                    audioManager = manager.audioManager,
+                                    preferences = preferences,
+                                    onExpand = {
+                                        expanded = true
+                                        this@Service.handler.startIdleTimer()
+                                    },
+                                    onInteract = this@Service.handler::startIdleTimer
+                                )
+                            }
                         }
                     }
                 }

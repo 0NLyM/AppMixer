@@ -70,8 +70,7 @@ data class UiPreferences(
 )
 
 /**
- * True when the overlay window should paint the system blur behind the popup,
- * in which case the composable adds no fill of its own.
+ * True when the overlay window should paint the system blur behind the popup.
  *
  * The blur drawable is a rounded rectangle, so the collapsed disc can't use
  * it -- it would put a square panel back behind a round popup. The
@@ -83,10 +82,15 @@ fun UiPreferences.usesWindowBlur(expanded: Boolean = false): Boolean =
         (expanded || popupStyle != PopupStyle.Disc)
 
 /**
- * Alpha of the panel the popup paints for itself. Translucent normally means
- * the blur above; where that isn't available -- the disc, and the expanded
- * mixer shown in its place -- the same fill is drawn at a lighter tint, so
- * the choice still reads as see-through instead of disappearing entirely.
+ * Alpha of the panel the popup paints for itself.
+ *
+ * Translucent paints a light scrim *as well as* asking for the blur, rather
+ * than leaving the background entirely to it. The system grants the blur
+ * only sometimes -- it depends on the device, on hardware acceleration and
+ * on whether the platform currently feels like allowing cross-window blur --
+ * so a panel that draws nothing of its own is invisible whenever the answer
+ * is no. The scrim is what makes translucent look the same either way; the
+ * blur, when it lands, frosts what shows through it.
  */
 fun UiPreferences.paintedPanelAlpha(): Float =
-    popupBackgroundOpacity * if (popupBackground == PopupBackground.Translucent) 0.45f else 1f
+    popupBackgroundOpacity * if (popupBackground == PopupBackground.Translucent) 0.4f else 1f
