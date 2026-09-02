@@ -128,5 +128,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
 - Added `FLAG_NOT_FOCUSABLE` to the overlay window so showing the popup no
   longer dismisses the on-screen keyboard.
 
+## 2026-09-02 — Popup scaling and round disc backdrop
+
+- `RingerModeButton` no longer builds on `IconButton`, whose own 40dp size
+  and 48dp minimum touch target overrode the requested size and overlapped
+  neighbouring elements below 1x scale.
+- `TrackSlider` centers its content vertically, so a slider taller than its
+  content (the collapsed horizontal bar) no longer pins the icon and
+  readout to the top.
+- `VolumeDisc` paints a round backdrop following its own radius, fading to
+  transparent at the rim, and the window blur is skipped for that style
+  since a blur drawable can only be a rounded rectangle. Its center piece
+  is anchored dead center with the readout below it.
+- Background opacity is always adjustable and reaches 0%.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
