@@ -26,7 +26,7 @@
     <string name="disable_vibrate_mode">关闭振动模式</string>
     <string name="enable_do_not_disturb">开启勿扰模式</string>
     <string name="disable_do_not_disturb">关闭勿扰模式</string>
-    <string name="show_full_mixer">显示完整混音器</string>
+    <string name="expand_hint">从屏幕边缘向内滑动弹窗即可打开完整混音器。</string>
 
     <string name="customization">个性化</string>
     <string name="apply">应用</string>

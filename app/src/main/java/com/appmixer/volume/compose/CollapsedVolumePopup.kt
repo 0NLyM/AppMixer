@@ -1,22 +1,23 @@
 package com.appmixer.volume.compose
 
 import android.media.AudioManager
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,15 +32,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.appmixer.volume.R
 import com.appmixer.volume.data.PopupAnchor
 import com.appmixer.volume.data.PopupBackground
 import com.appmixer.volume.data.PopupStyle
 import com.appmixer.volume.data.UiPreferences
+import kotlin.math.abs
 import kotlin.math.roundToInt
+
+/** Base size of the ringer button and, at 1x, the vertical bar's width. */
+private const val BUTTON_SIZE_DP = 48
 
 /**
  * Which half of the disc to show for a given anchor: hugging the right edge
@@ -53,9 +60,51 @@ internal fun PopupAnchor.discHalf(): DiscHalf = when (this) {
 }
 
 /**
+ * Direction the expand swipe has to travel, away from the edge the popup
+ * hugs: +1 rightwards, -1 leftwards, 0 when centered and either will do.
+ */
+private fun PopupAnchor.expandDirection(): Int = when (this) {
+    PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> 1
+    PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> -1
+    else -> 0
+}
+
+/**
+ * Swipes inward from the popup's edge to open the full mixer. Vertical
+ * drags pass straight through to the sliders underneath, which claim them
+ * for volume; on the horizontal bar style the bar itself claims horizontal
+ * drags too, so there the swipe works from the panel around it.
+ */
+private fun Modifier.expandOnSwipe(direction: Int, onExpand: () -> Unit): Modifier =
+    pointerInput(direction) {
+        val threshold = 48.dp.toPx()
+        var travelled = 0f
+        var fired = false
+
+        detectHorizontalDragGestures(
+            onDragStart = {
+                travelled = 0f
+                fired = false
+            },
+            onDragEnd = { fired = false },
+            onDragCancel = { fired = false }
+        ) { _, dragAmount ->
+            travelled += dragAmount
+            val goingTheRightWay = direction == 0 ||
+                (direction > 0 && travelled > 0) ||
+                (direction < 0 && travelled < 0)
+
+            if (!fired && goingTheRightWay && abs(travelled) >= threshold) {
+                fired = true
+                onExpand()
+            }
+        }
+    }
+
+/**
  * The compact popup shown when a volume key is pressed: media volume only,
- * in whichever shape the user picked, with a ringer-mode switch and a
- * button that expands into the full per-app mixer.
+ * in whichever shape the user picked, with a ringer-mode switch. Swiping it
+ * inward opens the full per-app mixer.
  */
 @Composable
 fun CollapsedVolumePopup(
@@ -96,9 +145,40 @@ fun CollapsedVolumePopup(
         onInteract()
     }
 
-    // Same readout the full mixer shows, so the two stay consistent.
+    // Same readout the full mixer shows, so the two stay consistent. The
+    // stream's name is deliberately left out -- the compact popup only ever
+    // shows media volume, so naming it is noise.
     val valueText = "$volume/${maxVolume.toInt()}"
     val scale = preferences.popupScale
+    val buttonSize = (BUTTON_SIZE_DP * scale).dp
+    val half = preferences.popupAnchor.discHalf()
+    val isHalfDisc = preferences.popupStyle == PopupStyle.Disc && half != DiscHalf.None
+    val cornerRadius = preferences.popupCornerRadius.dp
+
+    // A half disc has to sit flush against the screen edge, so the panel
+    // drops its padding and its rounding on that side.
+    val panelShape = when {
+        !isHalfDisc -> RoundedCornerShape(cornerRadius)
+        half == DiscHalf.Left -> RoundedCornerShape(
+            topStart = cornerRadius,
+            bottomStart = cornerRadius,
+            topEnd = 0.dp,
+            bottomEnd = 0.dp
+        )
+
+        else -> RoundedCornerShape(
+            topStart = 0.dp,
+            bottomStart = 0.dp,
+            topEnd = cornerRadius,
+            bottomEnd = cornerRadius
+        )
+    }
+    val panelPadding = PaddingValues(
+        start = if (isHalfDisc && half == DiscHalf.Right) 0.dp else 10.dp,
+        end = if (isHalfDisc && half == DiscHalf.Left) 0.dp else 10.dp,
+        top = 10.dp,
+        bottom = 10.dp
+    )
 
     // One background object: in translucent mode the panel is the system
     // blur applied to the overlay window itself, so the composable adds no
@@ -113,42 +193,80 @@ fun CollapsedVolumePopup(
     Surface(
         color = panelColor,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+        shape = panelShape,
+        modifier = Modifier.expandOnSwipe(preferences.popupAnchor.expandDirection(), onExpand)
     ) {
         when (preferences.popupStyle) {
             PopupStyle.HorizontalBar -> Row(
-                modifier = Modifier.padding(12.dp, 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(panelPadding),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (preferences.popupShowRingerButton) {
-                    RingerModeButton(audioManager = audioManager, onChange = onInteract)
+                    RingerModeButton(
+                        audioManager = audioManager,
+                        size = buttonSize,
+                        onChange = onInteract
+                    )
                 }
 
-                StreamVolumeSlider(
-                    modifier = Modifier.width((200 * scale).dp),
-                    streamType = AudioManager.STREAM_MUSIC,
-                    icon = Icons.Default.VolumeUp,
-                    name = stringResource(R.string.stream_media),
-                    audioManager = audioManager,
-                    onChange = onInteract
-                )
+                TrackSlider(
+                    modifier = Modifier
+                        .width((200 * scale).dp)
+                        .height(buttonSize),
+                    value = volume.toFloat(),
+                    valueRange = 0f..maxVolume,
+                    onValueChange = { value -> setVolume(value.roundToInt()) }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = (14 * scale).dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (preferences.popupShowIcon) {
+                            Icon(
+                                imageVector = Icons.Default.VolumeUp,
+                                contentDescription = stringResource(R.string.stream_media),
+                                modifier = Modifier.size((22 * scale).dp)
+                            )
+                        } else {
+                            Spacer(Modifier.size(0.dp))
+                        }
 
-                ExpandButton(onExpand)
+                        if (preferences.popupShowValue) {
+                            Text(
+                                text = valueText,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontSize = (13 * scale).sp,
+                                maxLines = 1
+                            )
+                        } else {
+                            Spacer(Modifier.size(0.dp))
+                        }
+                    }
+                }
             }
 
             PopupStyle.VerticalBar -> Column(
-                modifier = Modifier.padding(10.dp, 10.dp),
+                modifier = Modifier.padding(panelPadding),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (preferences.popupShowRingerButton) {
-                    RingerModeButton(audioManager = audioManager, onChange = onInteract)
+                    RingerModeButton(
+                        audioManager = audioManager,
+                        size = buttonSize,
+                        onChange = onInteract
+                    )
                 }
 
                 VerticalTrackSlider(
+                    // Same width as the ringer button, so the two line up
+                    // whatever the scale.
                     modifier = Modifier
-                        .width((64 * scale).dp)
+                        .width(buttonSize)
                         .height((220 * scale).dp),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
@@ -157,7 +275,7 @@ fun CollapsedVolumePopup(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(vertical = (14 * scale).dp),
+                            .padding(vertical = (12 * scale).dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -165,6 +283,7 @@ fun CollapsedVolumePopup(
                             Text(
                                 text = valueText,
                                 style = MaterialTheme.typography.labelLarge,
+                                fontSize = (11 * scale).sp,
                                 maxLines = 1
                             )
                         } else {
@@ -175,51 +294,43 @@ fun CollapsedVolumePopup(
                             Icon(
                                 imageVector = Icons.Default.VolumeUp,
                                 contentDescription = stringResource(R.string.stream_media),
-                                modifier = Modifier.size((24 * scale).dp)
+                                modifier = Modifier.size((20 * scale).dp)
                             )
                         } else {
                             Spacer(Modifier.size(0.dp))
                         }
                     }
                 }
-
-                ExpandButton(onExpand)
             }
 
-            PopupStyle.Disc -> Column(
-                modifier = Modifier.padding(10.dp, 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            PopupStyle.Disc -> Box(
+                modifier = Modifier.padding(panelPadding),
+                contentAlignment = Alignment.Center
             ) {
-                if (preferences.popupShowRingerButton) {
-                    RingerModeButton(audioManager = audioManager, onChange = onInteract)
-                }
-
                 VolumeDisc(
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
                     diameter = (220 * scale).dp,
-                    half = preferences.popupAnchor.discHalf(),
+                    half = half,
                     showDots = preferences.discShowDots,
                     icon = if (preferences.popupShowIcon) Icons.Default.VolumeUp else null,
                     label = if (preferences.popupShowValue) valueText else null,
+                    // The disc's hollow middle is where the ringer switch
+                    // belongs, rather than stacked above the whole thing.
+                    centerContent = if (preferences.popupShowRingerButton) {
+                        {
+                            RingerModeButton(
+                                audioManager = audioManager,
+                                size = buttonSize * 0.8f,
+                                onChange = onInteract
+                            )
+                        }
+                    } else {
+                        null
+                    },
                     onValueChange = { value -> setVolume(value.roundToInt()) }
                 )
-
-                ExpandButton(onExpand)
             }
-        }
-    }
-}
-
-@Composable
-private fun ExpandButton(onExpand: () -> Unit) {
-    Box {
-        IconButton(onClick = onExpand) {
-            Icon(
-                Icons.Default.UnfoldMore,
-                contentDescription = stringResource(R.string.show_full_mixer)
-            )
         }
     }
 }

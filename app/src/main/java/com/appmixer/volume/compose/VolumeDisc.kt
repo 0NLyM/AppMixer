@@ -59,7 +59,9 @@ fun VolumeDisc(
     contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     showDots: Boolean = true,
     icon: ImageVector? = null,
-    label: String? = null
+    label: String? = null,
+    /** Fills the hole in the middle; takes the place of [icon] when set. */
+    centerContent: (@Composable () -> Unit)? = null
 ) {
     val range = valueRange.endInclusive - valueRange.start
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -186,7 +188,9 @@ fun VolumeDisc(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            if (icon != null) {
+            if (centerContent != null) {
+                centerContent()
+            } else if (icon != null) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,

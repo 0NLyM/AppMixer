@@ -263,7 +263,13 @@ class Service : AccessibilityService() {
             WindowManager.LayoutParams.WRAP_CONTENT, // Width
             WindowManager.LayoutParams.WRAP_CONTENT, // Height
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            // FLAG_NOT_FOCUSABLE keeps the on-screen keyboard up: a
+            // focusable overlay takes focus from whatever is typing, which
+            // dismisses the IME and brings it back when the popup goes away.
+            // Touch still reaches the popup -- only key/focus events don't,
+            // and volume keys arrive through the accessibility service
+            // rather than this window.
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT // Make the background translucent
         ).apply {
             applyConfiguredPosition(this)

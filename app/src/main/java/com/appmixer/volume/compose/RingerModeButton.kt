@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -20,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
 
@@ -34,6 +36,7 @@ private const val TAG = "AppMixer.RingerMode"
 fun RingerModeButton(
     audioManager: AudioManager,
     modifier: Modifier = Modifier,
+    size: Dp = 48.dp,
     onChange: (() -> Unit)? = null
 ) {
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
@@ -79,6 +82,7 @@ fun RingerModeButton(
             onChange?.invoke()
         },
         modifier = modifier
+            .size(size)
             .background(
                 color = if (isMuted) {
                     MaterialTheme.colorScheme.tertiary
@@ -92,6 +96,7 @@ fun RingerModeButton(
         Icon(
             imageVector = icon,
             contentDescription = stringResource(descriptionRes),
+            modifier = Modifier.size(size * 0.5f),
             tint = if (isMuted) {
                 MaterialTheme.colorScheme.onTertiary
             } else {

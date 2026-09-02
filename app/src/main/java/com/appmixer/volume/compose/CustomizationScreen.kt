@@ -485,6 +485,14 @@ fun CustomizationScreen(
                 onSelect = { style -> onUpdate { it.copy(popupStyle = style) } }
             )
 
+            // The expand button is gone, so the gesture that replaced it
+            // needs saying out loud somewhere.
+            Text(
+                text = stringResource(R.string.expand_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             SectionHeader(stringResource(R.string.popup_position))
 
             AnchorGrid(
