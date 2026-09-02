@@ -27,4 +27,45 @@
     <string name="enable_do_not_disturb">开启勿扰模式</string>
     <string name="disable_do_not_disturb">关闭勿扰模式</string>
     <string name="show_full_mixer">显示完整混音器</string>
+
+    <string name="customization">个性化</string>
+    <string name="apply">应用</string>
+    <string name="cancel">取消</string>
+    <string name="reset">重置</string>
+    <string name="color_default">默认（#%s）</string>
+
+    <string name="theme">主题</string>
+    <string name="theme_mode">主题模式</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_dark">深色</string>
+    <string name="theme_light">浅色</string>
+
+    <string name="colors">颜色</string>
+    <string name="color_accent">强调色</string>
+    <string name="color_background">背景</string>
+    <string name="color_foreground">文字与填充</string>
+    <string name="color_surface">容器</string>
+    <string name="color_outline">描边</string>
+    <string name="reset_colors">重置所有颜色</string>
+
+    <string name="popup">音量弹窗</string>
+    <string name="popup_style">样式</string>
+    <string name="style_vertical">竖向滑块</string>
+    <string name="style_horizontal">横向滑块</string>
+    <string name="style_disc">旋转圆盘</string>
+
+    <string name="popup_position">位置</string>
+    <string name="offset_horizontal">水平偏移</string>
+    <string name="offset_vertical">垂直偏移</string>
+
+    <string name="popup_appearance">外观</string>
+    <string name="popup_size">大小</string>
+    <string name="popup_corner">圆角半径</string>
+    <string name="popup_opacity">背景不透明度</string>
+    <string name="show_value">显示音量值</string>
+    <string name="show_icon">显示图标</string>
+    <string name="disc_dots">显示圆点环</string>
+    <string name="disc_sensitivity">旋转灵敏度</string>
+    <string name="show_preview">显示实时预览</string>
+    <string name="reset_popup">重置弹窗设置</string>
 </resources>

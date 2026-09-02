@@ -14,6 +14,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.appmixer.volume.data.App
 import com.appmixer.volume.data.AppPreferencesStore
+import com.appmixer.volume.data.UiPreferences
+import com.appmixer.volume.data.UiPreferencesStore
 import com.appmixer.volume.system.AudioPlaybackConfigurationProxy
 import com.appmixer.volume.system.NotificationManagerProxy
 import com.appmixer.volume.system.PackageManagerProxy
@@ -48,6 +50,26 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     val notificationManagerProxy = NotificationManagerProxy(context)
 
     private val appPreferencesStore = AppPreferencesStore(dataStore)
+
+    private val uiPreferencesStore = UiPreferencesStore(dataStore)
+
+    /**
+     * Look & feel settings, shared by the activity and the overlay service
+     * (same process, so both recompose from this one state object).
+     */
+    var uiPreferences by mutableStateOf(UiPreferences())
+        private set
+
+    fun updateUiPreferences(transform: (UiPreferences) -> UiPreferences) {
+        val updated = transform(uiPreferences)
+        if (updated == uiPreferences) {
+            return
+        }
+
+        uiPreferences = updated
+        uiPreferencesStore.save(updated)
+    }
+
     private val _systemSliderVisibility = mutableStateMapOf<String, Boolean>()
     val systemSliderVisibility: Map<String, Boolean>
         get() = _systemSliderVisibility
@@ -131,6 +153,12 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     }
 
     init {
+        // Tracked outside `start()` on purpose: the customization screen has to
+        // work before (and without) Shizuku ever connecting.
+        uiPreferencesStore.track { value ->
+            uiPreferences = value
+        }
+
         val isShizukuInstalled = try {
             context.packageManager.getPackageInfo(SHIZUKU_PACKAGE_NAME, 0)
             true

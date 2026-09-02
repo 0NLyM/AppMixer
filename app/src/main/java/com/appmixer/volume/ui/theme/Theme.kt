@@ -2,15 +2,17 @@ package com.appmixer.volume.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
+import com.appmixer.volume.data.ThemeMode
+import com.appmixer.volume.data.UiPreferences
 
 // Nothing OS style: the UI itself is black and white -- buttons, slider
 // fills, containers all read from `primary`/`secondary`, which are mapped to
@@ -84,31 +86,96 @@ val AppMixerShapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp)
 )
 
+/** Black or white, whichever stays readable on top of [background]. */
+fun contentColorOn(background: Color): Color =
+    if (background.luminance() > 0.4f) Color.Black else Color.White
+
+/** The palette a given theme mode starts from, before user overrides. */
+fun baseColorScheme(darkTheme: Boolean): ColorScheme =
+    if (darkTheme) NothingDarkColorScheme else NothingLightColorScheme
+
 /**
- * AppMixer's theme. Defaults to the Nothing OS inspired black/white/red
- * scheme rather than Material You dynamic colors, so the app keeps a
- * consistent identity across devices; callers can still opt into
- * [dynamicColor] for users who want the app to follow their wallpaper
- * instead.
+ * Applies the user's color choices on top of [base]. Each override is
+ * `null` until the user picks something, so an untouched setting keeps the
+ * stock Nothing OS role exactly as designed.
+ */
+fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
+    var scheme = this
+
+    preferences.backgroundColor?.let { argb ->
+        val color = Color(argb)
+        val on = contentColorOn(color)
+        scheme = scheme.copy(
+            background = color,
+            onBackground = on,
+            surface = color,
+            onSurface = on,
+            surfaceContainerLow = color
+        )
+    }
+
+    preferences.foregroundColor?.let { argb ->
+        val color = Color(argb)
+        // `primary` is what fills sliders and filled buttons, so the
+        // foreground choice drives both text and those fills.
+        scheme = scheme.copy(
+            primary = color,
+            onPrimary = contentColorOn(color),
+            onBackground = color,
+            onSurface = color,
+            onPrimaryContainer = color,
+            onSecondaryContainer = color
+        )
+    }
+
+    preferences.surfaceColor?.let { argb ->
+        val color = Color(argb)
+        scheme = scheme.copy(
+            primaryContainer = color,
+            secondaryContainer = color,
+            surfaceVariant = color,
+            surfaceContainer = color,
+            surfaceContainerHigh = color,
+            surfaceContainerHighest = color
+        )
+    }
+
+    preferences.accentColor?.let { argb ->
+        val color = Color(argb)
+        scheme = scheme.copy(
+            tertiary = color,
+            onTertiary = contentColorOn(color),
+            tertiaryContainer = color
+        )
+    }
+
+    preferences.outlineColor?.let { argb ->
+        val color = Color(argb)
+        scheme = scheme.copy(outline = color, outlineVariant = color)
+    }
+
+    return scheme
+}
+
+/**
+ * AppMixer's theme: the Nothing OS inspired black/white/red scheme, with
+ * whatever the user overrode in the customization screen layered on top.
+ * Material You dynamic color is deliberately not used -- the point is a
+ * consistent identity the user themselves controls.
  */
 @Composable
 fun AppMixerTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
+    preferences: UiPreferences = UiPreferences(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> NothingDarkColorScheme
-        else -> NothingLightColorScheme
+    val darkTheme = when (preferences.themeMode) {
+        ThemeMode.Dark -> true
+        ThemeMode.Light -> false
+        ThemeMode.System -> isSystemInDarkTheme()
     }
 
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = baseColorScheme(darkTheme).withOverrides(preferences),
         typography = Typography,
         shapes = AppMixerShapes,
         content = content

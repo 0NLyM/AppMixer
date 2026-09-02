@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -63,6 +64,7 @@ import androidx.core.net.toUri
 import com.appmixer.volume.compose.AboutDialog
 import com.appmixer.volume.compose.AppVolumeList
 import com.appmixer.volume.compose.CrashReportDialog
+import com.appmixer.volume.compose.CustomizationScreen
 import com.appmixer.volume.compose.NothingDot
 import com.appmixer.volume.compose.SystemVolumePanel
 import com.appmixer.volume.compose.ToggleButton
@@ -157,6 +159,8 @@ class MainActivity : ComponentActivity() {
             var showAll by remember { mutableStateOf(false) }
             var crashReport by remember { mutableStateOf<String?>(null) }
             var showAboutDialog by remember { mutableStateOf(false) }
+            var showCustomization by remember { mutableStateOf(false) }
+            val uiPreferences = manager.uiPreferences
 
             LaunchedEffect(showCrashReport) {
                 if (showCrashReport) {
@@ -173,7 +177,7 @@ class MainActivity : ComponentActivity() {
                             usePlatformDefaultWidth = false
                         )
                     ) {
-                        AppMixerTheme {
+                        AppMixerTheme(preferences = uiPreferences) {
                             CrashReportDialog(
                                 crashReport = report, onDismiss = {
                                     CrashHandler.clearCrashReport()
@@ -189,13 +193,33 @@ class MainActivity : ComponentActivity() {
                     onDismissRequest = { showAboutDialog = false },
                     properties = DialogProperties(usePlatformDefaultWidth = false)
                 ) {
-                    AppMixerTheme {
+                    AppMixerTheme(preferences = uiPreferences) {
                         AboutDialog(onDismiss = { showAboutDialog = false })
                     }
                 }
             }
 
-            AppMixerTheme {
+            if (showCustomization) {
+                Dialog(
+                    onDismissRequest = { showCustomization = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    AppMixerTheme(preferences = uiPreferences) {
+                        CustomizationScreen(
+                            preferences = uiPreferences,
+                            onUpdate = manager::updateUiPreferences,
+                            onPreviewPopup = {
+                                sendBroadcast(
+                                    Intent(Service.ACTION_SHOW_VIEW).setPackage(packageName)
+                                )
+                            },
+                            onClose = { showCustomization = false }
+                        )
+                    }
+                }
+            }
+
+            AppMixerTheme(preferences = uiPreferences) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(), topBar = {
                         TopAppBar(
@@ -226,6 +250,23 @@ class MainActivity : ComponentActivity() {
                                     uncheckedDescription = "Settings"
                                 ) {
                                     showAll = it
+                                }
+                            }
+
+                            TooltipBox(
+                                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                    TooltipAnchorPosition.Below, 12.dp
+                                ),
+                                tooltip = {
+                                    PlainTooltip { Text(stringResource(R.string.customization)) }
+                                },
+                                state = rememberTooltipState()
+                            ) {
+                                IconButton(onClick = { showCustomization = true }) {
+                                    Icon(
+                                        Icons.Default.Palette,
+                                        contentDescription = stringResource(R.string.customization)
+                                    )
                                 }
                             }
 

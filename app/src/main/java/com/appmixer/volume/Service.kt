@@ -24,17 +24,9 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.UnfoldMore
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -42,11 +34,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.AbstractComposeView
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
@@ -56,10 +45,11 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.appmixer.volume.compose.AppVolumeList
-import com.appmixer.volume.compose.StreamVolumeSlider
+import com.appmixer.volume.compose.CollapsedVolumePopup
 import com.appmixer.volume.compose.SystemVolumePanel
 import com.appmixer.volume.compose.VolumeChangeObserver
 import com.appmixer.volume.system.ActivityTaskManagerProxy
+import com.appmixer.volume.data.PopupAnchor
 import com.appmixer.volume.ui.theme.AppMixerTheme
 import org.joor.Reflect
 import java.util.Objects
@@ -197,19 +187,23 @@ class Service : AccessibilityService() {
 
             @Composable
             override fun Content() {
-                return AppMixerTheme {
+                val preferences = manager.uiPreferences
+
+                return AppMixerTheme(preferences = preferences) {
                     // Starts collapsed every time a fresh overlay window is
                     // created (i.e. each time the popup reappears after
                     // being fully hidden) -- only expands for the duration
                     // this particular window stays up.
                     var expanded by remember { mutableStateOf(false) }
 
-                    Surface(
-                        color = Color(1f, 1f, 1f, 0.3f),
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        shape = RoundedCornerShape(40f)
-                    ) {
-                        if (expanded) {
+                    if (expanded) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.background.copy(
+                                alpha = preferences.popupBackgroundOpacity
+                            ),
+                            contentColor = MaterialTheme.colorScheme.onBackground,
+                            shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+                        ) {
                             Column(
                                 modifier = Modifier.padding(20.dp, 16.dp)
                             ) {
@@ -232,31 +226,17 @@ class Service : AccessibilityService() {
                                     }
                                 }
                             }
-                        } else {
-                            Row(
-                                modifier = Modifier.padding(12.dp, 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                StreamVolumeSlider(
-                                    modifier = Modifier.width(200.dp),
-                                    streamType = AudioManager.STREAM_MUSIC,
-                                    icon = Icons.Default.VolumeUp,
-                                    name = stringResource(R.string.stream_media),
-                                    audioManager = manager.audioManager,
-                                    onChange = this@Service.handler::startIdleTimer
-                                )
-
-                                IconButton(onClick = {
-                                    expanded = true
-                                    this@Service.handler.startIdleTimer()
-                                }) {
-                                    Icon(
-                                        Icons.Default.UnfoldMore,
-                                        contentDescription = stringResource(R.string.show_full_mixer)
-                                    )
-                                }
-                            }
                         }
+                    } else {
+                        CollapsedVolumePopup(
+                            audioManager = manager.audioManager,
+                            preferences = preferences,
+                            onExpand = {
+                                expanded = true
+                                this@Service.handler.startIdleTimer()
+                            },
+                            onInteract = this@Service.handler::startIdleTimer
+                        )
                     }
                 }
             }
@@ -264,13 +244,6 @@ class Service : AccessibilityService() {
     }
 
     private val layoutParams by lazy {
-        // Anchored to the edge, vertically centered -- like the stock volume
-        // popup -- rather than dead center, since the collapsed view (the
-        // common case) is meant to sit unobtrusively off to the side.
-        // Gravity.END follows layout direction, so this mirrors correctly
-        // in RTL locales.
-        val edgeMarginPx = (16 * resources.displayMetrics.density).toInt()
-
         WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, // Width
             WindowManager.LayoutParams.WRAP_CONTENT, // Height
@@ -278,9 +251,32 @@ class Service : AccessibilityService() {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT // Make the background translucent
         ).apply {
-            gravity = Gravity.CENTER_VERTICAL or Gravity.END
-            x = edgeMarginPx
+            applyConfiguredPosition(this)
         }
+    }
+
+    /**
+     * Places the overlay per the user's anchor and offsets. The START/END
+     * gravities follow layout direction, so a right-anchored popup mirrors
+     * correctly in RTL locales.
+     */
+    private fun applyConfiguredPosition(params: WindowManager.LayoutParams) {
+        val preferences = manager.uiPreferences
+        val density = resources.displayMetrics.density
+
+        params.gravity = when (preferences.popupAnchor) {
+            PopupAnchor.TopStart -> Gravity.TOP or Gravity.START
+            PopupAnchor.TopCenter -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            PopupAnchor.TopEnd -> Gravity.TOP or Gravity.END
+            PopupAnchor.CenterStart -> Gravity.CENTER_VERTICAL or Gravity.START
+            PopupAnchor.Center -> Gravity.CENTER
+            PopupAnchor.CenterEnd -> Gravity.CENTER_VERTICAL or Gravity.END
+            PopupAnchor.BottomStart -> Gravity.BOTTOM or Gravity.START
+            PopupAnchor.BottomCenter -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            PopupAnchor.BottomEnd -> Gravity.BOTTOM or Gravity.END
+        }
+        params.x = (preferences.popupOffsetX * density).toInt()
+        params.y = (preferences.popupOffsetY * density).toInt()
     }
 
     private var view: View? = null
@@ -292,6 +288,9 @@ class Service : AccessibilityService() {
             // The view doesn't respond to input events if reused
             view = createView()
             layoutParams.alpha = 0f
+            // Position settings may have changed since the last time the
+            // popup was shown.
+            applyConfiguredPosition(layoutParams)
             windowManager.addView(view, layoutParams)
         }
 

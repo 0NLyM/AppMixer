@@ -26,4 +26,45 @@
     <string name="enable_do_not_disturb">Enable Do Not Disturb</string>
     <string name="disable_do_not_disturb">Disable Do Not Disturb</string>
     <string name="show_full_mixer">Show full mixer</string>
+
+    <string name="customization">Customization</string>
+    <string name="apply">Apply</string>
+    <string name="cancel">Cancel</string>
+    <string name="reset">Reset</string>
+    <string name="color_default">Default (#%s)</string>
+
+    <string name="theme">Theme</string>
+    <string name="theme_mode">Theme mode</string>
+    <string name="theme_system">System</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+
+    <string name="colors">Colors</string>
+    <string name="color_accent">Accent</string>
+    <string name="color_background">Background</string>
+    <string name="color_foreground">Text and fills</string>
+    <string name="color_surface">Containers</string>
+    <string name="color_outline">Outlines</string>
+    <string name="reset_colors">Reset all colors</string>
+
+    <string name="popup">Volume popup</string>
+    <string name="popup_style">Style</string>
+    <string name="style_vertical">Vertical bar</string>
+    <string name="style_horizontal">Horizontal bar</string>
+    <string name="style_disc">Rotating disc</string>
+
+    <string name="popup_position">Position</string>
+    <string name="offset_horizontal">Horizontal offset</string>
+    <string name="offset_vertical">Vertical offset</string>
+
+    <string name="popup_appearance">Appearance</string>
+    <string name="popup_size">Size</string>
+    <string name="popup_corner">Corner radius</string>
+    <string name="popup_opacity">Background opacity</string>
+    <string name="show_value">Show level</string>
+    <string name="show_icon">Show icon</string>
+    <string name="disc_dots">Show dot ring</string>
+    <string name="disc_sensitivity">Rotation sensitivity</string>
+    <string name="show_preview">Show live preview</string>
+    <string name="reset_popup">Reset popup settings</string>
 </resources>
