@@ -191,5 +191,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   when the blur genuinely isn't up (a device that can't blur), which they
   now read from the view rather than inferring from the preference.
 
+## 2026-09-02 — Motion pass
+
+- Added `ui/theme/Motion.kt`, a shared motion vocabulary (springs, easings,
+  durations) so every animated element moves with the same hand.
+- Slider fills animate to a new level on all three styles, snapping to the
+  finger while a drag is in progress. The fill and its content copy are
+  painted in the draw phase rather than clipped by a recomposed shape, so a
+  moving bar costs a redraw instead of a recomposition.
+- The accent marker stretches by how far the fill still has to travel; the
+  disc's dot ring lights as a head with a trailing tail.
+- `RingerModeButton` reacts per mode (bell swing, vibrate buzz, silent dip),
+  crossfades its icon and animates its colors; `ToggleButton` does the same
+  for its colors and glyph.
+- The overlay grows out of the screen edge it is anchored to and morphs
+  between the compact popup and the full mixer instead of swapping.
+- Material color roles crossfade through `ColorScheme.animated()`, the
+  customization preview slides between anchors on an animated bias, and
+  mixer list items animate as apps move between groups.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
