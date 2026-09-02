@@ -161,5 +161,20 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   on an up or down swipe, while the vertical bar and the disc still use an
   inward one. The hint string describes both.
 
+## 2026-09-02 — Expanded panel background, compact readout, ringer button
+
+- The expanded mixer went fully transparent in disc style with a translucent
+  background: it painted no fill, expecting the window blur that the disc
+  deliberately turns off. `usesWindowBlur()` and `paintedPanelAlpha()` now
+  decide that in one place for both the collapsed popup and the expanded
+  mixer, so translucent falls back to a lighter tint wherever the blur isn't
+  available.
+- The collapsed popup shows just the current level; the maximum stays in the
+  full mixer.
+- `RingerModeButton` and `ToggleButton` follow the corner radius setting
+  (capped at half the button, so the default still reads as a circle) and
+  the slider palette: the container color when idle, the fill color when
+  active, in place of the red accent.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

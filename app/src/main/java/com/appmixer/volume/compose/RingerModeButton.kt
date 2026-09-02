@@ -8,7 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -28,13 +28,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
+import com.appmixer.volume.ui.theme.LocalSliderCornerRadius
 
 private const val TAG = "AppMixer.RingerMode"
 
 /**
- * Cycles ring -> vibrate -> silent -> ring, in the same glyph-button
- * language as [ToggleButton]: outlined when the phone rings normally,
- * filled with the accent color once it's been silenced or set to vibrate.
+ * Cycles ring -> vibrate -> silent -> ring, colored like the sliders it sits
+ * next to: the container color while the phone rings normally, the fill
+ * color once it's been silenced or set to vibrate. Its corners follow the
+ * same radius setting, capped at half its size so the pill stays a circle.
  */
 @Composable
 fun RingerModeButton(
@@ -61,6 +63,10 @@ fun RingerModeButton(
     }
     val isMuted = ringerMode != AudioManager.RINGER_MODE_NORMAL
 
+    // Beyond half the button's size a rounded rectangle is just a circle, so
+    // the radius saturates there instead of drawing artifacts.
+    val shape = RoundedCornerShape(LocalSliderCornerRadius.current.coerceAtMost(size / 2))
+
     // Deliberately not an IconButton: that applies its own 40dp size and a
     // 48dp minimum touch target *after* the caller's modifier, so asking for
     // a smaller button left the disc full size with only the icon shrinking,
@@ -68,15 +74,15 @@ fun RingerModeButton(
     Box(
         modifier = modifier
             .size(size)
-            .clip(CircleShape)
+            .clip(shape)
             .background(
                 color = if (isMuted) {
-                    MaterialTheme.colorScheme.tertiary
+                    MaterialTheme.colorScheme.primary
                 } else {
-                    MaterialTheme.colorScheme.background
+                    MaterialTheme.colorScheme.primaryContainer
                 }
             )
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape)
             .clickable(role = Role.Button) {
                 val next = when (ringerMode) {
                     AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
@@ -107,9 +113,9 @@ fun RingerModeButton(
             contentDescription = stringResource(descriptionRes),
             modifier = Modifier.size(size * 0.5f),
             tint = if (isMuted) {
-                MaterialTheme.colorScheme.onTertiary
+                MaterialTheme.colorScheme.onPrimary
             } else {
-                MaterialTheme.colorScheme.onBackground
+                MaterialTheme.colorScheme.onPrimaryContainer
             }
         )
     }

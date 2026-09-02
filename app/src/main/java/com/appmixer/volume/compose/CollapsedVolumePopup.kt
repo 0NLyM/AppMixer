@@ -41,9 +41,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.appmixer.volume.R
 import com.appmixer.volume.data.PopupAnchor
-import com.appmixer.volume.data.PopupBackground
 import com.appmixer.volume.data.PopupStyle
 import com.appmixer.volume.data.UiPreferences
+import com.appmixer.volume.data.paintedPanelAlpha
+import com.appmixer.volume.data.usesWindowBlur
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -166,10 +167,9 @@ fun CollapsedVolumePopup(
         onInteract()
     }
 
-    // Same readout the full mixer shows, so the two stay consistent. The
-    // stream's name is deliberately left out -- the compact popup only ever
-    // shows media volume, so naming it is noise.
-    val valueText = "$volume/${maxVolume.toInt()}"
+    // Just the current level: the compact popup is a glance, so the maximum
+    // (and the stream's name) are left to the full mixer.
+    val valueText = volume.toString()
     val scale = preferences.popupScale
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val half = preferences.popupAnchor.discHalf()
@@ -182,16 +182,14 @@ fun CollapsedVolumePopup(
     val panelShape = if (isDisc) RectangleShape else RoundedCornerShape(cornerRadius)
     val panelPadding = if (isDisc) PaddingValues(0.dp) else PaddingValues(10.dp)
 
-    val translucent = preferences.popupBackground == PopupBackground.Translucent
-
     // One background object. For the bars: the system blur in translucent
     // mode (so the composable adds no fill), or this panel in solid mode.
     // For the disc it's always the radial backdrop below.
     val panelColor = when {
         isDisc -> Color.Transparent
-        translucent -> Color.Transparent
+        preferences.usesWindowBlur() -> Color.Transparent
         else -> MaterialTheme.colorScheme.background.copy(
-            alpha = preferences.popupBackgroundOpacity
+            alpha = preferences.paintedPanelAlpha()
         )
     }
 
@@ -201,7 +199,7 @@ fun CollapsedVolumePopup(
     // neither follow the circle nor fade -- so translucent here means a
     // lighter tint instead of a frosted one.
     val discBackdrop = MaterialTheme.colorScheme.background.copy(
-        alpha = preferences.popupBackgroundOpacity * if (translucent) 0.45f else 1f
+        alpha = preferences.paintedPanelAlpha()
     )
 
     Surface(

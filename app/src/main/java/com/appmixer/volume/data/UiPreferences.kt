@@ -52,7 +52,11 @@ data class UiPreferences(
     /** Applies to the popup panel and, for coherence, to every slider. */
     val popupCornerRadius: Int = 28,
     val popupBackground: PopupBackground = PopupBackground.Translucent,
-    /** Panel opacity, 0f - 1f. Only meaningful for [PopupBackground.Solid]. */
+    /**
+     * Panel opacity, 0f - 1f. Drives the solid panel directly, and the disc's
+     * radial backdrop in either mode; translucent bars are the system blur,
+     * which has no opacity of its own.
+     */
     val popupBackgroundOpacity: Float = 0.85f,
     val popupShowValue: Boolean = true,
     val popupShowIcon: Boolean = true,
@@ -61,3 +65,21 @@ data class UiPreferences(
     /** Draw the ring of Nothing-style dots around the disc. */
     val discShowDots: Boolean = true
 )
+
+/**
+ * True when the overlay window paints the system blur behind the popup, in
+ * which case the composable adds no fill of its own. The disc is excluded:
+ * the platform's background blur drawable is a rounded rectangle, so it can
+ * neither follow a circle nor dissolve at the rim.
+ */
+fun UiPreferences.usesWindowBlur(): Boolean =
+    popupBackground == PopupBackground.Translucent && popupStyle != PopupStyle.Disc
+
+/**
+ * Alpha of the panel the popup paints for itself. Translucent normally means
+ * the blur above; where that isn't available -- the disc, and the expanded
+ * mixer shown in its place -- the same fill is drawn at a lighter tint, so
+ * the choice still reads as see-through instead of disappearing entirely.
+ */
+fun UiPreferences.paintedPanelAlpha(): Float =
+    popupBackgroundOpacity * if (popupBackground == PopupBackground.Translucent) 0.45f else 1f

@@ -51,8 +51,8 @@ import com.appmixer.volume.compose.SystemVolumePanel
 import com.appmixer.volume.compose.VolumeChangeObserver
 import com.appmixer.volume.system.ActivityTaskManagerProxy
 import com.appmixer.volume.data.PopupAnchor
-import com.appmixer.volume.data.PopupBackground
-import com.appmixer.volume.data.PopupStyle
+import com.appmixer.volume.data.paintedPanelAlpha
+import com.appmixer.volume.data.usesWindowBlur
 import com.appmixer.volume.ui.theme.AppMixerTheme
 import org.joor.Reflect
 import java.util.Objects
@@ -173,9 +173,7 @@ class Service : AccessibilityService() {
                 // The disc is excluded: a blur drawable can only be a rounded
                 // rectangle, which would put the square panel back behind the
                 // round popup. The disc paints its own circular backdrop.
-                val translucent =
-                    manager.uiPreferences.popupBackground == PopupBackground.Translucent &&
-                        manager.uiPreferences.popupStyle != PopupStyle.Disc
+                val translucent = manager.uiPreferences.usesWindowBlur()
                 val cornerRadiusPx =
                     manager.uiPreferences.popupCornerRadius * resources.displayMetrics.density
 
@@ -215,10 +213,15 @@ class Service : AccessibilityService() {
 
                     if (expanded) {
                         Surface(
-                            color = when (preferences.popupBackground) {
-                                PopupBackground.Translucent -> Color.Transparent
-                                PopupBackground.Solid -> MaterialTheme.colorScheme.background.copy(
-                                    alpha = preferences.popupBackgroundOpacity
+                            // Transparent only where the window blur is the
+                            // panel. In disc style there is no blur, so the
+                            // expanded mixer has to paint its own fill --
+                            // otherwise picking translucent left it invisible.
+                            color = if (preferences.usesWindowBlur()) {
+                                Color.Transparent
+                            } else {
+                                MaterialTheme.colorScheme.background.copy(
+                                    alpha = preferences.paintedPanelAlpha()
                                 )
                             },
                             contentColor = MaterialTheme.colorScheme.onBackground,
