@@ -1,5 +1,8 @@
 package com.appmixer.volume.compose
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,7 +41,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -47,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
 import com.appmixer.volume.data.PopupAnchor
+import com.appmixer.volume.ui.theme.Motion
 import com.appmixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.appmixer.volume.data.PopupBackground
 import com.appmixer.volume.data.PopupStyle
@@ -196,17 +202,22 @@ private fun AnchorGrid(selected: PopupAnchor, onSelect: (PopupAnchor) -> Unit) {
  */
 @Composable
 private fun PopupPreview(preferences: UiPreferences) {
-    val alignment = when (preferences.popupAnchor) {
-        PopupAnchor.TopStart -> Alignment.TopStart
-        PopupAnchor.TopCenter -> Alignment.TopCenter
-        PopupAnchor.TopEnd -> Alignment.TopEnd
-        PopupAnchor.CenterStart -> Alignment.CenterStart
-        PopupAnchor.Center -> Alignment.Center
-        PopupAnchor.CenterEnd -> Alignment.CenterEnd
-        PopupAnchor.BottomStart -> Alignment.BottomStart
-        PopupAnchor.BottomCenter -> Alignment.BottomCenter
-        PopupAnchor.BottomEnd -> Alignment.BottomEnd
+    // Alignment is animated as a bias rather than picked from the nine
+    // constants, so tapping a different anchor slides the popup across the
+    // little screen the way it will move on the real one.
+    val targetBiasX = when (preferences.popupAnchor) {
+        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> -1f
+        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1f
+        else -> 0f
     }
+    val targetBiasY = when (preferences.popupAnchor) {
+        PopupAnchor.TopStart, PopupAnchor.TopCenter, PopupAnchor.TopEnd -> -1f
+        PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd -> 1f
+        else -> 0f
+    }
+    val biasX by animateFloatAsState(targetBiasX, Motion.VolumeLevel, label = "previewBiasX")
+    val biasY by animateFloatAsState(targetBiasY, Motion.VolumeLevel, label = "previewBiasY")
+    val alignment = BiasAlignment(biasX, biasY)
 
     // The preview is about a third of a phone's width, so shrink the
     // configured offsets and sizes by the same factor.
@@ -243,6 +254,14 @@ private fun PopupPreview(preferences: UiPreferences) {
             Box(
                 modifier = Modifier
                     .align(alignment)
+                    // Switching style changes the silhouette's size; let it
+                    // resize into the new shape rather than cutting to it.
+                    .animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = Motion.MorphMillis,
+                            easing = Motion.Emphasized
+                        )
+                    )
                     .padding(
                         start = if (horizontalSign > 0) (preferences.popupOffsetX * previewScale).dp else 0.dp,
                         end = if (horizontalSign < 0) (preferences.popupOffsetX * previewScale).dp else 0.dp,

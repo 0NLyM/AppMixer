@@ -24,6 +24,16 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +47,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -55,8 +67,28 @@ import com.appmixer.volume.data.PopupAnchor
 import com.appmixer.volume.data.paintedPanelAlpha
 import com.appmixer.volume.data.usesWindowBlur
 import com.appmixer.volume.ui.theme.AppMixerTheme
+import com.appmixer.volume.ui.theme.Motion
 import org.joor.Reflect
 import java.util.Objects
+
+/**
+ * The point an anchored popup should grow from: the edge it hugs, so it
+ * looks like it slid out of the side of the screen rather than being
+ * dropped on top of it.
+ */
+private fun PopupAnchor.transformOrigin(): TransformOrigin {
+    val x = when (this) {
+        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> 0f
+        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1f
+        else -> 0.5f
+    }
+    val y = when (this) {
+        PopupAnchor.TopStart, PopupAnchor.TopCenter, PopupAnchor.TopEnd -> 0f
+        PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd -> 1f
+        else -> 0.5f
+    }
+    return TransformOrigin(x, y)
+}
 
 @SuppressLint("AccessibilityPolicy")
 class Service : AccessibilityService() {
@@ -245,56 +277,107 @@ class Service : AccessibilityService() {
                         applyWindowBlur(preferences.usesWindowBlur(expanded = expanded))
                     }
 
-                    if (expanded) {
-                        Surface(
-                            // Transparent only where the blur really is the
-                            // panel; otherwise this fill is the whole
-                            // background, and leaving it out made the popup
-                            // invisible.
-                            color = if (blurred) {
-                                Color.Transparent
-                            } else {
-                                MaterialTheme.colorScheme.background.copy(
-                                    alpha = preferences.paintedPanelAlpha()
-                                )
-                            },
-                            contentColor = MaterialTheme.colorScheme.onBackground,
-                            shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(20.dp, 16.dp)
-                            ) {
-                                AppVolumeList(
-                                    apps = manager.apps.values,
-                                    showAll = false,
-                                    onChange = this@Service.handler::startIdleTimer
-                                ) {
-                                    item("system_volume_panel") {
-                                        SystemVolumePanel(
-                                            audioManager = manager.audioManager,
-                                            notificationManagerProxy = manager.notificationManagerProxy,
-                                            showCallVolumeAlways = false,
-                                            applyVisibilityFilter = true,
-                                            allowVisibilityConfig = false,
-                                            isSliderVisible = manager::isSystemSliderVisible,
-                                            onSliderVisibilityChange = manager::setSystemSliderVisible,
-                                            onChange = this@Service.handler::startIdleTimer
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        CollapsedVolumePopup(
-                            audioManager = manager.audioManager,
-                            preferences = preferences,
-                            blurred = blurred,
-                            onExpand = {
-                                expanded = true
-                                this@Service.handler.startIdleTimer()
-                            },
-                            onInteract = this@Service.handler::startIdleTimer
+                    // The popup grows out of the screen edge it hugs
+                    // rather than appearing at full size in the middle of
+                    // its own fade-in.
+                    val entrance = remember { Animatable(0f) }
+                    LaunchedEffect(Unit) {
+                        entrance.animateTo(
+                            targetValue = 1f,
+                            animationSpec = tween(
+                                durationMillis = Motion.MorphMillis,
+                                easing = Motion.Emphasized
+                            )
                         )
+                    }
+                    val origin = preferences.popupAnchor.transformOrigin()
+
+                    Box(
+                        modifier = Modifier.graphicsLayer {
+                            val grown = 0.86f + 0.14f * entrance.value
+                            scaleX = grown
+                            scaleY = grown
+                            transformOrigin = origin
+                        }
+                    ) {
+                        AnimatedContent(
+                            targetState = expanded,
+                            transitionSpec = {
+                                val arrive = tween<Float>(
+                                    durationMillis = Motion.MorphMillis,
+                                    easing = Motion.Emphasized
+                                )
+                                (fadeIn(arrive) + scaleIn(arrive, initialScale = 0.94f))
+                                    .togetherWith(
+                                        fadeOut(tween(140)) +
+                                            scaleOut(tween(180), targetScale = 0.94f)
+                                    )
+                                    // The panel morphs between the two
+                                    // sizes; the window is wrap-content, so
+                                    // it follows along.
+                                    .using(
+                                        SizeTransform(clip = false) { _, _ ->
+                                            tween(
+                                                durationMillis = Motion.MorphMillis,
+                                                easing = Motion.Emphasized
+                                            )
+                                        }
+                                    )
+                            },
+                            label = "popupMode"
+                        ) { isExpanded ->
+                                if (isExpanded) {
+                                    Surface(
+                                        // Transparent only where the blur really is the
+                                        // panel; otherwise this fill is the whole
+                                        // background, and leaving it out made the popup
+                                        // invisible.
+                                        color = if (blurred) {
+                                            Color.Transparent
+                                        } else {
+                                            MaterialTheme.colorScheme.background.copy(
+                                                alpha = preferences.paintedPanelAlpha()
+                                            )
+                                        },
+                                        contentColor = MaterialTheme.colorScheme.onBackground,
+                                        shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(20.dp, 16.dp)
+                                        ) {
+                                            AppVolumeList(
+                                                apps = manager.apps.values,
+                                                showAll = false,
+                                                onChange = this@Service.handler::startIdleTimer
+                                            ) {
+                                                item("system_volume_panel") {
+                                                    SystemVolumePanel(
+                                                        audioManager = manager.audioManager,
+                                                        notificationManagerProxy = manager.notificationManagerProxy,
+                                                        showCallVolumeAlways = false,
+                                                        applyVisibilityFilter = true,
+                                                        allowVisibilityConfig = false,
+                                                        isSliderVisible = manager::isSystemSliderVisible,
+                                                        onSliderVisibilityChange = manager::setSystemSliderVisible,
+                                                        onChange = this@Service.handler::startIdleTimer
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    CollapsedVolumePopup(
+                                        audioManager = manager.audioManager,
+                                        preferences = preferences,
+                                        blurred = blurred,
+                                        onExpand = {
+                                            expanded = true
+                                            this@Service.handler.startIdleTimer()
+                                        },
+                                        onInteract = this@Service.handler::startIdleTimer
+                                    )
+                                }
+                        }
                     }
                 }
             }

@@ -81,7 +81,9 @@ fun LazyListScope.group(
 
         items(
             items = apps.sortedWith(App.comparator), key = { app -> app.packageName }) { app ->
-            AppVolumeSlider(app, true, enableHide, onChange)
+            // Apps move between groups as they start and stop playing;
+            // animateItem slides them there instead of teleporting.
+            AppVolumeSlider(app, true, enableHide, onChange, Modifier.animateItem())
         }
     }
 }
@@ -161,7 +163,12 @@ fun AppVolumeList(
         if (!showAll) {
             if (activePlayers.isNotEmpty()) {
                 items(items = activePlayers, key = { app -> app.packageName }) { app ->
-                    AppVolumeSlider(app, showOptions = false, onChange = onChange)
+                    AppVolumeSlider(
+                        app,
+                        showOptions = false,
+                        onChange = onChange,
+                        modifier = Modifier.animateItem()
+                    )
                 }
             } else if (showEmpty) {
                 item {

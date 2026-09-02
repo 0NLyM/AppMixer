@@ -30,9 +30,14 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppVolumeSlider(
-    app: App, showOptions: Boolean, enableHide: Boolean = true, onChange: (() -> Unit)? = null
+    app: App,
+    showOptions: Boolean,
+    enableHide: Boolean = true,
+    onChange: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
     Row(
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

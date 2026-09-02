@@ -10,9 +10,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -24,6 +29,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.appmixer.volume.ui.theme.Motion
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -74,9 +81,22 @@ fun VolumeDisc(
 ) {
     val range = valueRange.endInclusive - valueRange.start
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
-    val fraction = if (range <= 0f) 0f else (coercedValue - valueRange.start) / range
+    val targetFraction = if (range <= 0f) 0f else (coercedValue - valueRange.start) / range
 
     val latestValue by rememberUpdatedState(coercedValue)
+
+    // The arc sweeps to a new level instead of snapping, but follows a
+    // finger exactly while one is down.
+    var dragging by remember { mutableStateOf(false) }
+    val fill = remember { Animatable(targetFraction) }
+
+    LaunchedEffect(targetFraction, dragging) {
+        if (dragging) {
+            fill.snapTo(targetFraction)
+        } else {
+            fill.animateTo(targetFraction, Motion.VolumeLevel)
+        }
+    }
 
     val sizeModifier = if (half == DiscHalf.None) {
         Modifier.size(diameter)
@@ -93,10 +113,15 @@ fun VolumeDisc(
                 var startValue = 0f
                 var startY = 0f
 
-                detectVerticalDragGestures(onDragStart = { offset ->
-                    startValue = latestValue
-                    startY = offset.y
-                }) { change, _ ->
+                detectVerticalDragGestures(
+                    onDragStart = { offset ->
+                        startValue = latestValue
+                        startY = offset.y
+                        dragging = true
+                    },
+                    onDragEnd = { dragging = false },
+                    onDragCancel = { dragging = false }
+                ) { change, _ ->
                     // Dragging up raises the volume.
                     val dragAmount = startY - change.position.y
                     val newValue = startValue + (dragAmount / size.height.toFloat()) * range
@@ -110,6 +135,11 @@ fun VolumeDisc(
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
+            // Read in the draw phase, so the sweep animates without
+            // recomposing the disc.
+            val fraction = fill.value
+            val chase = (abs(targetFraction - fraction) * 7f).coerceAtMost(1f)
+
             // The disc is inset inside its box so the backdrop has a ring of
             // its own to fade across. Drawn edge to edge, the backdrop ended
             // up entirely underneath the disc body and was invisible.
@@ -192,10 +222,20 @@ fun VolumeDisc(
                 for (index in 0 until dotCount) {
                     val angle = startAngle + fullSweep * (index.toFloat() / dotCount)
                     val radians = Math.toRadians(angle.toDouble())
-                    val lit = index < (dotCount * fraction).toInt()
+                    // Dots behind the fill edge are lit; the few nearest
+                    // it swell and fade back over DotTrail dots, so a change
+                    // travels around the ring as a bright head with a tail
+                    // rather than a block of dots switching on at once.
+                    val behind = dotCount * fraction - index
+                    val lit = behind > 0f
+                    val head = if (lit) {
+                        (1f - behind / Motion.DotTrail).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
                     drawCircle(
                         color = if (lit) accentColor else outlineColor.copy(alpha = 0.4f),
-                        radius = dotRadius,
+                        radius = dotRadius * (1f + head * 0.9f),
                         center = Offset(
                             center.x + (cos(radians) * dotOrbit).toFloat(),
                             center.y + (sin(radians) * dotOrbit).toFloat()
@@ -207,7 +247,9 @@ fun VolumeDisc(
             val markerRadians = Math.toRadians((startAngle + fullSweep * fraction).toDouble())
             drawCircle(
                 color = accentColor,
-                radius = ringWidth * 0.34f,
+                // Swells while the arc is still travelling, like the bars'
+                // marker does.
+                radius = ringWidth * (0.34f + chase * 0.16f),
                 center = Offset(
                     center.x + (cos(markerRadians) * ringRadius).toFloat(),
                     center.y + (sin(markerRadians) * ringRadius).toFloat()

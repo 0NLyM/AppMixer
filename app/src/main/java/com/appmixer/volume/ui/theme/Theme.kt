@@ -1,5 +1,6 @@
 package com.appmixer.volume.ui.theme
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -10,6 +11,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
@@ -179,6 +181,64 @@ fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
 }
 
 /**
+ * Crossfades the roles the user can actually change, so picking a color in
+ * the customization screen bleeds into the UI instead of snapping. Only the
+ * roles the popup and the mixer paint with are animated -- animating the
+ * whole scheme would be a lot of state for colors nothing draws.
+ */
+@Composable
+private fun ColorScheme.animated(): ColorScheme {
+    // Locals are prefixed rather than named after the roles they animate:
+    // `val primary by animateColorAsState(primary, ...)` would be a
+    // declaration referring to itself.
+    val animatedPrimary by animateColorAsState(primary, Motion.ColorShift, label = "primary")
+    val animatedOnPrimary by animateColorAsState(
+        onPrimary, Motion.ColorShift, label = "onPrimary"
+    )
+    val animatedPrimaryContainer by animateColorAsState(
+        primaryContainer, Motion.ColorShift, label = "primaryContainer"
+    )
+    val animatedOnPrimaryContainer by animateColorAsState(
+        onPrimaryContainer, Motion.ColorShift, label = "onPrimaryContainer"
+    )
+    val animatedBackground by animateColorAsState(
+        background, Motion.ColorShift, label = "background"
+    )
+    val animatedOnBackground by animateColorAsState(
+        onBackground, Motion.ColorShift, label = "onBackground"
+    )
+    val animatedSurface by animateColorAsState(surface, Motion.ColorShift, label = "surface")
+    val animatedOnSurface by animateColorAsState(
+        onSurface, Motion.ColorShift, label = "onSurface"
+    )
+    val animatedTertiary by animateColorAsState(tertiary, Motion.ColorShift, label = "tertiary")
+    val animatedOnTertiary by animateColorAsState(
+        onTertiary, Motion.ColorShift, label = "onTertiary"
+    )
+    val animatedOutline by animateColorAsState(outline, Motion.ColorShift, label = "outline")
+    val animatedOutlineVariant by animateColorAsState(
+        outlineVariant, Motion.ColorShift, label = "outlineVariant"
+    )
+
+    return copy(
+        primary = animatedPrimary,
+        onPrimary = animatedOnPrimary,
+        primaryContainer = animatedPrimaryContainer,
+        onPrimaryContainer = animatedOnPrimaryContainer,
+        secondaryContainer = animatedPrimaryContainer,
+        onSecondaryContainer = animatedOnPrimaryContainer,
+        background = animatedBackground,
+        onBackground = animatedOnBackground,
+        surface = animatedSurface,
+        onSurface = animatedOnSurface,
+        tertiary = animatedTertiary,
+        onTertiary = animatedOnTertiary,
+        outline = animatedOutline,
+        outlineVariant = animatedOutlineVariant
+    )
+}
+
+/**
  * AppMixer's theme: the Nothing OS inspired black/white/red scheme, with
  * whatever the user overrode in the customization screen layered on top.
  * Material You dynamic color is deliberately not used -- the point is a
@@ -201,7 +261,7 @@ fun AppMixerTheme(
             (preferences.popupCornerRadius * 50 / POPUP_CORNER_RADIUS_MAX).coerceIn(0, 50)
     ) {
         MaterialTheme(
-            colorScheme = baseColorScheme(darkTheme).withOverrides(preferences),
+            colorScheme = baseColorScheme(darkTheme).withOverrides(preferences).animated(),
             typography = Typography,
             shapes = AppMixerShapes,
             content = content
