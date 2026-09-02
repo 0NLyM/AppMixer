@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.appmixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.appmixer.volume.data.ThemeMode
 import com.appmixer.volume.data.UiPreferences
 
@@ -23,6 +24,16 @@ import com.appmixer.volume.data.UiPreferences
  * without threading a parameter through every call site.
  */
 val LocalSliderCornerRadius = compositionLocalOf { 20.dp }
+
+/**
+ * The same radius setting for the round glyph buttons, as a percentage of
+ * their own size rather than an absolute dp. A button is square, so a
+ * percentage lands exactly on a circle at the top of the range and on a
+ * square at the bottom, whatever size the button ends up being -- an
+ * absolute radius clipped to half the *expected* size left the buttons
+ * looking squared off whenever they were painted larger than that.
+ */
+val LocalButtonCornerPercent = compositionLocalOf { 50 }
 
 // Nothing OS style: the UI itself is black and white -- buttons, slider
 // fills, containers all read from `primary`/`secondary`, which are mapped to
@@ -185,7 +196,9 @@ fun AppMixerTheme(
     }
 
     CompositionLocalProvider(
-        LocalSliderCornerRadius provides preferences.popupCornerRadius.dp
+        LocalSliderCornerRadius provides preferences.popupCornerRadius.dp,
+        LocalButtonCornerPercent provides
+            (preferences.popupCornerRadius * 50 / POPUP_CORNER_RADIUS_MAX).coerceIn(0, 50)
     ) {
         MaterialTheme(
             colorScheme = baseColorScheme(darkTheme).withOverrides(preferences),

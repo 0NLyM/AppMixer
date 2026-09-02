@@ -2,6 +2,9 @@ package com.appmixer.volume.data
 
 import kotlinx.serialization.Serializable
 
+/** Top of the corner-radius slider's range, in dp. */
+const val POPUP_CORNER_RADIUS_MAX = 48
+
 /** Shape the collapsed (volume-key) popup takes. */
 enum class PopupStyle {
     VerticalBar, HorizontalBar, Disc
@@ -67,13 +70,17 @@ data class UiPreferences(
 )
 
 /**
- * True when the overlay window paints the system blur behind the popup, in
- * which case the composable adds no fill of its own. The disc is excluded:
- * the platform's background blur drawable is a rounded rectangle, so it can
- * neither follow a circle nor dissolve at the rim.
+ * True when the overlay window should paint the system blur behind the popup,
+ * in which case the composable adds no fill of its own.
+ *
+ * The blur drawable is a rounded rectangle, so the collapsed disc can't use
+ * it -- it would put a square panel back behind a round popup. The
+ * [expanded] mixer is a rounded rectangle whatever the collapsed style is,
+ * so there the blur applies to every style.
  */
-fun UiPreferences.usesWindowBlur(): Boolean =
-    popupBackground == PopupBackground.Translucent && popupStyle != PopupStyle.Disc
+fun UiPreferences.usesWindowBlur(expanded: Boolean = false): Boolean =
+    popupBackground == PopupBackground.Translucent &&
+        (expanded || popupStyle != PopupStyle.Disc)
 
 /**
  * Alpha of the panel the popup paints for itself. Translucent normally means

@@ -47,6 +47,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
 import com.appmixer.volume.data.PopupAnchor
+import com.appmixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.appmixer.volume.data.PopupBackground
 import com.appmixer.volume.data.PopupStyle
 import com.appmixer.volume.data.ThemeMode
@@ -533,7 +534,7 @@ fun CustomizationScreen(
                 label = stringResource(R.string.popup_corner),
                 valueLabel = "${preferences.popupCornerRadius} dp",
                 value = preferences.popupCornerRadius.toFloat(),
-                valueRange = 0f..48f,
+                valueRange = 0f..POPUP_CORNER_RADIUS_MAX.toFloat(),
                 onValueChange = { value ->
                     onUpdate { it.copy(popupCornerRadius = value.roundToInt()) }
                 }

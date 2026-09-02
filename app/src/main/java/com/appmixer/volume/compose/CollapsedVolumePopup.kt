@@ -44,7 +44,6 @@ import com.appmixer.volume.data.PopupAnchor
 import com.appmixer.volume.data.PopupStyle
 import com.appmixer.volume.data.UiPreferences
 import com.appmixer.volume.data.paintedPanelAlpha
-import com.appmixer.volume.data.usesWindowBlur
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -132,6 +131,12 @@ private fun Modifier.expandOnSwipe(
 fun CollapsedVolumePopup(
     audioManager: AudioManager,
     preferences: UiPreferences,
+    /**
+     * Whether the overlay window really is painting the frosted panel. Not
+     * every device can blur, and where it can't this popup has to paint a
+     * fill of its own instead of leaving the background empty.
+     */
+    blurred: Boolean,
     onExpand: () -> Unit,
     onInteract: () -> Unit
 ) {
@@ -187,7 +192,7 @@ fun CollapsedVolumePopup(
     // For the disc it's always the radial backdrop below.
     val panelColor = when {
         isDisc -> Color.Transparent
-        preferences.usesWindowBlur() -> Color.Transparent
+        blurred -> Color.Transparent
         else -> MaterialTheme.colorScheme.background.copy(
             alpha = preferences.paintedPanelAlpha()
         )

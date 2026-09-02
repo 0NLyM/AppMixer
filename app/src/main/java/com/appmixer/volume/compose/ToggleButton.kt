@@ -18,15 +18,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.appmixer.volume.ui.theme.LocalSliderCornerRadius
-
-/** Material's own IconButton size, which this button doesn't override. */
-private val ICON_BUTTON_SIZE = 40.dp
+import com.appmixer.volume.ui.theme.LocalButtonCornerPercent
 
 // Nothing OS glyph-button style, colored like the sliders it sits among:
 // the container color when idle, the fill color when active, with the same
-// corner radius the sliders use (capped at half the button, so the default
-// pill stays a circle) rather than Material's flat tinted icon button.
+// corner radius the sliders use -- as a share of the button's own size, so
+// the top of the range is a full circle -- rather than Material's flat
+// tinted icon button.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToggleButton(
@@ -38,9 +36,7 @@ fun ToggleButton(
     onCheckedChange: (Boolean) -> Unit
 ) {
     val description = if (checked) checkedDescription else uncheckedDescription
-    val shape = RoundedCornerShape(
-        LocalSliderCornerRadius.current.coerceAtMost(ICON_BUTTON_SIZE / 2)
-    )
+    val shape = RoundedCornerShape(percent = LocalButtonCornerPercent.current)
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
             TooltipAnchorPosition.Below, 12.dp

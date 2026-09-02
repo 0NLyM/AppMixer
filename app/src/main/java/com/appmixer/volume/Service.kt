@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -160,30 +161,57 @@ class Service : AccessibilityService() {
                 setViewTreeSavedStateRegistryOwner(owner)
             }
 
-            override fun onAttachedToWindow() {
-                super.onAttachedToWindow()
+            /**
+             * Whether the frosted panel is actually up. Not every device can
+             * blur, so the composables read this rather than the preference
+             * to decide whether they still have to paint a fill of their own.
+             */
+            var blurred by mutableStateOf(false)
+                private set
 
-                Log.i(TAG, "onAttachedToWindow manufacturer: ${Build.MANUFACTURER}")
+            /**
+             * The blur *is* the panel in translucent mode, so the composable
+             * draws no fill of its own; in solid mode there's no blur and the
+             * composable's panel is the only background. Either way there's
+             * one object, at the configured corner radius.
+             *
+             * Toggled rather than set once, because the collapsed disc has to
+             * do without it -- a blur drawable is a rounded rectangle, which
+             * would put a square panel back behind a round popup -- while the
+             * mixer it expands into is a rounded rectangle and gets it back.
+             */
+            fun applyWindowBlur(wanted: Boolean) {
+                if (!wanted) {
+                    if (blurred) {
+                        background = null
+                        blurred = false
+                    }
+                    return
+                }
 
-                // The blur *is* the panel in translucent mode, so the
-                // composable draws no fill of its own; in solid mode the
-                // blur is skipped entirely and the composable's panel is
-                // the only background. Either way there's one object, and
-                // its corner radius matches the configured one.
-                // The disc is excluded: a blur drawable can only be a rounded
-                // rectangle, which would put the square panel back behind the
-                // round popup. The disc paints its own circular backdrop.
-                val translucent = manager.uiPreferences.usesWindowBlur()
+                if (blurred) {
+                    return
+                }
+
                 val cornerRadiusPx =
                     manager.uiPreferences.popupCornerRadius * resources.displayMetrics.density
 
-                @Suppress("SpellCheckingInspection") if (translucent && windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
+                @Suppress("SpellCheckingInspection") if (windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
                     background =
                         Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
                             call("setBlurRadius", 200)
                             call("setCornerRadius", cornerRadiusPx)
                         }.get()
+                    blurred = true
                 }
+            }
+
+            override fun onAttachedToWindow() {
+                super.onAttachedToWindow()
+
+                Log.i(TAG, "onAttachedToWindow manufacturer: ${Build.MANUFACTURER}")
+
+                applyWindowBlur(manager.uiPreferences.usesWindowBlur())
 
                 this@Service.handler.startIdleTimer()
             }
@@ -211,13 +239,19 @@ class Service : AccessibilityService() {
                     // this particular window stays up.
                     var expanded by remember { mutableStateOf(false) }
 
+                    // Expanding turns the popup into a rounded rectangle, so
+                    // the blur the collapsed disc has to skip comes back.
+                    LaunchedEffect(expanded, preferences.popupBackground, preferences.popupStyle) {
+                        applyWindowBlur(preferences.usesWindowBlur(expanded = expanded))
+                    }
+
                     if (expanded) {
                         Surface(
-                            // Transparent only where the window blur is the
-                            // panel. In disc style there is no blur, so the
-                            // expanded mixer has to paint its own fill --
-                            // otherwise picking translucent left it invisible.
-                            color = if (preferences.usesWindowBlur()) {
+                            // Transparent only where the blur really is the
+                            // panel; otherwise this fill is the whole
+                            // background, and leaving it out made the popup
+                            // invisible.
+                            color = if (blurred) {
                                 Color.Transparent
                             } else {
                                 MaterialTheme.colorScheme.background.copy(
@@ -254,6 +288,7 @@ class Service : AccessibilityService() {
                         CollapsedVolumePopup(
                             audioManager = manager.audioManager,
                             preferences = preferences,
+                            blurred = blurred,
                             onExpand = {
                                 expanded = true
                                 this@Service.handler.startIdleTimer()

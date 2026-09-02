@@ -28,7 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
-import com.appmixer.volume.ui.theme.LocalSliderCornerRadius
+import com.appmixer.volume.ui.theme.LocalButtonCornerPercent
 
 private const val TAG = "AppMixer.RingerMode"
 
@@ -36,7 +36,8 @@ private const val TAG = "AppMixer.RingerMode"
  * Cycles ring -> vibrate -> silent -> ring, colored like the sliders it sits
  * next to: the container color while the phone rings normally, the fill
  * color once it's been silenced or set to vibrate. Its corners follow the
- * same radius setting, capped at half its size so the pill stays a circle.
+ * same radius setting, as a share of its own size so the top of the range is
+ * a full circle.
  */
 @Composable
 fun RingerModeButton(
@@ -63,9 +64,7 @@ fun RingerModeButton(
     }
     val isMuted = ringerMode != AudioManager.RINGER_MODE_NORMAL
 
-    // Beyond half the button's size a rounded rectangle is just a circle, so
-    // the radius saturates there instead of drawing artifacts.
-    val shape = RoundedCornerShape(LocalSliderCornerRadius.current.coerceAtMost(size / 2))
+    val shape = RoundedCornerShape(percent = LocalButtonCornerPercent.current)
 
     // Deliberately not an IconButton: that applies its own 40dp size and a
     // 48dp minimum touch target *after* the caller's modifier, so asking for

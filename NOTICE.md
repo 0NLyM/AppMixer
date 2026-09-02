@@ -176,5 +176,20 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   the slider palette: the container color when idle, the fill color when
   active, in place of the red accent.
 
+## 2026-09-02 — Round glyph buttons, blur on the expanded mixer
+
+- The glyph buttons' corner radius is a share of their own size
+  (`LocalButtonCornerPercent`) instead of an absolute dp clipped to half the
+  size they were assumed to have. `IconButton` paints over its 48dp minimum
+  touch target rather than its 40dp nominal size, so the old cap left the
+  ring/vibrate buttons visibly squared off at the top of the range.
+- The window blur is toggled as the popup expands rather than decided once
+  when the overlay attaches. The collapsed disc still goes without it -- a
+  blur drawable is a rounded rectangle -- but the mixer it expands into is a
+  rounded rectangle in every style, so it is frosted again instead of
+  falling back to a flat tint. The composables paint their own fill only
+  when the blur genuinely isn't up (a device that can't blur), which they
+  now read from the view rather than inferring from the preference.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
