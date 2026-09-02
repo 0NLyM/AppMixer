@@ -30,18 +30,32 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
+import com.appmixer.volume.data.PopupAnchor
+import com.appmixer.volume.data.PopupBackground
 import com.appmixer.volume.data.PopupStyle
 import com.appmixer.volume.data.UiPreferences
 import kotlin.math.roundToInt
 
 /**
+ * Which half of the disc to show for a given anchor: hugging the right edge
+ * means only the left half is on screen, and vice versa. Anything centered
+ * horizontally gets the full circle.
+ */
+internal fun PopupAnchor.discHalf(): DiscHalf = when (this) {
+    PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> DiscHalf.Left
+    PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> DiscHalf.Right
+    else -> DiscHalf.None
+}
+
+/**
  * The compact popup shown when a volume key is pressed: media volume only,
- * in whichever shape the user picked, with a button that expands into the
- * full per-app mixer.
+ * in whichever shape the user picked, with a ringer-mode switch and a
+ * button that expands into the full per-app mixer.
  */
 @Composable
 fun CollapsedVolumePopup(
@@ -82,21 +96,35 @@ fun CollapsedVolumePopup(
         onInteract()
     }
 
-    val percentage = if (maxVolume <= 0f) 0 else (volume / maxVolume * 100).roundToInt()
+    // Same readout the full mixer shows, so the two stay consistent.
+    val valueText = "$volume/${maxVolume.toInt()}"
     val scale = preferences.popupScale
 
-    Surface(
-        color = MaterialTheme.colorScheme.background.copy(
+    // One background object: in translucent mode the panel is the system
+    // blur applied to the overlay window itself, so the composable adds no
+    // fill of its own; in solid mode the blur is off and this is the panel.
+    val panelColor = when (preferences.popupBackground) {
+        PopupBackground.Translucent -> Color.Transparent
+        PopupBackground.Solid -> MaterialTheme.colorScheme.background.copy(
             alpha = preferences.popupBackgroundOpacity
-        ),
+        )
+    }
+
+    Surface(
+        color = panelColor,
         contentColor = MaterialTheme.colorScheme.onBackground,
         shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
     ) {
         when (preferences.popupStyle) {
             PopupStyle.HorizontalBar -> Row(
                 modifier = Modifier.padding(12.dp, 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (preferences.popupShowRingerButton) {
+                    RingerModeButton(audioManager = audioManager, onChange = onInteract)
+                }
+
                 StreamVolumeSlider(
                     modifier = Modifier.width((200 * scale).dp),
                     streamType = AudioManager.STREAM_MUSIC,
@@ -114,13 +142,16 @@ fun CollapsedVolumePopup(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                if (preferences.popupShowRingerButton) {
+                    RingerModeButton(audioManager = audioManager, onChange = onInteract)
+                }
+
                 VerticalTrackSlider(
                     modifier = Modifier
                         .width((64 * scale).dp)
                         .height((220 * scale).dp),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
-                    cornerRadius = preferences.popupCornerRadius.dp,
                     onValueChange = { value -> setVolume(value.roundToInt()) }
                 ) {
                     Column(
@@ -132,8 +163,9 @@ fun CollapsedVolumePopup(
                     ) {
                         if (preferences.popupShowValue) {
                             Text(
-                                text = "$percentage",
-                                style = MaterialTheme.typography.titleMedium
+                                text = valueText,
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1
                             )
                         } else {
                             Spacer(Modifier.size(0.dp))
@@ -159,14 +191,18 @@ fun CollapsedVolumePopup(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                if (preferences.popupShowRingerButton) {
+                    RingerModeButton(audioManager = audioManager, onChange = onInteract)
+                }
+
                 VolumeDisc(
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
-                    diameter = (200 * scale).dp,
+                    diameter = (220 * scale).dp,
+                    half = preferences.popupAnchor.discHalf(),
                     showDots = preferences.discShowDots,
-                    sensitivity = preferences.discSensitivity,
                     icon = if (preferences.popupShowIcon) Icons.Default.VolumeUp else null,
-                    label = if (preferences.popupShowValue) "$percentage" else null,
+                    label = if (preferences.popupShowValue) valueText else null,
                     onValueChange = { value -> setVolume(value.roundToInt()) }
                 )
 

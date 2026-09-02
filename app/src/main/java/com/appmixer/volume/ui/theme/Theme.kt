@@ -8,11 +8,21 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.data.ThemeMode
 import com.appmixer.volume.data.UiPreferences
+
+/**
+ * Corner radius every slider in the app reads, so the user's one radius
+ * setting applies coherently to the collapsed popup and to the full mixer
+ * without threading a parameter through every call site.
+ */
+val LocalSliderCornerRadius = compositionLocalOf { 20.dp }
 
 // Nothing OS style: the UI itself is black and white -- buttons, slider
 // fills, containers all read from `primary`/`secondary`, which are mapped to
@@ -174,10 +184,14 @@ fun AppMixerTheme(
         ThemeMode.System -> isSystemInDarkTheme()
     }
 
-    MaterialTheme(
-        colorScheme = baseColorScheme(darkTheme).withOverrides(preferences),
-        typography = Typography,
-        shapes = AppMixerShapes,
-        content = content
-    )
+    CompositionLocalProvider(
+        LocalSliderCornerRadius provides preferences.popupCornerRadius.dp
+    ) {
+        MaterialTheme(
+            colorScheme = baseColorScheme(darkTheme).withOverrides(preferences),
+            typography = Typography,
+            shapes = AppMixerShapes,
+            content = content
+        )
+    }
 }

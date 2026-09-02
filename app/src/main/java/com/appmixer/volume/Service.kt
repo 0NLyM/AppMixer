@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -50,6 +51,7 @@ import com.appmixer.volume.compose.SystemVolumePanel
 import com.appmixer.volume.compose.VolumeChangeObserver
 import com.appmixer.volume.system.ActivityTaskManagerProxy
 import com.appmixer.volume.data.PopupAnchor
+import com.appmixer.volume.data.PopupBackground
 import com.appmixer.volume.ui.theme.AppMixerTheme
 import org.joor.Reflect
 import java.util.Objects
@@ -162,11 +164,21 @@ class Service : AccessibilityService() {
 
                 Log.i(TAG, "onAttachedToWindow manufacturer: ${Build.MANUFACTURER}")
 
-                @Suppress("SpellCheckingInspection") if (windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
+                // The blur *is* the panel in translucent mode, so the
+                // composable draws no fill of its own; in solid mode the
+                // blur is skipped entirely and the composable's panel is
+                // the only background. Either way there's one object, and
+                // its corner radius matches the configured one.
+                val translucent =
+                    manager.uiPreferences.popupBackground == PopupBackground.Translucent
+                val cornerRadiusPx =
+                    manager.uiPreferences.popupCornerRadius * resources.displayMetrics.density
+
+                @Suppress("SpellCheckingInspection") if (translucent && windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
                     background =
                         Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
                             call("setBlurRadius", 200)
-                            call("setCornerRadius", 40f)
+                            call("setCornerRadius", cornerRadiusPx)
                         }.get()
                 }
 
@@ -198,9 +210,12 @@ class Service : AccessibilityService() {
 
                     if (expanded) {
                         Surface(
-                            color = MaterialTheme.colorScheme.background.copy(
-                                alpha = preferences.popupBackgroundOpacity
-                            ),
+                            color = when (preferences.popupBackground) {
+                                PopupBackground.Translucent -> Color.Transparent
+                                PopupBackground.Solid -> MaterialTheme.colorScheme.background.copy(
+                                    alpha = preferences.popupBackgroundOpacity
+                                )
+                            },
                             contentColor = MaterialTheme.colorScheme.onBackground,
                             shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
                         ) {

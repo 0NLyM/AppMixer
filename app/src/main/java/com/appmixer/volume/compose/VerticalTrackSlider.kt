@@ -23,6 +23,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import com.appmixer.volume.ui.theme.LocalSliderCornerRadius
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -45,7 +46,7 @@ fun VerticalTrackSlider(
     borderColor: Color = MaterialTheme.colorScheme.outline,
     borderWidth: Dp = 1.dp,
     accentColor: Color = MaterialTheme.colorScheme.tertiary,
-    cornerRadius: Dp = 28.dp,
+    cornerRadius: Dp = LocalSliderCornerRadius.current,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     content: @Composable BoxScope.() -> Unit = {}
 ) {

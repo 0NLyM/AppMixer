@@ -51,7 +51,7 @@
     <string name="popup_style">Style</string>
     <string name="style_vertical">Vertical bar</string>
     <string name="style_horizontal">Horizontal bar</string>
-    <string name="style_disc">Rotating disc</string>
+    <string name="style_disc">Disc</string>
 
     <string name="popup_position">Position</string>
     <string name="offset_horizontal">Horizontal offset</string>
@@ -64,7 +64,14 @@
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
     <string name="disc_dots">Show dot ring</string>
-    <string name="disc_sensitivity">Rotation sensitivity</string>
+    <string name="disc_hint">Anchored to a screen edge the disc becomes a half-moon flush with that edge; anchored to the middle column it stays a full circle. Drag up or down to change the volume.</string>
+    <string name="popup_background">Background</string>
+    <string name="background_translucent">Translucent</string>
+    <string name="background_solid">Solid</string>
+    <string name="show_ringer_button">Show ringer switch</string>
+    <string name="ringer_normal">Ring: on, tap for vibrate</string>
+    <string name="ringer_vibrate">Vibrate, tap for silent</string>
+    <string name="ringer_silent">Silent, tap for ring</string>
     <string name="show_preview">Show live preview</string>
     <string name="reset_popup">Reset popup settings</string>
 </resources>

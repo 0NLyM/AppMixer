@@ -38,7 +38,6 @@ fun AppVolumeSlider(
     ) {
         TrackSlider(
             modifier = Modifier.weight(1f),
-            cornerRadius = 20.dp,
             value = app.volume,
             onValueChange = { value ->
                 app.volume = value
@@ -73,7 +72,7 @@ fun AppVolumeSlider(
 
                 Text(
                     text = "${(app.volume * 100).roundToInt()}/100",
-                    style = Typography.bodySmall,
+                    style = Typography.labelLarge,
                     maxLines = 1,
                 )
             }

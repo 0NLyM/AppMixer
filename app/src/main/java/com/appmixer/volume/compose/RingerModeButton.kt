@@ -1,0 +1,122 @@
+package com.appmixer.volume.compose
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
+import android.util.Log
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.appmixer.volume.R
+
+private const val TAG = "AppMixer.RingerMode"
+
+/**
+ * Cycles ring -> vibrate -> silent -> ring, in the same glyph-button
+ * language as [ToggleButton]: outlined when the phone rings normally,
+ * filled with the accent color once it's been silenced or set to vibrate.
+ */
+@Composable
+fun RingerModeButton(
+    audioManager: AudioManager,
+    modifier: Modifier = Modifier,
+    onChange: (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+    var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
+
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                ringerMode = audioManager.ringerMode
+            }
+        }
+
+        context.registerReceiver(
+            receiver,
+            IntentFilter(AudioManager.RINGER_MODE_CHANGED_ACTION),
+            Context.RECEIVER_NOT_EXPORTED
+        )
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
+
+    val (icon, descriptionRes) = when (ringerMode) {
+        AudioManager.RINGER_MODE_VIBRATE ->
+            Icons.Default.Vibration to R.string.ringer_vibrate
+
+        AudioManager.RINGER_MODE_SILENT ->
+            Icons.Default.NotificationsOff to R.string.ringer_silent
+
+        else ->
+            Icons.Default.NotificationsActive to R.string.ringer_normal
+    }
+    val isMuted = ringerMode != AudioManager.RINGER_MODE_NORMAL
+
+    IconButton(
+        onClick = {
+            val next = when (ringerMode) {
+                AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
+                AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
+                else -> AudioManager.RINGER_MODE_NORMAL
+            }
+
+            try {
+                audioManager.ringerMode = next
+            } catch (e: SecurityException) {
+                // Switching to silent needs Do Not Disturb access on some
+                // devices; skip that step rather than crashing the overlay.
+                Log.w(TAG, "Can't set ringer mode $next", e)
+                try {
+                    audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
+                } catch (inner: SecurityException) {
+                    Log.w(TAG, "Can't restore ringer mode", inner)
+                }
+            }
+
+            ringerMode = audioManager.ringerMode
+            onChange?.invoke()
+        },
+        modifier = modifier
+            .background(
+                color = if (isMuted) {
+                    MaterialTheme.colorScheme.tertiary
+                } else {
+                    MaterialTheme.colorScheme.background
+                },
+                shape = CircleShape
+            )
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = stringResource(descriptionRes),
+            tint = if (isMuted) {
+                MaterialTheme.colorScheme.onTertiary
+            } else {
+                MaterialTheme.colorScheme.onBackground
+            }
+        )
+    }
+}

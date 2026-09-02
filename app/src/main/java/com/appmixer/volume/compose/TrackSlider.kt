@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import com.appmixer.volume.ui.theme.LocalSliderCornerRadius
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -42,7 +43,7 @@ fun TrackSlider(
     // The one red detail on an otherwise black/white slider: a thin marker
     // at the fill's leading edge, standing in for a handle.
     accentColor: Color = MaterialTheme.colorScheme.tertiary,
-    cornerRadius: Dp = 8.dp,
+    cornerRadius: Dp = LocalSliderCornerRadius.current,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     content: @Composable BoxScope.() -> Unit = {}
 ) {

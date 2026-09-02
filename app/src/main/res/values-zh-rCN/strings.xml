@@ -52,7 +52,7 @@
     <string name="popup_style">样式</string>
     <string name="style_vertical">竖向滑块</string>
     <string name="style_horizontal">横向滑块</string>
-    <string name="style_disc">旋转圆盘</string>
+    <string name="style_disc">圆盘</string>
 
     <string name="popup_position">位置</string>
     <string name="offset_horizontal">水平偏移</string>
@@ -65,7 +65,14 @@
     <string name="show_value">显示音量值</string>
     <string name="show_icon">显示图标</string>
     <string name="disc_dots">显示圆点环</string>
-    <string name="disc_sensitivity">旋转灵敏度</string>
+    <string name="disc_hint">贴靠屏幕边缘时圆盘显示为半圆，位于中间一列时为完整圆盘。上下拖动即可调节音量。</string>
+    <string name="popup_background">背景</string>
+    <string name="background_translucent">半透明</string>
+    <string name="background_solid">纯色</string>
+    <string name="show_ringer_button">显示响铃开关</string>
+    <string name="ringer_normal">响铃，点按切换振动</string>
+    <string name="ringer_vibrate">振动，点按切换静音</string>
+    <string name="ringer_silent">静音，点按切换响铃</string>
     <string name="show_preview">显示实时预览</string>
     <string name="reset_popup">重置弹窗设置</string>
 </resources>

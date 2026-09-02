@@ -1,20 +1,19 @@
 package com.appmixer.volume.compose
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -25,31 +24,25 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlin.math.atan2
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sin
 
 private const val DOT_COUNT = 40
 
-/** Signed angle in degrees from the center to [point], 0° pointing right. */
-private fun angleAt(point: Offset, center: Offset): Float =
-    Math.toDegrees(
-        atan2((point.y - center.y).toDouble(), (point.x - center.x).toDouble())
-    ).toFloat()
-
-/** Wraps a raw angle difference into (-180°, 180°]. */
-private fun normalizeDelta(delta: Float): Float {
-    var result = delta
-    while (result > 180f) result -= 360f
-    while (result <= -180f) result += 360f
-    return result
+/**
+ * Which part of the disc is drawn. A half disc sits flush against a screen
+ * edge with its flat side on that edge, so [Left] is the half that shows
+ * when the popup is anchored to the *right* edge, and vice versa.
+ */
+enum class DiscHalf {
+    None, Left, Right
 }
 
 /**
- * A rotary volume dial: drag around the circle to turn the level up or
- * down, the way a physical wheel behaves. [sensitivity] is how many full
- * value ranges one complete finger rotation covers.
+ * A volume disc: a full circle when centered on screen, or a half-moon
+ * hugging a screen edge. The gesture is a vertical drag over the disc --
+ * up raises, down lowers -- matching the bar styles rather than asking for
+ * a rotation.
  */
 @Composable
 fun VolumeDisc(
@@ -57,6 +50,7 @@ fun VolumeDisc(
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     diameter: Dp = 200.dp,
+    half: DiscHalf = DiscHalf.None,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     trackColor: Color = MaterialTheme.colorScheme.primaryContainer,
     fillColor: Color = MaterialTheme.colorScheme.primary,
@@ -64,7 +58,6 @@ fun VolumeDisc(
     outlineColor: Color = MaterialTheme.colorScheme.outline,
     contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     showDots: Boolean = true,
-    sensitivity: Float = 1.5f,
     icon: ImageVector? = null,
     label: String? = null
 ) {
@@ -73,43 +66,60 @@ fun VolumeDisc(
     val fraction = if (range <= 0f) 0f else (coercedValue - valueRange.start) / range
 
     val latestValue by rememberUpdatedState(coercedValue)
-    var lastAngle by remember { mutableStateOf<Float?>(null) }
+
+    val sizeModifier = if (half == DiscHalf.None) {
+        Modifier.size(diameter)
+    } else {
+        Modifier
+            .width(diameter / 2)
+            .height(diameter)
+    }
 
     Box(
         modifier = modifier
-            .size(diameter)
-            .pointerInput(range, sensitivity) {
-                val center = Offset(size.width / 2f, size.height / 2f)
+            .then(sizeModifier)
+            .pointerInput(range) {
+                var startValue = 0f
+                var startY = 0f
 
-                detectDragGestures(
-                    onDragStart = { offset -> lastAngle = angleAt(offset, center) },
-                    onDragEnd = { lastAngle = null },
-                    onDragCancel = { lastAngle = null }
-                ) { change, _ ->
-                    val angle = angleAt(change.position, center)
-                    val previous = lastAngle
-                    if (previous != null) {
-                        val delta = normalizeDelta(angle - previous)
-                        val newValue =
-                            latestValue + (delta / 360f) * range * sensitivity
-                        val coercedNewValue =
-                            newValue.coerceIn(valueRange.start, valueRange.endInclusive)
-                        if (coercedNewValue != latestValue) {
-                            onValueChange(coercedNewValue)
-                        }
+                detectVerticalDragGestures(onDragStart = { offset ->
+                    startValue = latestValue
+                    startY = offset.y
+                }) { change, _ ->
+                    // Dragging up raises the volume.
+                    val dragAmount = startY - change.position.y
+                    val newValue = startValue + (dragAmount / size.height.toFloat()) * range
+                    val coercedNewValue =
+                        newValue.coerceIn(valueRange.start, valueRange.endInclusive)
+                    if (coercedNewValue != latestValue) {
+                        onValueChange(coercedNewValue)
                     }
-                    lastAngle = angle
                 }
             },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(diameter)) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val radius = min(size.width, size.height) / 2f
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val radius = size.height / 2f
+            // For a half disc the circle's center sits on the flat edge, so
+            // only the intended half falls inside the box and gets drawn.
+            val center = when (half) {
+                DiscHalf.None -> Offset(size.width / 2f, size.height / 2f)
+                DiscHalf.Left -> Offset(size.width, size.height / 2f)
+                DiscHalf.Right -> Offset(0f, size.height / 2f)
+            }
+
             val ringWidth = radius * 0.14f
             val ringRadius = radius - ringWidth / 2f - 1.dp.toPx()
 
-            // Disc body.
+            // Angles are measured clockwise from 3 o'clock. Every variant
+            // fills from the bottom upwards.
+            val startAngle = if (half == DiscHalf.None) -90f else 90f
+            val fullSweep = when (half) {
+                DiscHalf.None -> 360f
+                DiscHalf.Left -> 180f
+                DiscHalf.Right -> -180f
+            }
+
             drawCircle(color = trackColor, radius = radius - ringWidth, center = center)
             drawCircle(
                 color = outlineColor,
@@ -118,56 +128,56 @@ fun VolumeDisc(
                 style = Stroke(width = 1.dp.toPx())
             )
 
-            // Track ring plus the swept progress arc, starting at the top.
+            val arcTopLeft = Offset(center.x - ringRadius, center.y - ringRadius)
+            val arcSize = Size(ringRadius * 2f, ringRadius * 2f)
+
             drawArc(
                 color = outlineColor.copy(alpha = 0.35f),
-                startAngle = 0f,
-                sweepAngle = 360f,
+                startAngle = startAngle,
+                sweepAngle = fullSweep,
                 useCenter = false,
-                topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
-                size = Size(ringRadius * 2f, ringRadius * 2f),
+                topLeft = arcTopLeft,
+                size = arcSize,
                 style = Stroke(width = ringWidth)
             )
             if (fraction > 0f) {
                 drawArc(
                     color = fillColor,
-                    startAngle = -90f,
-                    sweepAngle = 360f * fraction,
+                    startAngle = startAngle,
+                    sweepAngle = fullSweep * fraction,
                     useCenter = false,
-                    topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
-                    size = Size(ringRadius * 2f, ringRadius * 2f),
+                    topLeft = arcTopLeft,
+                    size = arcSize,
                     style = Stroke(width = ringWidth)
                 )
             }
 
-            // Nothing-style dot ring just inside the track.
             if (showDots) {
                 val dotRadius = radius * 0.022f
                 val dotOrbit = ringRadius - ringWidth * 0.95f
-                for (index in 0 until DOT_COUNT) {
-                    val angle = -90f + index * (360f / DOT_COUNT)
+                val dotCount = if (half == DiscHalf.None) DOT_COUNT else DOT_COUNT / 2
+                for (index in 0 until dotCount) {
+                    val angle = startAngle + fullSweep * (index.toFloat() / dotCount)
                     val radians = Math.toRadians(angle.toDouble())
-                    val position = Offset(
-                        center.x + (cos(radians) * dotOrbit).toFloat(),
-                        center.y + (sin(radians) * dotOrbit).toFloat()
-                    )
-                    val lit = index < (DOT_COUNT * fraction).toInt()
+                    val lit = index < (dotCount * fraction).toInt()
                     drawCircle(
                         color = if (lit) accentColor else outlineColor.copy(alpha = 0.4f),
                         radius = dotRadius,
-                        center = position
+                        center = Offset(
+                            center.x + (cos(radians) * dotOrbit).toFloat(),
+                            center.y + (sin(radians) * dotOrbit).toFloat()
+                        )
                     )
                 }
             }
 
-            // Accent marker at the current position on the ring.
-            val markerAngle = Math.toRadians((-90f + 360f * fraction).toDouble())
+            val markerRadians = Math.toRadians((startAngle + fullSweep * fraction).toDouble())
             drawCircle(
                 color = accentColor,
                 radius = ringWidth * 0.34f,
                 center = Offset(
-                    center.x + (cos(markerAngle) * ringRadius).toFloat(),
-                    center.y + (sin(markerAngle) * ringRadius).toFloat()
+                    center.x + (cos(markerRadians) * ringRadius).toFloat(),
+                    center.y + (sin(markerRadians) * ringRadius).toFloat()
                 )
             )
         }
@@ -181,13 +191,13 @@ fun VolumeDisc(
                     imageVector = icon,
                     contentDescription = null,
                     tint = contentColor,
-                    modifier = Modifier.size(diameter * 0.16f)
+                    modifier = Modifier.size(diameter * 0.14f)
                 )
             }
             if (label != null) {
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     color = contentColor
                 )
             }

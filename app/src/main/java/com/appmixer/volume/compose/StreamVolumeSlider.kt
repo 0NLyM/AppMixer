@@ -113,7 +113,6 @@ fun StreamVolumeSlider(
     ) {
         TrackSlider(
             modifier = Modifier.weight(1f),
-            cornerRadius = 20.dp,
             value = volume.toFloat(),
             valueRange = 0f..maxVolume,
             onValueChange = { value ->
@@ -154,9 +153,11 @@ internal fun RowScope.StreamSliderTextContent(name: String, valueText: String) {
         overflow = TextOverflow.Ellipsis
     )
 
+    // Monospace, like the collapsed popup's readout, so numbers line up
+    // across the compact popup and the full mixer.
     Text(
         text = valueText,
-        style = Typography.bodySmall,
+        style = Typography.labelLarge,
         maxLines = 1,
     )
 }

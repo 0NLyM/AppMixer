@@ -7,6 +7,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,6 +47,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.appmixer.volume.R
 import com.appmixer.volume.data.PopupAnchor
+import com.appmixer.volume.data.PopupBackground
 import com.appmixer.volume.data.PopupStyle
 import com.appmixer.volume.data.ThemeMode
 import com.appmixer.volume.data.UiPreferences
@@ -118,16 +121,21 @@ private fun ToggleSetting(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+// FlowRow, not Row: three chips don't fit one line on a phone, and a plain
+// Row squeezes the last one into a column of single letters.
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun <T> ChipRow(
     options: List<Pair<T, String>>,
     selected: T,
     onSelect: (T) -> Unit
 ) {
-    Row(
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(vertical = 4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
     ) {
         options.forEach { (option, label) ->
             FilterChip(
@@ -217,14 +225,16 @@ private fun PopupPreview(preferences: UiPreferences) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(260.dp)
             .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
+        // Fixed phone silhouette: an aspectRatio inside a scrolling column
+        // resolves against the unbounded height and overflows onto the rows
+        // above it.
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .aspectRatio(0.5f)
+                .width(130.dp)
+                .height(260.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(MaterialTheme.colorScheme.background)
                 .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp))
@@ -283,24 +293,49 @@ private fun PopupPreview(preferences: UiPreferences) {
                         )
                     }
 
-                    PopupStyle.Disc -> Box(
-                        modifier = Modifier
-                            .size((210 * scale * 1.6f).dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .border(
-                                (6 * scale * 1.6f).dp,
-                                MaterialTheme.colorScheme.primary,
-                                CircleShape
+                    PopupStyle.Disc -> {
+                        // Edge anchors give a half-moon flush with the edge;
+                        // a horizontally centered anchor gives a full disc.
+                        val half = preferences.popupAnchor.discHalf()
+                        val diameter = (220 * scale * 1.6f).dp
+                        val roundedSide = (diameter / 2)
+                        val shape = when (half) {
+                            DiscHalf.None -> CircleShape
+                            DiscHalf.Left -> RoundedCornerShape(
+                                topStart = roundedSide,
+                                bottomStart = roundedSide,
+                                topEnd = 0.dp,
+                                bottomEnd = 0.dp
                             )
-                    ) {
+
+                            DiscHalf.Right -> RoundedCornerShape(
+                                topStart = 0.dp,
+                                bottomStart = 0.dp,
+                                topEnd = roundedSide,
+                                bottomEnd = roundedSide
+                            )
+                        }
+
                         Box(
                             modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .size((10 * scale * 1.6f).dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.tertiary)
-                        )
+                                .width(if (half == DiscHalf.None) diameter else diameter / 2)
+                                .height(diameter)
+                                .clip(shape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .border(
+                                    (6 * scale * 1.6f).dp,
+                                    MaterialTheme.colorScheme.primary,
+                                    shape
+                                )
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .size((10 * scale * 1.6f).dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.tertiary)
+                            )
+                        }
                     }
                 }
             }
@@ -495,15 +530,30 @@ fun CustomizationScreen(
                     onUpdate { it.copy(popupCornerRadius = value.roundToInt()) }
                 }
             )
-            SliderSetting(
-                label = stringResource(R.string.popup_opacity),
-                valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
-                value = preferences.popupBackgroundOpacity,
-                valueRange = 0f..1f,
-                onValueChange = { value ->
-                    onUpdate { it.copy(popupBackgroundOpacity = value) }
-                }
+            Text(
+                text = stringResource(R.string.popup_background),
+                style = MaterialTheme.typography.bodyLarge
             )
+            ChipRow(
+                options = listOf(
+                    PopupBackground.Translucent to stringResource(R.string.background_translucent),
+                    PopupBackground.Solid to stringResource(R.string.background_solid)
+                ),
+                selected = preferences.popupBackground,
+                onSelect = { background -> onUpdate { it.copy(popupBackground = background) } }
+            )
+
+            if (preferences.popupBackground == PopupBackground.Solid) {
+                SliderSetting(
+                    label = stringResource(R.string.popup_opacity),
+                    valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
+                    value = preferences.popupBackgroundOpacity,
+                    valueRange = 0.2f..1f,
+                    onValueChange = { value ->
+                        onUpdate { it.copy(popupBackgroundOpacity = value) }
+                    }
+                )
+            }
 
             ToggleSetting(
                 label = stringResource(R.string.show_value),
@@ -515,6 +565,13 @@ fun CustomizationScreen(
                 checked = preferences.popupShowIcon,
                 onCheckedChange = { checked -> onUpdate { it.copy(popupShowIcon = checked) } }
             )
+            ToggleSetting(
+                label = stringResource(R.string.show_ringer_button),
+                checked = preferences.popupShowRingerButton,
+                onCheckedChange = { checked ->
+                    onUpdate { it.copy(popupShowRingerButton = checked) }
+                }
+            )
 
             if (preferences.popupStyle == PopupStyle.Disc) {
                 ToggleSetting(
@@ -524,13 +581,10 @@ fun CustomizationScreen(
                         onUpdate { it.copy(discShowDots = checked) }
                     }
                 )
-                SliderSetting(
-                    label = stringResource(R.string.disc_sensitivity),
-                    valueLabel = formatScale(preferences.discSensitivity),
-                    value = preferences.discSensitivity,
-                    valueRange = 0.5f..3f,
-                    steps = 9,
-                    onValueChange = { value -> onUpdate { it.copy(discSensitivity = value) } }
+                Text(
+                    text = stringResource(R.string.disc_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -554,11 +608,12 @@ fun CustomizationScreen(
                             popupOffsetY = defaults.popupOffsetY,
                             popupScale = defaults.popupScale,
                             popupCornerRadius = defaults.popupCornerRadius,
+                            popupBackground = defaults.popupBackground,
                             popupBackgroundOpacity = defaults.popupBackgroundOpacity,
                             popupShowValue = defaults.popupShowValue,
                             popupShowIcon = defaults.popupShowIcon,
-                            discShowDots = defaults.discShowDots,
-                            discSensitivity = defaults.discSensitivity
+                            popupShowRingerButton = defaults.popupShowRingerButton,
+                            discShowDots = defaults.discShowDots
                         )
                     }
                 },
