@@ -142,5 +142,13 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   is anchored dead center with the readout below it.
 - Background opacity is always adjustable and reaches 0%.
 
+## 2026-09-02 — Disc background modes
+
+- The translucent/solid choice applies to the disc again: both modes draw
+  the radial fade to full transparency at the rim and differ in how much
+  shows through. The disc can't use the system blur the bars get in
+  translucent mode, since the platform's background blur drawable is a
+  rounded rectangle that can neither follow a circle nor dissolve.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
