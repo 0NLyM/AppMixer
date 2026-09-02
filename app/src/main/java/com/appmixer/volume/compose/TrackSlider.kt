@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -98,8 +99,13 @@ fun TrackSlider(
                 }
             },
     ) {
+        // This copy still sizes the slider when no height is imposed, and
+        // centers itself when one is -- otherwise a taller-than-content
+        // slider (the collapsed popup's bar) pins its label to the top.
         Box(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.Center)
         ) {
             CompositionLocalProvider(LocalContentColor provides onTrackColor) {
                 content()
@@ -120,7 +126,8 @@ fun TrackSlider(
                         )
                     )
                 })
-                .background(fillColor)
+                .background(fillColor),
+            contentAlignment = Alignment.Center
         ) {
             CompositionLocalProvider(LocalContentColor provides onFillColor) {
                 content()

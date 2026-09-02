@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -152,43 +153,28 @@ fun CollapsedVolumePopup(
     val scale = preferences.popupScale
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val half = preferences.popupAnchor.discHalf()
-    val isHalfDisc = preferences.popupStyle == PopupStyle.Disc && half != DiscHalf.None
+    val isDisc = preferences.popupStyle == PopupStyle.Disc
     val cornerRadius = preferences.popupCornerRadius.dp
 
-    // A half disc has to sit flush against the screen edge, so the panel
-    // drops its padding and its rounding on that side.
-    val panelShape = when {
-        !isHalfDisc -> RoundedCornerShape(cornerRadius)
-        half == DiscHalf.Left -> RoundedCornerShape(
-            topStart = cornerRadius,
-            bottomStart = cornerRadius,
-            topEnd = 0.dp,
-            bottomEnd = 0.dp
-        )
+    // The disc paints its own round backdrop, so the rectangular panel gets
+    // out of the way entirely -- no fill, no shape, no padding to hold it
+    // off the screen edge.
+    val panelShape = if (isDisc) RectangleShape else RoundedCornerShape(cornerRadius)
+    val panelPadding = if (isDisc) PaddingValues(0.dp) else PaddingValues(10.dp)
 
-        else -> RoundedCornerShape(
-            topStart = 0.dp,
-            bottomStart = 0.dp,
-            topEnd = cornerRadius,
-            bottomEnd = cornerRadius
-        )
-    }
-    val panelPadding = PaddingValues(
-        start = if (isHalfDisc && half == DiscHalf.Right) 0.dp else 10.dp,
-        end = if (isHalfDisc && half == DiscHalf.Left) 0.dp else 10.dp,
-        top = 10.dp,
-        bottom = 10.dp
-    )
-
-    // One background object: in translucent mode the panel is the system
-    // blur applied to the overlay window itself, so the composable adds no
-    // fill of its own; in solid mode the blur is off and this is the panel.
-    val panelColor = when (preferences.popupBackground) {
-        PopupBackground.Translucent -> Color.Transparent
-        PopupBackground.Solid -> MaterialTheme.colorScheme.background.copy(
+    // One background object. For the bars: the system blur in translucent
+    // mode (so the composable adds no fill), or this panel in solid mode.
+    // For the disc it's always the radial backdrop below.
+    val panelColor = when {
+        isDisc -> Color.Transparent
+        preferences.popupBackground == PopupBackground.Translucent -> Color.Transparent
+        else -> MaterialTheme.colorScheme.background.copy(
             alpha = preferences.popupBackgroundOpacity
         )
     }
+    val discBackdrop = MaterialTheme.colorScheme.background.copy(
+        alpha = preferences.popupBackgroundOpacity
+    )
 
     Surface(
         color = panelColor,
@@ -313,6 +299,7 @@ fun CollapsedVolumePopup(
                     diameter = (220 * scale).dp,
                     half = half,
                     showDots = preferences.discShowDots,
+                    backdropColor = discBackdrop,
                     icon = if (preferences.popupShowIcon) Icons.Default.VolumeUp else null,
                     label = if (preferences.popupShowValue) valueText else null,
                     // The disc's hollow middle is where the ringer switch

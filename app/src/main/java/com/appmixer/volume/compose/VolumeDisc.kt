@@ -2,10 +2,9 @@ package com.appmixer.volume.compose
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
@@ -18,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,6 +58,12 @@ fun VolumeDisc(
     outlineColor: Color = MaterialTheme.colorScheme.outline,
     contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     showDots: Boolean = true,
+    /**
+     * Backdrop behind the disc: painted as a circle that follows the disc's
+     * own radius and fades out to fully transparent at the rim, so the popup
+     * reads as round rather than sitting on a square panel.
+     */
+    backdropColor: Color = Color.Transparent,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -112,6 +118,24 @@ fun VolumeDisc(
 
             val ringWidth = radius * 0.14f
             val ringRadius = radius - ringWidth / 2f - 1.dp.toPx()
+
+            // Round backdrop, holding its tint out to just past the ring
+            // before dissolving into nothing at the outer edge.
+            if (backdropColor.alpha > 0f) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colorStops = arrayOf(
+                            0f to backdropColor,
+                            0.82f to backdropColor,
+                            1f to backdropColor.copy(alpha = 0f)
+                        ),
+                        center = center,
+                        radius = radius
+                    ),
+                    radius = radius,
+                    center = center
+                )
+            }
 
             // Angles are measured clockwise from 3 o'clock. Every variant
             // fills from the bottom upwards.
@@ -184,9 +208,12 @@ fun VolumeDisc(
             )
         }
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        // The center piece is anchored dead center and the readout floats
+        // below it, rather than stacking the two and pushing both off the
+        // middle.
+        Box(
+            modifier = Modifier.matchParentSize(),
+            contentAlignment = Alignment.Center
         ) {
             if (centerContent != null) {
                 centerContent()
@@ -198,11 +225,15 @@ fun VolumeDisc(
                     modifier = Modifier.size(diameter * 0.14f)
                 )
             }
+
             if (label != null) {
                 Text(
                     text = label,
                     style = MaterialTheme.typography.titleMedium,
-                    color = contentColor
+                    color = contentColor,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(y = diameter * 0.17f)
                 )
             }
         }

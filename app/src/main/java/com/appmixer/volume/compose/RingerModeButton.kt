@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -12,14 +14,16 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -57,41 +61,46 @@ fun RingerModeButton(
     }
     val isMuted = ringerMode != AudioManager.RINGER_MODE_NORMAL
 
-    IconButton(
-        onClick = {
-            val next = when (ringerMode) {
-                AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
-                AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
-                else -> AudioManager.RINGER_MODE_NORMAL
-            }
-
-            try {
-                audioManager.ringerMode = next
-            } catch (e: SecurityException) {
-                // Switching to silent needs Do Not Disturb access on some
-                // devices; skip that step rather than crashing the overlay.
-                Log.w(TAG, "Can't set ringer mode $next", e)
-                try {
-                    audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
-                } catch (inner: SecurityException) {
-                    Log.w(TAG, "Can't restore ringer mode", inner)
-                }
-            }
-
-            ringerMode = audioManager.ringerMode
-            onChange?.invoke()
-        },
+    // Deliberately not an IconButton: that applies its own 40dp size and a
+    // 48dp minimum touch target *after* the caller's modifier, so asking for
+    // a smaller button left the disc full size with only the icon shrinking,
+    // and the oversized touch target overlapped its neighbours.
+    Box(
         modifier = modifier
             .size(size)
+            .clip(CircleShape)
             .background(
                 color = if (isMuted) {
                     MaterialTheme.colorScheme.tertiary
                 } else {
                     MaterialTheme.colorScheme.background
-                },
-                shape = CircleShape
+                }
             )
             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape)
+            .clickable(role = Role.Button) {
+                val next = when (ringerMode) {
+                    AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
+                    AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
+                    else -> AudioManager.RINGER_MODE_NORMAL
+                }
+
+                try {
+                    audioManager.ringerMode = next
+                } catch (e: SecurityException) {
+                    // Switching to silent needs Do Not Disturb access on some
+                    // devices; skip that step rather than crashing the overlay.
+                    Log.w(TAG, "Can't set ringer mode $next", e)
+                    try {
+                        audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
+                    } catch (inner: SecurityException) {
+                        Log.w(TAG, "Can't restore ringer mode", inner)
+                    }
+                }
+
+                ringerMode = audioManager.ringerMode
+                onChange?.invoke()
+            },
+        contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,

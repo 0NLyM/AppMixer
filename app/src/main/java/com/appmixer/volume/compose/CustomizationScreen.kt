@@ -551,17 +551,17 @@ fun CustomizationScreen(
                 onSelect = { background -> onUpdate { it.copy(popupBackground = background) } }
             )
 
-            if (preferences.popupBackground == PopupBackground.Solid) {
-                SliderSetting(
-                    label = stringResource(R.string.popup_opacity),
-                    valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
-                    value = preferences.popupBackgroundOpacity,
-                    valueRange = 0.2f..1f,
-                    onValueChange = { value ->
-                        onUpdate { it.copy(popupBackgroundOpacity = value) }
-                    }
-                )
-            }
+            // Always shown: the disc's round backdrop uses this too, and 0%
+            // is a legitimate choice -- no panel at all.
+            SliderSetting(
+                label = stringResource(R.string.popup_opacity),
+                valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
+                value = preferences.popupBackgroundOpacity,
+                valueRange = 0f..1f,
+                onValueChange = { value ->
+                    onUpdate { it.copy(popupBackgroundOpacity = value) }
+                }
+            )
 
             ToggleSetting(
                 label = stringResource(R.string.show_value),

@@ -52,6 +52,7 @@ import com.appmixer.volume.compose.VolumeChangeObserver
 import com.appmixer.volume.system.ActivityTaskManagerProxy
 import com.appmixer.volume.data.PopupAnchor
 import com.appmixer.volume.data.PopupBackground
+import com.appmixer.volume.data.PopupStyle
 import com.appmixer.volume.ui.theme.AppMixerTheme
 import org.joor.Reflect
 import java.util.Objects
@@ -169,8 +170,12 @@ class Service : AccessibilityService() {
                 // blur is skipped entirely and the composable's panel is
                 // the only background. Either way there's one object, and
                 // its corner radius matches the configured one.
+                // The disc is excluded: a blur drawable can only be a rounded
+                // rectangle, which would put the square panel back behind the
+                // round popup. The disc paints its own circular backdrop.
                 val translucent =
-                    manager.uiPreferences.popupBackground == PopupBackground.Translucent
+                    manager.uiPreferences.popupBackground == PopupBackground.Translucent &&
+                        manager.uiPreferences.popupStyle != PopupStyle.Disc
                 val cornerRadiusPx =
                     manager.uiPreferences.popupCornerRadius * resources.displayMetrics.density
 
