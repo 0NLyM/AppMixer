@@ -67,5 +67,25 @@ Google Play Console itself defaults to for app signing; no security
 downside). No code changes were needed, only the `KEYSTORE_FILE` /
 `KEYSTORE_PASSWORD` / `KEY_PASSWORD` repository secrets.
 
+## 2026-09-02 — Customization menu, vertical slider, rotating disc
+
+- Added `data/UiPreferences` and `UiPreferencesStore`: persisted theme mode,
+  five nullable color overrides, and the collapsed popup's style, anchor,
+  offsets, scale, corner radius, opacity and detail toggles. `Manager`
+  tracks them independently of Shizuku and shares one state object between
+  the activity and the overlay service.
+- `ui/theme/Theme.kt` gained `baseColorScheme()` / `withOverrides()`, so the
+  user's colors layer onto the Nothing palette with contrast-aware
+  on-colors.
+- New `compose/CustomizationScreen.kt` (sectioned settings menu),
+  `ColorPickerDialog.kt` (HSV picker with presets and hex entry),
+  `VerticalTrackSlider.kt`, `VolumeDisc.kt` (rotary volume wheel) and
+  `CollapsedVolumePopup.kt` (style dispatch). All written for this fork.
+- The volume-key popup now defaults to a vertical bar and can be switched
+  to a horizontal bar or the rotating disc, positioned via a nine-point
+  anchor plus offsets that `Service` applies to the overlay window.
+- Fixed `.github/workflows/build.yml`, which used the `secrets` context in a
+  step `if:` condition and therefore failed to parse.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
