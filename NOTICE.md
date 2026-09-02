@@ -114,5 +114,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   broadcast receivers on the application context and guards teardown, and
   moved `RingFooter` (upstream) and `RingerModeButton` onto it.
 
+## 2026-09-02 — Collapsed popup fixes
+
+- The horizontal style no longer reuses `StreamVolumeSlider`, so the
+  show-icon / show-level toggles apply to it and the stream name is left to
+  the full mixer.
+- Vertical bar width and the ringer button share one base size and scale
+  together.
+- The half disc sits flush with the screen edge (panel padding and corner
+  rounding dropped on that side) and hosts the ringer switch in its middle.
+- The expand button was replaced by an inward swipe, with a hint in the
+  customization screen.
+- Added `FLAG_NOT_FOCUSABLE` to the overlay window so showing the popup no
+  longer dismisses the on-screen keyboard.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
