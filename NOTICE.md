@@ -104,5 +104,15 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   applies to the full mixer, whose readouts now use the same monospace
   style as the collapsed popup.
 
+## 2026-09-02 — Broadcast receiver crash fix
+
+- Hardened upstream's `VolumeChangeObserver`, which tracked receiver
+  liveness by reference count alone and threw
+  `IllegalArgumentException: Receiver not registered` whenever the count
+  and reality diverged.
+- Added `compose/SystemBroadcastEffect.kt`, which registers system
+  broadcast receivers on the application context and guards teardown, and
+  moved `RingFooter` (upstream) and `RingerModeButton` onto it.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
