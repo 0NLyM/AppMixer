@@ -2,6 +2,7 @@ package com.appmixer.volume.compose
 
 import android.media.AudioManager
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,17 +72,45 @@ private fun PopupAnchor.expandDirection(): Int = when (this) {
 }
 
 /**
- * Swipes inward from the popup's edge to open the full mixer. Vertical
- * drags pass straight through to the sliders underneath, which claim them
- * for volume; on the horizontal bar style the bar itself claims horizontal
- * drags too, so there the swipe works from the panel around it.
+ * Swipe to open the full mixer, on whichever axis the style leaves free.
+ *
+ * The bar and disc styles read vertical drags as volume, so expanding is a
+ * horizontal swipe inward from the edge the popup hugs ([direction]; 0 when
+ * centered, where either way works). The horizontal bar is the other way
+ * round -- it claims horizontal drags for volume -- so there the gesture is
+ * a vertical swipe, up or down.
  */
-private fun Modifier.expandOnSwipe(direction: Int, onExpand: () -> Unit): Modifier =
-    pointerInput(direction) {
-        val threshold = 48.dp.toPx()
-        var travelled = 0f
-        var fired = false
+private fun Modifier.expandOnSwipe(
+    verticalAxis: Boolean,
+    direction: Int,
+    onExpand: () -> Unit
+): Modifier = pointerInput(verticalAxis, direction) {
+    val threshold = 48.dp.toPx()
+    var travelled = 0f
+    var fired = false
 
+    fun onDrag(dragAmount: Float) {
+        travelled += dragAmount
+        val goingTheRightWay = direction == 0 ||
+            (direction > 0 && travelled > 0) ||
+            (direction < 0 && travelled < 0)
+
+        if (!fired && goingTheRightWay && abs(travelled) >= threshold) {
+            fired = true
+            onExpand()
+        }
+    }
+
+    if (verticalAxis) {
+        detectVerticalDragGestures(
+            onDragStart = {
+                travelled = 0f
+                fired = false
+            },
+            onDragEnd = { fired = false },
+            onDragCancel = { fired = false }
+        ) { _, dragAmount -> onDrag(dragAmount) }
+    } else {
         detectHorizontalDragGestures(
             onDragStart = {
                 travelled = 0f
@@ -89,18 +118,9 @@ private fun Modifier.expandOnSwipe(direction: Int, onExpand: () -> Unit): Modifi
             },
             onDragEnd = { fired = false },
             onDragCancel = { fired = false }
-        ) { _, dragAmount ->
-            travelled += dragAmount
-            val goingTheRightWay = direction == 0 ||
-                (direction > 0 && travelled > 0) ||
-                (direction < 0 && travelled < 0)
-
-            if (!fired && goingTheRightWay && abs(travelled) >= threshold) {
-                fired = true
-                onExpand()
-            }
-        }
+        ) { _, dragAmount -> onDrag(dragAmount) }
     }
+}
 
 /**
  * The compact popup shown when a volume key is pressed: media volume only,
@@ -188,7 +208,17 @@ fun CollapsedVolumePopup(
         color = panelColor,
         contentColor = MaterialTheme.colorScheme.onBackground,
         shape = panelShape,
-        modifier = Modifier.expandOnSwipe(preferences.popupAnchor.expandDirection(), onExpand)
+        modifier = Modifier.expandOnSwipe(
+            // The horizontal bar spends the horizontal axis on volume, so its
+            // expand gesture moves up or down instead.
+            verticalAxis = preferences.popupStyle == PopupStyle.HorizontalBar,
+            direction = if (preferences.popupStyle == PopupStyle.HorizontalBar) {
+                0
+            } else {
+                preferences.popupAnchor.expandDirection()
+            },
+            onExpand = onExpand
+        )
     ) {
         when (preferences.popupStyle) {
             PopupStyle.HorizontalBar -> Row(

@@ -29,6 +29,9 @@ import kotlin.math.sin
 
 private const val DOT_COUNT = 40
 
+/** How much of its box the disc itself takes; the rest is backdrop fade. */
+private const val DISC_INSET = 0.86f
+
 /**
  * Which part of the disc is drawn. A half disc sits flush against a screen
  * edge with its flat side on that edge, so [Left] is the half that shows
@@ -107,7 +110,11 @@ fun VolumeDisc(
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
-            val radius = size.height / 2f
+            // The disc is inset inside its box so the backdrop has a ring of
+            // its own to fade across. Drawn edge to edge, the backdrop ended
+            // up entirely underneath the disc body and was invisible.
+            val outerRadius = size.height / 2f
+            val radius = outerRadius * DISC_INSET
             // For a half disc the circle's center sits on the flat edge, so
             // only the intended half falls inside the box and gets drawn.
             val center = when (half) {
@@ -119,20 +126,20 @@ fun VolumeDisc(
             val ringWidth = radius * 0.14f
             val ringRadius = radius - ringWidth / 2f - 1.dp.toPx()
 
-            // Round backdrop, holding its tint out to just past the ring
-            // before dissolving into nothing at the outer edge.
+            // Round backdrop: solid out to the disc's own edge, then
+            // dissolving to nothing across the ring left around it.
             if (backdropColor.alpha > 0f) {
                 drawCircle(
                     brush = Brush.radialGradient(
                         colorStops = arrayOf(
                             0f to backdropColor,
-                            0.82f to backdropColor,
+                            DISC_INSET to backdropColor,
                             1f to backdropColor.copy(alpha = 0f)
                         ),
                         center = center,
-                        radius = radius
+                        radius = outerRadius
                     ),
-                    radius = radius,
+                    radius = outerRadius,
                     center = center
                 )
             }

@@ -551,17 +551,22 @@ fun CustomizationScreen(
                 onSelect = { background -> onUpdate { it.copy(popupBackground = background) } }
             )
 
-            // Always shown: the disc's round backdrop uses this too, and 0%
-            // is a legitimate choice -- no panel at all.
-            SliderSetting(
-                label = stringResource(R.string.popup_opacity),
-                valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
-                value = preferences.popupBackgroundOpacity,
-                valueRange = 0f..1f,
-                onValueChange = { value ->
-                    onUpdate { it.copy(popupBackgroundOpacity = value) }
-                }
-            )
+            // Hidden where it would do nothing: a translucent bar is the
+            // system blur, which has no tint to set. The disc always uses it,
+            // since its round backdrop is drawn rather than blurred.
+            if (preferences.popupBackground == PopupBackground.Solid ||
+                preferences.popupStyle == PopupStyle.Disc
+            ) {
+                SliderSetting(
+                    label = stringResource(R.string.popup_opacity),
+                    valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
+                    value = preferences.popupBackgroundOpacity,
+                    valueRange = 0f..1f,
+                    onValueChange = { value ->
+                        onUpdate { it.copy(popupBackgroundOpacity = value) }
+                    }
+                )
+            }
 
             ToggleSetting(
                 label = stringResource(R.string.show_value),
