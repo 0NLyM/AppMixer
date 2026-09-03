@@ -5,6 +5,9 @@ import kotlinx.serialization.Serializable
 /** Top of the corner-radius slider's range, in dp. */
 const val POPUP_CORNER_RADIUS_MAX = 48
 
+/** Top of the blur-radius slider's range, in pixels. */
+const val POPUP_BLUR_RADIUS_MAX = 300
+
 /** Shape the collapsed (volume-key) popup takes. */
 enum class PopupStyle {
     VerticalBar, HorizontalBar, Disc
@@ -56,11 +59,18 @@ data class UiPreferences(
     val popupCornerRadius: Int = 28,
     val popupBackground: PopupBackground = PopupBackground.Translucent,
     /**
-     * Panel opacity, 0f - 1f. Drives the solid panel directly, and the disc's
-     * radial backdrop in either mode; translucent bars are the system blur,
-     * which has no opacity of its own.
+     * Panel opacity, 0f - 1f. Drives the solid panel, and the disc's radial
+     * backdrop in either mode (the disc can't have the blur). Translucent
+     * bars are the system blur instead, sized by [popupBlurRadius].
      */
     val popupBackgroundOpacity: Float = 0.85f,
+    /**
+     * Radius of the system blur behind a translucent panel, in pixels. Its
+     * own setting rather than a second meaning for the opacity above: one
+     * says how frosted the glass is, the other how opaque the paint is, and
+     * they belong to different background modes.
+     */
+    val popupBlurRadius: Int = 200,
     val popupShowValue: Boolean = true,
     val popupShowIcon: Boolean = true,
     /** Ring / vibrate / silent switch alongside the collapsed popup. */

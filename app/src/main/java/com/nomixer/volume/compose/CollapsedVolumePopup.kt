@@ -53,6 +53,13 @@ import kotlin.math.roundToInt
 private const val BUTTON_SIZE_DP = 48
 
 /**
+ * How close the disc's readout may come to the side of the screen. A half
+ * disc's hole is centred on its flat edge, so the content wants to sit right
+ * on the screen edge; this is the margin it keeps instead.
+ */
+private const val DISC_CONTENT_EDGE_MARGIN_DP = 12
+
+/**
  * Which half of the disc to show for a given anchor: hugging the right edge
  * means only the left half is on screen, and vice versa. Anything centered
  * horizontally gets the full circle.
@@ -345,6 +352,13 @@ fun CollapsedVolumePopup(
                     valueRange = 0f..maxVolume,
                     diameter = (220 * scale).dp,
                     half = half,
+                    // The popup's own offset already holds the disc off the
+                    // screen edge, so only the shortfall has to be made up
+                    // here: park the readout against the flat edge once the
+                    // disc sits far enough in.
+                    contentInset = (DISC_CONTENT_EDGE_MARGIN_DP - preferences.popupOffsetX)
+                        .coerceAtLeast(0)
+                        .dp,
                     showDots = preferences.discShowDots,
                     backdropColor = discBackdrop,
                     icon = if (preferences.popupShowIcon) Icons.Default.VolumeUp else null,

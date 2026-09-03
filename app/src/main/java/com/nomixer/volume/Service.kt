@@ -196,6 +196,9 @@ class Service : AccessibilityService() {
              */
             private var blurred = false
 
+            /** Radius the live blur drawable was built with, in pixels. */
+            private var blurredRadius = -1
+
             /**
              * The blur *is* the panel in translucent mode, so the composable
              * draws no fill of its own; in solid mode there's no blur and the
@@ -212,11 +215,17 @@ class Service : AccessibilityService() {
                     if (blurred) {
                         background = null
                         blurred = false
+                        blurredRadius = -1
                     }
                     return
                 }
 
-                if (blurred) {
+                val radius = manager.uiPreferences.popupBlurRadius
+
+                // A live drawable is kept unless the radius changed: the
+                // slider has to be felt while it's being dragged, and the
+                // radius can only be set when the drawable is built.
+                if (blurred && blurredRadius == radius) {
                     return
                 }
 
@@ -226,10 +235,11 @@ class Service : AccessibilityService() {
                 @Suppress("SpellCheckingInspection") if (windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
                     background =
                         Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
-                            call("setBlurRadius", 200)
+                            call("setBlurRadius", radius)
                             call("setCornerRadius", cornerRadiusPx)
                         }.get()
                     blurred = true
+                    blurredRadius = radius
                 }
             }
 
@@ -270,7 +280,12 @@ class Service : AccessibilityService() {
 
                     // Expanding turns the popup into a rounded rectangle, so
                     // the blur the collapsed disc has to skip comes back.
-                    LaunchedEffect(expanded, preferences.popupBackground, preferences.popupStyle) {
+                    LaunchedEffect(
+                        expanded,
+                        preferences.popupBackground,
+                        preferences.popupStyle,
+                        preferences.popupBlurRadius
+                    ) {
                         applyWindowBlur(preferences.usesWindowBlur(expanded = expanded))
                     }
 
@@ -331,7 +346,9 @@ class Service : AccessibilityService() {
                                     shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(20.dp, 16.dp)
+                                        // One inset all round: the sides used
+                                        // to be wider than the top and bottom.
+                                        modifier = Modifier.padding(16.dp)
                                     ) {
                                         AppVolumeList(
                                             apps = manager.apps.values,

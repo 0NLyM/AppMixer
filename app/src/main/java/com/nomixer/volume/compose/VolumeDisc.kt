@@ -74,6 +74,15 @@ fun VolumeDisc(
      * reads as round rather than sitting on a square panel.
      */
     backdropColor: Color = Color.Transparent,
+    /**
+     * How far to push the readout in from the disc's flat edge. A half
+     * disc's hole is centred on that edge, which is also the screen edge, so
+     * the content belongs as far that way as it can go -- but not so far
+     * that it ends up against the side of the screen. The caller works out
+     * what the popup's own horizontal offset already provides and asks for
+     * the remainder.
+     */
+    contentInset: Dp = 0.dp,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -257,34 +266,56 @@ fun VolumeDisc(
             )
         }
 
-        // The center piece is anchored dead center and the readout floats
-        // below it, rather than stacking the two and pushing both off the
-        // middle.
-        Box(
-            modifier = Modifier.matchParentSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            if (centerContent != null) {
-                centerContent()
-            } else if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = contentColor,
-                    modifier = Modifier.size(diameter * 0.14f)
-                )
+        // The level sits on the disc's own horizontal midline and the icon
+        // or switch rides above it. Horizontally both hug the flat edge --
+        // the side the hole is centred on -- pushed back in by whatever
+        // [contentInset] asks for.
+        val contentAlignment = when (half) {
+            DiscHalf.None -> Alignment.Center
+            DiscHalf.Left -> Alignment.CenterEnd
+            DiscHalf.Right -> Alignment.CenterStart
+        }
+        val insetDirection = when (half) {
+            DiscHalf.None -> 0f
+            DiscHalf.Left -> -1f
+            DiscHalf.Right -> 1f
+        }
+        val contentModifier = Modifier
+            .align(contentAlignment)
+            .offset(x = contentInset * insetDirection)
+
+        val topPiece: (@Composable () -> Unit)? = when {
+            centerContent != null -> centerContent
+            icon != null -> {
+                {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(diameter * 0.14f)
+                    )
+                }
             }
 
-            if (label != null) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = contentColor,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .offset(y = diameter * 0.17f)
-                )
+            else -> null
+        }
+
+        if (topPiece != null) {
+            Box(
+                modifier = contentModifier.offset(y = -diameter * 0.17f),
+                contentAlignment = Alignment.Center
+            ) {
+                topPiece()
             }
+        }
+
+        if (label != null) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                color = contentColor,
+                modifier = contentModifier
+            )
         }
     }
 }

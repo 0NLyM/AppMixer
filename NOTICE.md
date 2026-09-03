@@ -254,5 +254,28 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   requires the repository owner to do it from GitHub's settings, which
   isn't reachable from here.
 
+## 2026-09-03 — 1.0.0
+
+- The expanded mixer's panel uses one inset on every side; the left and
+  right ones used to be wider than the top and bottom.
+- Blur is its own setting (`popupBlurRadius`), adjustable from the
+  customization screen when the background is translucent, and separate
+  from the opacity slider that belongs to the solid panel and to the disc's
+  backdrop. `Service` rebuilds the blur drawable when the radius changes,
+  since a radius can only be set at construction.
+- The disc puts the level on its own horizontal midline with the icon or
+  ringer switch above it, and pushes both towards the flat edge -- the side
+  the disc's hole is centred on. How far is worked out from the popup's
+  horizontal offset, so the readout stays at least a fixed margin from the
+  side of the screen and recentres as the disc moves inward.
+- Added `system/AudioManagerProxy`, which routes ringer mode changes through
+  Shizuku the way `NotificationManagerProxy` already routes the interruption
+  filter. Silent needs Do Not Disturb access, so the switch used to throw
+  and fall back to ringing, leaving a three-position control that only ever
+  reached two. It now reports whether the mode was actually taken and leaves
+  the phone alone when it wasn't.
+- Releases are no longer marked pre-release by default; the workflow takes
+  it as an input.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

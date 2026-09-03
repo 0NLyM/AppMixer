@@ -63,6 +63,7 @@
     <string name="popup_size">Size</string>
     <string name="popup_corner">Corner radius</string>
     <string name="popup_opacity">Background opacity</string>
+    <string name="popup_blur">Blur</string>
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
     <string name="disc_dots">Show dot ring</string>

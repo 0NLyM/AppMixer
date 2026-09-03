@@ -38,11 +38,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.R
+import com.nomixer.volume.system.AudioManagerProxy
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
 import com.nomixer.volume.ui.theme.Motion
 
@@ -74,6 +76,8 @@ fun RingerModeButton(
     size: Dp = 48.dp,
     onChange: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val audioProxy = remember(context) { AudioManagerProxy(context) }
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
 
     SystemBroadcastEffect(AudioManager.RINGER_MODE_CHANGED_ACTION) {
@@ -177,17 +181,13 @@ fun RingerModeButton(
                     else -> AudioManager.RINGER_MODE_NORMAL
                 }
 
-                try {
-                    audioManager.ringerMode = next
-                } catch (e: SecurityException) {
-                    // Switching to silent needs Do Not Disturb access on some
-                    // devices; skip that step rather than crashing the overlay.
-                    Log.w(TAG, "Can't set ringer mode $next", e)
-                    try {
-                        audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
-                    } catch (inner: SecurityException) {
-                        Log.w(TAG, "Can't restore ringer mode", inner)
-                    }
+                // Silent needs Do Not Disturb access, which the proxy gets
+                // through Shizuku. If even that is refused the mode is left
+                // alone rather than bounced back to ringing -- the old
+                // fallback is what made the switch look like a two-position
+                // one, skipping silent entirely.
+                if (!audioProxy.setRingerMode(next)) {
+                    Log.w(TAG, "Ringer mode $next was refused")
                 }
 
                 ringerMode = audioManager.ringerMode

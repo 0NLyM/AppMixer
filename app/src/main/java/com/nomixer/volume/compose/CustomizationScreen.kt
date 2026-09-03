@@ -54,6 +54,7 @@ import com.nomixer.volume.R
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.ui.theme.Motion
 import com.nomixer.volume.ui.theme.PopupColors
+import com.nomixer.volume.data.POPUP_BLUR_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupStyle
@@ -592,6 +593,19 @@ fun CustomizationScreen(
                         onUpdate { it.copy(popupBackgroundOpacity = value) }
                     }
                 )
+            } else {
+                // Translucent is the blur, so what there is to adjust is how
+                // frosted it is -- a different quantity from the solid
+                // panel's opacity, and it gets its own slider.
+                SliderSetting(
+                    label = stringResource(R.string.popup_blur),
+                    valueLabel = "${preferences.popupBlurRadius} px",
+                    value = preferences.popupBlurRadius.toFloat(),
+                    valueRange = 0f..POPUP_BLUR_RADIUS_MAX.toFloat(),
+                    onValueChange = { value ->
+                        onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
+                    }
+                )
             }
 
             ToggleSetting(
@@ -649,6 +663,7 @@ fun CustomizationScreen(
                             popupCornerRadius = defaults.popupCornerRadius,
                             popupBackground = defaults.popupBackground,
                             popupBackgroundOpacity = defaults.popupBackgroundOpacity,
+                            popupBlurRadius = defaults.popupBlurRadius,
                             popupShowValue = defaults.popupShowValue,
                             popupShowIcon = defaults.popupShowIcon,
                             popupShowRingerButton = defaults.popupShowRingerButton,

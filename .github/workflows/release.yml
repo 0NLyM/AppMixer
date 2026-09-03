@@ -4,8 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v0.1.0)"
+        description: "Release tag (e.g. v1.0.0)"
         required: true
+      prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -51,5 +55,5 @@ jobs:
             NoMixer build, signed with the project's release key so it can be installed over previous signed releases as a normal update.
 
             Requires Android 13+ and [Shizuku](https://shizuku.rikka.app/).
-          prerelease: true
+          prerelease: ${{ inputs.prerelease }}
           files: out/nomixer-${{ github.event.inputs.tag }}.apk
