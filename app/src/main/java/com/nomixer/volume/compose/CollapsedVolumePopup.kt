@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
@@ -59,6 +60,21 @@ internal fun PopupAnchor.discHalf(): DiscHalf = when (this) {
     PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> DiscHalf.Left
     PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> DiscHalf.Right
     else -> DiscHalf.None
+}
+
+/**
+ * The half-moon only makes sense while the disc still reads as flush with
+ * the screen edge it hugs -- its flat side *is* that edge, drawn with
+ * nothing behind it. Pulled far enough in by [UiPreferences.popupOffsetX],
+ * a gap opens up between the edge and the flat cut, and the disc looks
+ * broken rather than intentional; past that point it's a full circle
+ * instead, same as a horizontally centered anchor, with the drag gesture
+ * staying vertical either way. The threshold scales with [diameter] so it
+ * still makes sense at every size setting.
+ */
+internal fun UiPreferences.discHalfFor(diameter: Dp): DiscHalf {
+    val flushThreshold = diameter * 0.2f
+    return if (popupOffsetX.dp > flushThreshold) DiscHalf.None else popupAnchor.discHalf()
 }
 
 /**
@@ -174,7 +190,8 @@ fun CollapsedVolumePopup(
     val volumeIcon = rememberVolumeIcon(audioManager, volume)
     val scale = preferences.popupScale
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
-    val half = preferences.popupAnchor.discHalf()
+    val discDiameter = (220 * scale).dp
+    val half = preferences.discHalfFor(discDiameter)
     val isDisc = preferences.popupStyle == PopupStyle.Disc
     val cornerRadius = preferences.popupCornerRadius.dp
 
@@ -263,21 +280,40 @@ fun CollapsedVolumePopup(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = (14 * scale).dp),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = (14 * scale).dp)
                     ) {
-                        when (preferences.barCenterContent) {
-                            PopupCenterContent.Icon -> Icon(
+                        // Each piece sits at its own default corner unless
+                        // it's the one pulled to dead center; the two are
+                        // never both centered at once.
+                        if (preferences.popupShowIcon) {
+                            Icon(
                                 imageVector = volumeIcon,
                                 contentDescription = stringResource(R.string.stream_media),
-                                modifier = Modifier.size((22 * scale).dp)
+                                modifier = Modifier
+                                    .align(
+                                        if (preferences.centeredContent == PopupCenterContent.Icon) {
+                                            Alignment.Center
+                                        } else {
+                                            Alignment.CenterStart
+                                        }
+                                    )
+                                    .size((22 * scale).dp)
                             )
+                        }
 
-                            PopupCenterContent.Value -> Text(
+                        if (preferences.popupShowValue) {
+                            Text(
                                 text = valueText,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontSize = (13 * scale).sp,
-                                maxLines = 1
+                                maxLines = 1,
+                                modifier = Modifier.align(
+                                    if (preferences.centeredContent == PopupCenterContent.Value) {
+                                        Alignment.Center
+                                    } else {
+                                        Alignment.CenterEnd
+                                    }
+                                )
                             )
                         }
                     }
@@ -311,21 +347,40 @@ fun CollapsedVolumePopup(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(vertical = (12 * scale).dp),
-                        contentAlignment = Alignment.Center
+                            .padding(vertical = (12 * scale).dp)
                     ) {
-                        when (preferences.barCenterContent) {
-                            PopupCenterContent.Value -> Text(
+                        // Default stacking is value on top, icon below;
+                        // whichever is pulled to center leaves the other at
+                        // its own default spot.
+                        if (preferences.popupShowValue) {
+                            Text(
                                 text = valueText,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontSize = (11 * scale).sp,
-                                maxLines = 1
+                                maxLines = 1,
+                                modifier = Modifier.align(
+                                    if (preferences.centeredContent == PopupCenterContent.Value) {
+                                        Alignment.Center
+                                    } else {
+                                        Alignment.TopCenter
+                                    }
+                                )
                             )
+                        }
 
-                            PopupCenterContent.Icon -> Icon(
+                        if (preferences.popupShowIcon) {
+                            Icon(
                                 imageVector = volumeIcon,
                                 contentDescription = stringResource(R.string.stream_media),
-                                modifier = Modifier.size((20 * scale).dp)
+                                modifier = Modifier
+                                    .align(
+                                        if (preferences.centeredContent == PopupCenterContent.Icon) {
+                                            Alignment.Center
+                                        } else {
+                                            Alignment.BottomCenter
+                                        }
+                                    )
+                                    .size((20 * scale).dp)
                             )
                         }
                     }
@@ -339,7 +394,7 @@ fun CollapsedVolumePopup(
                 VolumeDisc(
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
-                    diameter = (220 * scale).dp,
+                    diameter = discDiameter,
                     half = half,
                     // Scoped to the disc's own drag surface rather than the
                     // whole component, for the same reason as the bars'

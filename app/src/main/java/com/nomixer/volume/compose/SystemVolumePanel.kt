@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.DoNotDisturbOff
 import androidx.compose.material.icons.filled.DoNotDisturbOn
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.RingVolume
@@ -221,7 +221,7 @@ private fun RingFooter(
             checkedDescription = stringResource(R.string.disable_do_not_disturb),
             checkedIcon = Icons.Default.DoNotDisturbOn,
             uncheckedDescription = stringResource(R.string.enable_do_not_disturb),
-            uncheckedIcon = Icons.Default.NotificationsActive
+            uncheckedIcon = Icons.Default.DoNotDisturbOff
         ) {
             notificationManagerProxy.setInterruptionFilter(
                 if (it) NotificationManager.INTERRUPTION_FILTER_NONE else NotificationManager.INTERRUPTION_FILTER_ALL

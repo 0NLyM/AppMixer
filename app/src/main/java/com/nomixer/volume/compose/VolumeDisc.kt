@@ -33,23 +33,12 @@ import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 private const val DOT_COUNT = 40
 
 /** How much of its box the disc itself takes; the rest is backdrop fade. */
 private const val DISC_INSET = 0.86f
-
-/**
- * Where the readout sits inside a half disc's hole, as a fraction of the
- * diameter measured in from the flat edge. A half-moon's content wants to
- * sit at the visual centroid of that hole, not glued to the flat edge nor
- * pushed out past the middle of the curve -- this fraction is the centroid
- * of the semicircular track (`4r / 3π`, `r` being the track's own radius, in
- * terms of the full diameter) rounded to something that reads well.
- * Independent of any popup offset, unlike the caller-supplied margin this
- * replaced, which collapsed to zero the moment the offset alone cleared it.
- */
-private const val DISC_CONTENT_CENTROID_FRACTION = 0.19f
 
 /**
  * Which part of the disc is drawn. A half disc sits flush against a screen
@@ -282,10 +271,13 @@ fun VolumeDisc(
         }
 
         // The level sits on the disc's own horizontal midline and the icon
-        // or switch rides above it. Horizontally both sit at the hole's
-        // centroid -- a fixed fraction of the diameter in from the flat
-        // edge, the same for every popup offset -- rather than hugging the
-        // edge itself.
+        // or switch rides above it. Both are inset in from the flat edge by
+        // exactly half of the hole's own width at their particular height --
+        // the point that centers each of them within the half-moon's curve
+        // at that height, rather than a single inset shared by both. The
+        // hole narrows away from the midline, so the piece riding above it
+        // needs a smaller inset than the level sitting on the midline itself
+        // -- reusing the midline's inset left it off-center.
         val contentAlignment = when (half) {
             DiscHalf.None -> Alignment.Center
             DiscHalf.Left -> Alignment.CenterEnd
@@ -296,14 +288,31 @@ fun VolumeDisc(
             DiscHalf.Left -> -1f
             DiscHalf.Right -> 1f
         }
-        val centroidInset = if (half == DiscHalf.None) {
-            0.dp
-        } else {
-            diameter * DISC_CONTENT_CENTROID_FRACTION
+
+        // Mirrors the canvas's own radius math so the inset is worked out
+        // against the same circle the hole is actually drawn as -- the flat
+        // trackColor disc inside the ring, not the outer disc edge.
+        val holeRadius = (diameter / 2) * DISC_INSET * (1f - 0.14f)
+
+        fun localInset(verticalOffset: Dp): Dp {
+            if (half == DiscHalf.None) {
+                return 0.dp
+            }
+            val d = verticalOffset.value
+            val r = holeRadius.value
+            if (d >= r) {
+                return 0.dp
+            }
+            return (sqrt(r * r - d * d) / 2f).dp
         }
-        val contentModifier = Modifier
+
+        val topPieceYOffset = diameter * 0.17f
+        val topPieceModifier = Modifier
             .align(contentAlignment)
-            .offset(x = centroidInset * insetDirection)
+            .offset(x = localInset(topPieceYOffset) * insetDirection, y = -topPieceYOffset)
+        val labelModifier = Modifier
+            .align(contentAlignment)
+            .offset(x = localInset(0.dp) * insetDirection)
 
         val topPiece: (@Composable () -> Unit)? = when {
             centerContent != null -> centerContent
@@ -322,10 +331,7 @@ fun VolumeDisc(
         }
 
         if (topPiece != null) {
-            Box(
-                modifier = contentModifier.offset(y = -diameter * 0.17f),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = topPieceModifier, contentAlignment = Alignment.Center) {
                 topPiece()
             }
         }
@@ -335,7 +341,7 @@ fun VolumeDisc(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
                 color = contentColor,
-                modifier = contentModifier
+                modifier = labelModifier
             )
         }
     }

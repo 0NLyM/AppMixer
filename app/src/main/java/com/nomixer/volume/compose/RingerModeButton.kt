@@ -181,6 +181,17 @@ fun RingerModeButton(
                     else -> AudioManager.RINGER_MODE_NORMAL
                 }
 
+                // Set locally the instant the tap lands, rather than waiting
+                // on the system call and then re-reading audioManager's own
+                // ringer mode: proxied through Shizuku, that read can still
+                // reflect the *old* mode by the time setRingerMode returns
+                // -- the change reaches this process's AudioManager a beat
+                // later, over the ringer-mode-changed broadcast -- which
+                // read as the switch ignoring the tap even when the change
+                // went through a moment later. The broadcast still corrects
+                // this if something else changed the mode in the meantime.
+                ringerMode = next
+
                 // Silent needs Do Not Disturb access, which the proxy gets
                 // through Shizuku. If even that is refused the mode is left
                 // alone rather than bounced back to ringing -- the old
@@ -188,9 +199,9 @@ fun RingerModeButton(
                 // one, skipping silent entirely.
                 if (!audioProxy.setRingerMode(next)) {
                     Log.w(TAG, "Ringer mode $next was refused")
+                    ringerMode = audioManager.ringerMode
                 }
 
-                ringerMode = audioManager.ringerMode
                 onChange?.invoke()
             },
         contentAlignment = Alignment.Center

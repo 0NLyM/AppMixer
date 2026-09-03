@@ -56,8 +56,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
@@ -130,6 +128,7 @@ private fun SliderSetting(
 private fun ToggleSetting(
     label: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
@@ -139,8 +138,16 @@ private fun ToggleSetting(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (enabled) {
+                Color.Unspecified
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 
@@ -330,30 +337,6 @@ private fun PopupPreview(
     }
 }
 
-/** Mirrors a bar slider's mutually-exclusive center content, for the preview. */
-@Composable
-private fun BarCenterGlyph(
-    content: PopupCenterContent,
-    valueText: String,
-    iconSize: Dp,
-    textSize: TextUnit
-) {
-    when (content) {
-        PopupCenterContent.Icon -> Icon(
-            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-            contentDescription = null,
-            modifier = Modifier.size(iconSize)
-        )
-
-        PopupCenterContent.Value -> Text(
-            text = valueText,
-            style = MaterialTheme.typography.labelLarge,
-            fontSize = textSize,
-            maxLines = 1
-        )
-    }
-}
-
 /**
  * The collapsed popup mockup, built from the real [TrackSlider] /
  * [VerticalTrackSlider] / [VolumeDisc] components at preview scale so the
@@ -377,13 +360,37 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                 .width((64 * scale).dp)
                 .height((250 * scale).dp)
         ) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                BarCenterGlyph(
-                    content = preferences.barCenterContent,
-                    valueText = previewValueText,
-                    iconSize = (20 * scale).dp,
-                    textSize = (11 * scale).sp
-                )
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (preferences.popupShowValue) {
+                    Text(
+                        text = previewValueText,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontSize = (11 * scale).sp,
+                        maxLines = 1,
+                        modifier = Modifier.align(
+                            if (preferences.centeredContent == PopupCenterContent.Value) {
+                                Alignment.Center
+                            } else {
+                                Alignment.TopCenter
+                            }
+                        )
+                    )
+                }
+                if (preferences.popupShowIcon) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .align(
+                                if (preferences.centeredContent == PopupCenterContent.Icon) {
+                                    Alignment.Center
+                                } else {
+                                    Alignment.BottomCenter
+                                }
+                            )
+                            .size((20 * scale).dp)
+                    )
+                }
             }
         }
 
@@ -395,22 +402,47 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                 .width((240 * scale).dp)
                 .height((56 * scale).dp)
         ) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                BarCenterGlyph(
-                    content = preferences.barCenterContent,
-                    valueText = previewValueText,
-                    iconSize = (22 * scale).dp,
-                    textSize = (13 * scale).sp
-                )
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (preferences.popupShowIcon) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .align(
+                                if (preferences.centeredContent == PopupCenterContent.Icon) {
+                                    Alignment.Center
+                                } else {
+                                    Alignment.CenterStart
+                                }
+                            )
+                            .size((22 * scale).dp)
+                    )
+                }
+                if (preferences.popupShowValue) {
+                    Text(
+                        text = previewValueText,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontSize = (13 * scale).sp,
+                        maxLines = 1,
+                        modifier = Modifier.align(
+                            if (preferences.centeredContent == PopupCenterContent.Value) {
+                                Alignment.Center
+                            } else {
+                                Alignment.CenterEnd
+                            }
+                        )
+                    )
+                }
             }
         }
 
         PopupStyle.Disc -> {
-            val half = preferences.popupAnchor.discHalf()
+            val discDiameter = (220 * scale).dp
+            val half = preferences.discHalfFor(discDiameter)
             VolumeDisc(
                 value = previewFraction,
                 onValueChange = {},
-                diameter = (220 * scale).dp,
+                diameter = discDiameter,
                 half = half,
                 showDots = preferences.discShowDots,
                 backdropColor = MaterialTheme.colorScheme.background.copy(
@@ -759,36 +791,73 @@ fun CustomizationScreen(
                 )
             }
 
-            if (preferences.popupStyle == PopupStyle.Disc) {
-                // The disc has room for the icon and the value at different
-                // points on the circle, plus the ringer switch in the hole
-                // -- three things that can coexist, so they stay independent
-                // toggles here.
-                ToggleSetting(
-                    label = stringResource(R.string.show_value),
-                    checked = preferences.popupShowValue,
-                    onCheckedChange = { checked -> onUpdate { it.copy(popupShowValue = checked) } }
-                )
-                ToggleSetting(
-                    label = stringResource(R.string.show_icon),
-                    checked = preferences.popupShowIcon,
-                    onCheckedChange = { checked -> onUpdate { it.copy(popupShowIcon = checked) } }
-                )
-            } else {
-                // A bar's track has one spot in the middle, so the icon and
-                // the value take turns there instead of being independent
-                // toggles that could both land on top of each other.
+            // Independent either way: whether the icon/value show at all
+            // isn't tied to where they sit. Hiding whichever one is
+            // currently centered also clears that -- centering something
+            // that isn't shown would just strand the other's center toggle
+            // disabled for no visible reason.
+            ToggleSetting(
+                label = stringResource(R.string.show_value),
+                checked = preferences.popupShowValue,
+                onCheckedChange = { checked ->
+                    onUpdate {
+                        it.copy(
+                            popupShowValue = checked,
+                            centeredContent = if (!checked && it.centeredContent == PopupCenterContent.Value) {
+                                null
+                            } else {
+                                it.centeredContent
+                            }
+                        )
+                    }
+                }
+            )
+            ToggleSetting(
+                label = stringResource(R.string.show_icon),
+                checked = preferences.popupShowIcon,
+                onCheckedChange = { checked ->
+                    onUpdate {
+                        it.copy(
+                            popupShowIcon = checked,
+                            centeredContent = if (!checked && it.centeredContent == PopupCenterContent.Icon) {
+                                null
+                            } else {
+                                it.centeredContent
+                            }
+                        )
+                    }
+                }
+            )
+
+            if (preferences.popupStyle != PopupStyle.Disc) {
+                // A bar's track has exactly one dead-center spot, so at most
+                // one of the two can claim it -- picking one here disables
+                // the other's toggle until it's turned back off.
                 Text(
                     text = stringResource(R.string.bar_center_content),
                     style = MaterialTheme.typography.bodyLarge
                 )
-                ChipRow(
-                    options = listOf(
-                        PopupCenterContent.Value to stringResource(R.string.show_value),
-                        PopupCenterContent.Icon to stringResource(R.string.show_icon)
-                    ),
-                    selected = preferences.barCenterContent,
-                    onSelect = { content -> onUpdate { it.copy(barCenterContent = content) } }
+                ToggleSetting(
+                    label = stringResource(R.string.center_value),
+                    checked = preferences.centeredContent == PopupCenterContent.Value,
+                    enabled = preferences.popupShowValue &&
+                        preferences.centeredContent != PopupCenterContent.Icon,
+                    onCheckedChange = { checked ->
+                        onUpdate {
+                            it.copy(centeredContent = if (checked) PopupCenterContent.Value else null)
+                        }
+                    }
+                )
+                ToggleSetting(
+                    label = stringResource(R.string.center_icon),
+                    checked = preferences.centeredContent == PopupCenterContent.Icon,
+                    enabled = preferences.popupShowIcon &&
+                        preferences.centeredContent != PopupCenterContent.Value,
+                    onCheckedChange = { checked ->
+                        onUpdate {
+                            it.copy(centeredContent = if (checked) PopupCenterContent.Icon else null)
+                        }
+                    }
                 )
             }
             ToggleSetting(
@@ -841,7 +910,7 @@ fun CustomizationScreen(
                             popupBlurRadius = defaults.popupBlurRadius,
                             popupShowValue = defaults.popupShowValue,
                             popupShowIcon = defaults.popupShowIcon,
-                            barCenterContent = defaults.barCenterContent,
+                            centeredContent = defaults.centeredContent,
                             popupShowRingerButton = defaults.popupShowRingerButton,
                             discShowDots = defaults.discShowDots
                         )

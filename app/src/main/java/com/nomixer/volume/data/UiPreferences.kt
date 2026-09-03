@@ -40,11 +40,15 @@ enum class PopupBackground {
 }
 
 /**
- * What sits in the middle of a bar-style slider's track: the volume icon or
- * the numeric level, never both. The disc style keeps its own independent
- * [UiPreferences.popupShowValue]/[UiPreferences.popupShowIcon] flags -- it
- * has room to place icon, value and ringer switch at different points on the
- * circle, so nothing there needs to be exclusive.
+ * Which of a bar-style slider's icon/value gets the dead-center spot on the
+ * track, if either does. At most one at a time -- the center is one place --
+ * but this is independent of whether the icon or the value is shown at all:
+ * [UiPreferences.popupShowIcon]/[UiPreferences.popupShowValue] decide that,
+ * and whichever of them isn't centered (and is shown) sits at its ordinary
+ * default position instead of disappearing. `null` means neither is
+ * centered, so both -- whichever are shown -- sit at their default spots.
+ * The disc style is untouched by this: it has room to place icon, value and
+ * ringer switch at different points on the circle regardless.
  */
 enum class PopupCenterContent {
     Icon, Value
@@ -94,8 +98,12 @@ data class UiPreferences(
     val popupBlurRadius: Int = 200,
     val popupShowValue: Boolean = true,
     val popupShowIcon: Boolean = true,
-    /** Icon or value at the center of a VerticalBar/HorizontalBar slider's track. */
-    val barCenterContent: PopupCenterContent = PopupCenterContent.Value,
+    /**
+     * Which of the icon/value (if either) sits at the dead center of a
+     * VerticalBar/HorizontalBar slider's track instead of its default spot.
+     * `null` when neither is pulled to the center.
+     */
+    val centeredContent: PopupCenterContent? = null,
     /** Ring / vibrate / silent switch alongside the collapsed popup. */
     val popupShowRingerButton: Boolean = true,
     /** Draw the ring of Nothing-style dots around the disc. */
