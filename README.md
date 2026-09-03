@@ -23,28 +23,6 @@ Development builds can be produced from [action artifacts](https://github.com/0N
    2. Press any volume button: a compact media volume popup appears at the edge of the screen (replacing the default volume popup), with a button to expand it into the full per-app mixer
    3. Enable accessibility button and click the button
 
-## Compare to [SoundMaster from ShizuTools](https://github.com/legendsayantan/ShizuTools/wiki/SoundMaster)
-
-This app uses hidden API to directly change each audio stream's volume.
-
-SoundMaster uses MediaProjection API to record audio from each app and apply post-effects.
-
-| Feature                        | NoMixer        | SoundMaster     |
-| ------------------------------ | --------------- | --------------- |
-| Minimal Android version        | 13              | 10              |
-| Control volume of each app     | ✅              | ✅              |
-| Set output device for each app | ❌ <sup>1</sup> | ✅              |
-| Change left-right balance      | ❌ <sup>2</sup> | ✅              |
-| Equalizer (EQ)                 | ❌              | ✅              |
-| Control protected apps         | ✅              | ❌ <sup>3</sup> |
-| Zero latency added             | ✅              | ❌              |
-
-<sup>1</sup>: There are APIs to do that, but not implemented in this app
-
-<sup>2</sup>: There are other APIs to do that, but not implemented in this app
-
-<sup>3</sup>: Can be worked around by patching the app
-
 ## How does it work
 
 1. Use [`AudioManager#getActivePlaybackConfigurations()`](<https://developer.android.com/reference/android/media/AudioManager#getActivePlaybackConfigurations()>) to get list of [`AudioPlaybackConfiguration`](https://cs.android.com/android/platform/superproject/main/+/main:frameworks/base/media/java/android/media/AudioPlaybackConfiguration.java;drc=e282cc572ef848b1cb8d622c2c4939aac37c3b27).
