@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AppMixer"
+rootProject.name = "NoMixer"
 include(":app")
 include(":baselineprofile")

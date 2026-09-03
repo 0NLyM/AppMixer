@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">AppMixer</string>
-    <string name="accessibility_service_description">Keep AppMixer running in background, and provide quick access to it via accessibility button or physical volume button.</string>
+    <string name="app_name">NoMixer</string>
+    <string name="accessibility_service_description">Keep NoMixer running in background, and provide quick access to it via accessibility button or physical volume button.</string>
     <string name="group_active">Active</string>
     <string name="group_inactive">Inactive</string>
     <string name="group_hidden">Hidden</string>

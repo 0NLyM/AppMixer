@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AppMixer</string>
-    <string name="accessibility_service_description">保持 AppMixer 在后台运行，通过无障碍按钮或物理音量键快速调整音量</string>
+    <string name="app_name">NoMixer</string>
+    <string name="accessibility_service_description">保持 NoMixer 在后台运行，通过无障碍按钮或物理音量键快速调整音量</string>
     <string name="group_active">正在播放</string>
     <string name="group_inactive">未播放</string>
     <string name="group_hidden">已隐藏</string>

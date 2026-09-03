@@ -17,7 +17,7 @@ androidAopConfig {
     debug = false
 
     // include does not set all scans by default. After setting, only the code of the set package name will be scanned.
-//    include("com.appmixer.volume")
+//    include("com.nomixer.volume")
 
     // exclude is the package excluded during scanning
     // Can exclude kotlin related and improve speed
@@ -37,12 +37,12 @@ androidAopConfig {
 }
 
 android {
-    namespace = "com.appmixer.volume"
+    namespace = "com.nomixer.volume"
     compileSdk = 36
     ndkVersion = "29.0.14033849"
 
     defaultConfig {
-        applicationId = "com.appmixer.volume"
+        applicationId = "com.nomixer.volume"
         minSdk = 33
         targetSdk = 35
         versionCode = 13
@@ -57,14 +57,14 @@ android {
     // running `./gradlew assembleRelease`. Without them, a release build
     // still succeeds locally, just unsigned -- keeps `assembleRelease` usable
     // for anyone building from source without the signing key.
-    val releaseKeystorePath = System.getenv("APPMIXER_KEYSTORE_PATH")
+    val releaseKeystorePath = System.getenv("NOMIXER_KEYSTORE_PATH")
     signingConfigs {
         if (releaseKeystorePath != null) {
             create("release") {
                 storeFile = file(releaseKeystorePath)
-                storePassword = System.getenv("APPMIXER_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("APPMIXER_KEY_ALIAS")
-                keyPassword = System.getenv("APPMIXER_KEY_PASSWORD")
+                storePassword = System.getenv("NOMIXER_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("NOMIXER_KEY_ALIAS")
+                keyPassword = System.getenv("NOMIXER_KEY_PASSWORD")
             }
         }
     }

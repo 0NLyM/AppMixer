@@ -1,6 +1,6 @@
 # NOTICE
 
-AppMixer is a derivative work of [VolumeManager](https://github.com/yume-chan/VolumeManager)
+NoMixer (formerly AppMixer) is a derivative work of [VolumeManager](https://github.com/yume-chan/VolumeManager)
 by yume-chan, licensed under the GNU General Public License v2.0 (see [`LICENSE`](LICENSE)).
 As required by GPLv2 §2(a), this file summarizes the changes made to the original
 source since the fork was created.
@@ -229,6 +229,30 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   both panels.
 - `RingerModeButton` uses one theme color per mode: containers (silent),
   text-and-fills (vibrate), accent (ringing).
+
+## 2026-09-03 — Renamed to NoMixer
+
+- Renamed the project and app from **AppMixer** to **NoMixer** across Gradle
+  config, manifest, resources and source code.
+- Changed the application/package id from `com.appmixer.volume` to
+  `com.nomixer.volume` (all Kotlin sources moved from `com/appmixer/volume`
+  to `com/nomixer/volume`), and the baseline profile module's namespace from
+  `com.appmixer.baselineprofile` to `com.nomixer.baselineprofile`.
+- Log tags, the theme (`AppMixerTheme`/`AppMixerShapes` -> `NoMixerTheme`/
+  `NoMixerShapes`), `Theme.AppMixer(.Popup)` styles, CI signing env vars
+  (`APPMIXER_*` -> `NOMIXER_*`) and artifact filenames, and the fastlane
+  listing were updated to match.
+- Because the application id changed, this build does not install as an
+  update over a previous AppMixer install -- it is a different app to
+  Android and to Shizuku, which needs its permission granted again for the
+  new package. Installing it alongside an existing AppMixer requires
+  removing the old one first, since both share the same launcher icon slot
+  expectations but not the same signature-package identity check some
+  device vendors apply; a clean uninstall of AppMixer before installing
+  NoMixer is the safest path.
+- The GitHub repository itself was not renamed by this change -- that
+  requires the repository owner to do it from GitHub's settings, which
+  isn't reachable from here.
 
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

@@ -1,8 +1,8 @@
-# AppMixer
+# NoMixer
 
 **Work in progress**
 
-AppMixer is a fork of [VolumeManager](https://github.com/yume-chan/VolumeManager) by [yume-chan](https://github.com/yume-chan), reworked with a **Nothing OS inspired** black/white/red look and aimed at being more customizable and feature-rich over time. See [`NOTICE.md`](NOTICE.md) for a summary of what changed compared to upstream and [`LICENSE`](LICENSE) for licensing (GPLv2, inherited from upstream).
+NoMixer is a fork of [VolumeManager](https://github.com/yume-chan/VolumeManager) by [yume-chan](https://github.com/yume-chan), reworked with a **Nothing OS inspired** black/white/red look and aimed at being more customizable and feature-rich over time. See [`NOTICE.md`](NOTICE.md) for a summary of what changed compared to upstream and [`LICENSE`](LICENSE) for licensing (GPLv2, inherited from upstream).
 
 Control each app's volume independently. [Shizuku](https://shizuku.rikka.app/) is used to access privileged APIs.
 
@@ -11,12 +11,12 @@ Requires Android 13.
 
 ## Download
 
-Development builds can be produced from [action artifacts](https://github.com/0NLyM/AppMixer/actions/workflows/build.yml?query=branch%3Amain) once CI is configured with a signing keystore.
+Development builds can be produced from [action artifacts](https://github.com/0NLyM/NoMixer/actions/workflows/build.yml?query=branch%3Amain) once CI is configured with a signing keystore.
 
 ## Usage
 
 1. Install and enable [Shizuku](https://shizuku.rikka.app/)
-2. Launch AppMixer and request Shizuku permission
+2. Launch NoMixer and request Shizuku permission
 3. It should automatically enable its accessibility service
 4. You can change volume either from
    1. The main interface
@@ -29,7 +29,7 @@ This app uses hidden API to directly change each audio stream's volume.
 
 SoundMaster uses MediaProjection API to record audio from each app and apply post-effects.
 
-| Feature                        | AppMixer        | SoundMaster     |
+| Feature                        | NoMixer        | SoundMaster     |
 | ------------------------------ | --------------- | --------------- |
 | Minimal Android version        | 13              | 10              |
 | Control volume of each app     | ✅              | ✅              |

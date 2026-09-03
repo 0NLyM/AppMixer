@@ -31,30 +31,30 @@ jobs:
           cache: "gradle"
 
       # Only the base repo has the signing secrets (forks/PRs don't), so this
-      # step is skipped there, APPMIXER_KEYSTORE_PATH stays unset, and
+      # step is skipped there, NOMIXER_KEYSTORE_PATH stays unset, and
       # assembleRelease below falls back to an unsigned build -- still useful
       # to validate that the build itself compiles.
       - name: Decode signing keystore
         if: env.KEYSTORE_FILE != ''
         run: |
-          echo "$KEYSTORE_FILE" | base64 -d > "${{ runner.temp }}/appmixer-release.jks"
-          echo "APPMIXER_KEYSTORE_PATH=${{ runner.temp }}/appmixer-release.jks" >> "$GITHUB_ENV"
+          echo "$KEYSTORE_FILE" | base64 -d > "${{ runner.temp }}/nomixer-release.jks"
+          echo "NOMIXER_KEYSTORE_PATH=${{ runner.temp }}/nomixer-release.jks" >> "$GITHUB_ENV"
 
       - name: Build release APK
         env:
-          APPMIXER_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          APPMIXER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          APPMIXER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          NOMIXER_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          NOMIXER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          NOMIXER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Collect APK
         run: |
           mkdir -p out
           apk=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
-          cp "$apk" out/appmixer.apk
+          cp "$apk" out/nomixer.apk
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          path: out/appmixer.apk
+          path: out/nomixer.apk
           archive: false

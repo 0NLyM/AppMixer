@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.appmixer.baselineprofile"
+    namespace = "com.nomixer.baselineprofile"
     compileSdk = 36
 
     compileOptions {

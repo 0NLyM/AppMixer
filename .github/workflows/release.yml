@@ -26,30 +26,30 @@ jobs:
           cache: "gradle"
 
       - name: Decode signing keystore
-        run: echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > "${{ runner.temp }}/appmixer-release.jks"
+        run: echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > "${{ runner.temp }}/nomixer-release.jks"
 
       - name: Build signed release APK
         env:
-          APPMIXER_KEYSTORE_PATH: ${{ runner.temp }}/appmixer-release.jks
-          APPMIXER_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          APPMIXER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          APPMIXER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          NOMIXER_KEYSTORE_PATH: ${{ runner.temp }}/nomixer-release.jks
+          NOMIXER_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          NOMIXER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          NOMIXER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Collect artifact
         run: |
           mkdir -p out
           apk=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
-          cp "$apk" "out/appmixer-${{ github.event.inputs.tag }}.apk"
+          cp "$apk" "out/nomixer-${{ github.event.inputs.tag }}.apk"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
-          name: "AppMixer ${{ github.event.inputs.tag }}"
+          name: "NoMixer ${{ github.event.inputs.tag }}"
           body: |
-            AppMixer build, signed with the project's release key so it can be installed over previous signed releases as a normal update.
+            NoMixer build, signed with the project's release key so it can be installed over previous signed releases as a normal update.
 
             Requires Android 13+ and [Shizuku](https://shizuku.rikka.app/).
           prerelease: true
-          files: out/appmixer-${{ github.event.inputs.tag }}.apk
+          files: out/nomixer-${{ github.event.inputs.tag }}.apk
