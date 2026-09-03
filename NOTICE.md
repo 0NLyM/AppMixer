@@ -339,5 +339,43 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   center instead, each disabled while the other is centered or while its
   own item is hidden.
 
+## 2026-09-03 — 1.0.3
+
+- The disc is now always drawn as a complete circle -- `VolumeDisc` no
+  longer takes a half/`DiscHalf` parameter, dropping the half-moon-specific
+  Canvas math and the asymmetric content insets that came with it entirely.
+  A laterally-anchored popup gets its "flush with the edge" look from a
+  reveal-width clip in the caller instead: at offset zero only the near
+  half is visible, every dp of horizontal offset reveals more of it,
+  capped once the whole circle shows. The overlay window's own horizontal
+  offset is skipped for this case, since revealing the disc is the
+  offset's job here, not repositioning it -- the anchor grid covers
+  repositioning.
+- The dot ring is now small rectangular ticks, with an adjustable corner
+  radius, always fully colored rather than lighting up progressively as
+  the level rises. The whole ring rotates together by up to one full turn
+  across the volume range, like a knob being turned; three consecutive
+  ticks are drawn larger in a stepped-down scale so the turn actually
+  reads as motion.
+- Redrew the launcher icon in Nothing's own idiom -- white background, a
+  black three-bar volume glyph, one red accent dot -- replacing the
+  previous full-color illustration.
+- The volume icon animates between mute/Bluetooth/normal instead of
+  snapping, with the same fade-and-scale pop the ringer switch's own icon
+  uses. Customization screen sections that appear or disappear when a
+  style or toggle changes now animate in and out instead of cutting.
+- The full mixer's Ring row used a separate, more limited ring/vibrate-only
+  toggle that could never reach silent; replaced it with the same ringer
+  switch the collapsed popup uses, so both surfaces share one three-way,
+  Shizuku-backed implementation. Its Do Not Disturb toggle now shows the
+  negated-DND glyph when DND is off.
+- The translucent panel's own painted scrim -- the fallback for whenever
+  the system blur isn't granted -- now boosts its opacity when the blur
+  actually didn't land, instead of always assuming it did.
+- The accessibility service can be fully enabled yet do nothing if Shizuku
+  is disconnected, which read as the service itself being absent. Both the
+  volume-key path and the on-screen accessibility button now show a
+  rate-limited toast naming the actual reason.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
