@@ -277,5 +277,37 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
 - Releases are no longer marked pre-release by default; the workflow takes
   it as an input.
 
+## 2026-09-03 — 1.0.1
+
+- The disc's icon/switch and level no longer crowd its flat edge. They used
+  to be pushed in from that edge by however much the popup's own horizontal
+  offset didn't already cover, which came out to zero at the 16dp default;
+  the inset is now a fixed fraction of the diameter (the semicircular hole's
+  visual centroid), independent of the offset.
+- The ringer switch's intermittent unresponsiveness was the expand-on-swipe
+  gesture living on the popup's root container, making the switch a
+  descendant of that drag detector alongside the slider it sits next to. The
+  gesture now attaches to just the slider (or, for the disc, the drawing
+  surface) in each style, so the switch is a plain sibling outside its
+  reach.
+- The customization screen's preview is pinned above the scrolling settings
+  list instead of scrolling with it, its phone silhouette is painted in the
+  app's own theme rather than the popup's (so a disabled popup color can't
+  take the "device" down with it), its mockup is built from the real
+  `TrackSlider`/`VerticalTrackSlider`/`VolumeDisc` components instead of
+  plain boxes, and a new button toggles it between a collapsed-popup mockup
+  and a representative expanded-mixer one.
+- `popupCornerRadius` no longer doubles as the slider and button radius by
+  derivation. `sliderCornerRadius` and `buttonCornerRadius` are their own
+  settings now, each with its own slider in the customization screen.
+- Added a bar-style setting for what sits in the middle of the slider track:
+  the icon or the level, one excluding the other (the disc keeps its own
+  independent toggles, since it has room for both plus the ringer switch).
+- The volume icon in the collapsed popup and its preview now reflects
+  whether the stream is muted or routed to a connected Bluetooth output,
+  instead of always showing the plain speaker glyph. The ringer switch's
+  ring-mode icon changed from `NotificationsActive` to `RingVolume`, to
+  match the full mixer's Ring stream icon.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
