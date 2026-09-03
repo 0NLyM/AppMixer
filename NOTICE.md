@@ -309,5 +309,35 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   ring-mode icon changed from `NotificationsActive` to `RingVolume`, to
   match the full mixer's Ring stream icon.
 
+## 2026-09-03 — 1.0.2
+
+- The disc's ringer-switch/icon slot is inset using the exact local width
+  of the half-moon's hole at its own height, matching the canvas's own
+  radius math, rather than sharing the level's inset -- the hole narrows
+  away from the midline, so the two need different insets to each land in
+  the middle of the room they actually have.
+- A side-anchored disc becomes a full circle once `popupOffsetX` pulls it
+  far enough from the edge it hugs (a threshold proportional to its own
+  diameter) instead of staying a half-moon with its flat cut floating in
+  the middle of the screen. The drag gesture stays vertical either way.
+- The Do Not Disturb toggle in the full mixer's Ring row shows the
+  negated-DND glyph (`DoNotDisturbOff`) when DND is off, instead of a
+  plain notification icon.
+- `RingerModeButton` sets its local ringer mode optimistically the instant
+  a tap lands, instead of re-reading `AudioManager`'s ringer mode right
+  after the (possibly Shizuku-proxied) system call returns. That read can
+  still reflect the old mode -- the change reaches this process a beat
+  later, over the ringer-mode-changed broadcast -- which is what made the
+  switch read as ignoring the tap even when the change went through a
+  moment later.
+- Reworked the bar styles' icon/value option a second time, on feedback
+  that the previous round's single either-or choice was the wrong shape
+  for the request: `popupShowValue`/`popupShowIcon` are independent
+  show/hide toggles again, restoring the default side-by-side (horizontal
+  bar) or stacked (vertical bar) layout when neither is centered. Two new
+  toggles let either one -- never both -- be pulled to the track's dead
+  center instead, each disabled while the other is centered or while its
+  own item is hidden.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
