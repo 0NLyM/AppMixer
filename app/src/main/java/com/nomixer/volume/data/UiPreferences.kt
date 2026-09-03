@@ -14,6 +14,9 @@ const val BUTTON_CORNER_RADIUS_MAX = 50
 /** Top of the blur-radius slider's range, in pixels. */
 const val POPUP_BLUR_RADIUS_MAX = 300
 
+/** Top of the disc tick corner-radius slider's range, as a percent. */
+const val DISC_TICK_CORNER_MAX = 50
+
 /** Shape the collapsed (volume-key) popup takes. */
 enum class PopupStyle {
     VerticalBar, HorizontalBar, Disc
@@ -106,8 +109,10 @@ data class UiPreferences(
     val centeredContent: PopupCenterContent? = null,
     /** Ring / vibrate / silent switch alongside the collapsed popup. */
     val popupShowRingerButton: Boolean = true,
-    /** Draw the ring of Nothing-style dots around the disc. */
-    val discShowDots: Boolean = true
+    /** Draw the ring of ticks around the disc. */
+    val discShowDots: Boolean = true,
+    /** Corner rounding of each disc tick, as a percent: 0 square, 50 a capsule. */
+    val discTickCornerPercent: Int = 30
 )
 
 /**
@@ -132,6 +137,20 @@ fun UiPreferences.usesWindowBlur(expanded: Boolean = false): Boolean =
  * so a panel that draws nothing of its own is invisible whenever the answer
  * is no. The scrim is what makes translucent look the same either way; the
  * blur, when it lands, frosts what shows through it.
+ *
+ * [blurLanded] is only known by the real overlay, which finds out at attach
+ * time whether the platform actually granted the blur (the collapsed disc
+ * never even asks for it -- see [usesWindowBlur] -- so it's always `false`
+ * there). Without it the scrim alone was faint enough, at the usual 0.4x
+ * multiplier, to read as broken rather than deliberately translucent; a
+ * caller that can't say either way (a settings preview with no real window
+ * behind it) defaults to `true`, keeping the original, optimistic look.
  */
-fun UiPreferences.paintedPanelAlpha(): Float =
-    popupBackgroundOpacity * if (popupBackground == PopupBackground.Translucent) 0.4f else 1f
+fun UiPreferences.paintedPanelAlpha(blurLanded: Boolean = true): Float {
+    val translucentMultiplier = if (popupBackground == PopupBackground.Translucent) {
+        if (blurLanded) 0.4f else 0.75f
+    } else {
+        1f
+    }
+    return popupBackgroundOpacity * translucentMultiplier
+}

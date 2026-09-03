@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,9 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
@@ -52,29 +51,23 @@ import kotlin.math.roundToInt
 private const val BUTTON_SIZE_DP = 48
 
 /**
- * Which half of the disc to show for a given anchor: hugging the right edge
- * means only the left half is on screen, and vice versa. Anything centered
- * horizontally gets the full circle.
+ * Which side of the screen a laterally-anchored disc peeks out from: hugging
+ * the right edge reveals starting from the left, and vice versa. Anything
+ * centered horizontally is never clipped at all.
+ */
+enum class DiscHalf {
+    None, Left, Right
+}
+
+/**
+ * Which side a given anchor hugs, for [DiscHalf] purposes: hugging the right
+ * edge means the disc is revealed from its left side inward, and vice versa.
+ * Anything centered horizontally gets the full circle with nothing clipped.
  */
 internal fun PopupAnchor.discHalf(): DiscHalf = when (this) {
     PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> DiscHalf.Left
     PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> DiscHalf.Right
     else -> DiscHalf.None
-}
-
-/**
- * The half-moon only makes sense while the disc still reads as flush with
- * the screen edge it hugs -- its flat side *is* that edge, drawn with
- * nothing behind it. Pulled far enough in by [UiPreferences.popupOffsetX],
- * a gap opens up between the edge and the flat cut, and the disc looks
- * broken rather than intentional; past that point it's a full circle
- * instead, same as a horizontally centered anchor, with the drag gesture
- * staying vertical either way. The threshold scales with [diameter] so it
- * still makes sense at every size setting.
- */
-internal fun UiPreferences.discHalfFor(diameter: Dp): DiscHalf {
-    val flushThreshold = diameter * 0.2f
-    return if (popupOffsetX.dp > flushThreshold) DiscHalf.None else popupAnchor.discHalf()
 }
 
 /**
@@ -147,6 +140,13 @@ internal fun Modifier.expandOnSwipe(
 fun CollapsedVolumePopup(
     audioManager: AudioManager,
     preferences: UiPreferences,
+    /**
+     * Whether the real overlay window actually got the system blur behind
+     * it. Only meaningful for the bar styles' own panel -- the disc never
+     * asks for the window blur while collapsed, so its own backdrop always
+     * treats this as landed=false regardless of what's passed here.
+     */
+    blurLanded: Boolean = false,
     onExpand: () -> Unit,
     onInteract: () -> Unit
 ) {
@@ -191,7 +191,7 @@ fun CollapsedVolumePopup(
     val scale = preferences.popupScale
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val discDiameter = (220 * scale).dp
-    val half = preferences.discHalfFor(discDiameter)
+    val discSide = preferences.popupAnchor.discHalf()
     val isDisc = preferences.popupStyle == PopupStyle.Disc
     val cornerRadius = preferences.popupCornerRadius.dp
 
@@ -212,7 +212,9 @@ fun CollapsedVolumePopup(
         targetValue = if (isDisc) {
             Color.Transparent
         } else {
-            MaterialTheme.colorScheme.background.copy(alpha = preferences.paintedPanelAlpha())
+            MaterialTheme.colorScheme.background.copy(
+                alpha = preferences.paintedPanelAlpha(blurLanded)
+            )
         },
         animationSpec = Motion.ColorShift,
         label = "popupPanel"
@@ -222,10 +224,12 @@ fun CollapsedVolumePopup(
     // in how much it lets through. It can't use the system blur the bars get
     // in translucent mode -- that drawable is a rounded rectangle, so it can
     // neither follow the circle nor fade -- so translucent here means a
-    // lighter tint instead of a frosted one.
+    // lighter tint instead of a frosted one, always at the no-blur-landed
+    // strength since this backdrop never has a real blur behind it to begin
+    // with.
     val discBackdrop by animateColorAsState(
         targetValue = MaterialTheme.colorScheme.background.copy(
-            alpha = preferences.paintedPanelAlpha()
+            alpha = preferences.paintedPanelAlpha(blurLanded = false)
         ),
         animationSpec = Motion.ColorShift,
         label = "discBackdrop"
@@ -286,8 +290,8 @@ fun CollapsedVolumePopup(
                         // it's the one pulled to dead center; the two are
                         // never both centered at once.
                         if (preferences.popupShowIcon) {
-                            Icon(
-                                imageVector = volumeIcon,
+                            AnimatedVolumeIcon(
+                                icon = volumeIcon,
                                 contentDescription = stringResource(R.string.stream_media),
                                 modifier = Modifier
                                     .align(
@@ -369,8 +373,8 @@ fun CollapsedVolumePopup(
                         }
 
                         if (preferences.popupShowIcon) {
-                            Icon(
-                                imageVector = volumeIcon,
+                            AnimatedVolumeIcon(
+                                icon = volumeIcon,
                                 contentDescription = stringResource(R.string.stream_media),
                                 modifier = Modifier
                                     .align(
@@ -387,39 +391,68 @@ fun CollapsedVolumePopup(
                 }
             }
 
-            PopupStyle.Disc -> Box(
-                modifier = Modifier.padding(panelPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                VolumeDisc(
-                    value = volume.toFloat(),
-                    valueRange = 0f..maxVolume,
-                    diameter = discDiameter,
-                    half = half,
-                    // Scoped to the disc's own drag surface rather than the
-                    // whole component, for the same reason as the bars'
-                    // sliders above -- the ringer switch sits in the middle
-                    // of the disc and must stay outside this gesture's node.
-                    gestureModifier = expandSwipeModifier,
-                    showDots = preferences.discShowDots,
-                    backdropColor = discBackdrop,
-                    icon = if (preferences.popupShowIcon) volumeIcon else null,
-                    label = if (preferences.popupShowValue) valueText else null,
-                    // The disc's hollow middle is where the ringer switch
-                    // belongs, rather than stacked above the whole thing.
-                    centerContent = if (preferences.popupShowRingerButton) {
-                        {
-                            RingerModeButton(
-                                audioManager = audioManager,
-                                size = buttonSize * 0.8f,
-                                onChange = onInteract
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                    onValueChange = { value -> setVolume(value.roundToInt()) }
-                )
+            PopupStyle.Disc -> {
+                // The disc itself is always drawn whole (see VolumeDisc's
+                // own doc comment); a lateral anchor's "half-moon flush with
+                // the edge" look comes from clipping it here instead. At
+                // offset zero only the near half is revealed, exactly like
+                // the old drawn half-moon; every dp of offset reveals more
+                // of it, capped once the whole circle is showing -- past
+                // that point more offset does nothing for the disc, since
+                // its job here is purely revealing the circle, not
+                // repositioning it. Reaching further in, or centering it
+                // outright, is what the anchor grid is for.
+                val discRevealWidth = if (discSide == DiscHalf.None) {
+                    discDiameter
+                } else {
+                    (discDiameter / 2 + preferences.popupOffsetX.dp).coerceAtMost(discDiameter)
+                }
+                val discRevealAlignment = when (discSide) {
+                    DiscHalf.Left -> Alignment.CenterEnd
+                    DiscHalf.Right -> Alignment.CenterStart
+                    DiscHalf.None -> Alignment.Center
+                }
+
+                Box(
+                    modifier = Modifier
+                        .padding(panelPadding)
+                        .width(discRevealWidth)
+                        .height(discDiameter)
+                        .clipToBounds(),
+                    contentAlignment = discRevealAlignment
+                ) {
+                    VolumeDisc(
+                        value = volume.toFloat(),
+                        valueRange = 0f..maxVolume,
+                        diameter = discDiameter,
+                        // Scoped to the disc's own drag surface rather than
+                        // the whole component, for the same reason as the
+                        // bars' sliders above -- the ringer switch sits in
+                        // the middle of the disc and must stay outside this
+                        // gesture's node.
+                        gestureModifier = expandSwipeModifier,
+                        showDots = preferences.discShowDots,
+                        tickCornerPercent = preferences.discTickCornerPercent,
+                        backdropColor = discBackdrop,
+                        icon = if (preferences.popupShowIcon) volumeIcon else null,
+                        label = if (preferences.popupShowValue) valueText else null,
+                        // The disc's hollow middle is where the ringer
+                        // switch belongs, rather than stacked above the
+                        // whole thing.
+                        centerContent = if (preferences.popupShowRingerButton) {
+                            {
+                                RingerModeButton(
+                                    audioManager = audioManager,
+                                    size = buttonSize * 0.8f,
+                                    onChange = onInteract
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        onValueChange = { value -> setVolume(value.roundToInt()) }
+                    )
+                }
             }
         }
     }

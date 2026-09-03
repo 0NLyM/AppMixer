@@ -1,8 +1,15 @@
 package com.nomixer.volume.compose
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.clipToBounds
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +71,7 @@ import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.ui.theme.Motion
 import com.nomixer.volume.ui.theme.PopupColors
 import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
+import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
 import com.nomixer.volume.data.POPUP_BLUR_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.PopupBackground
@@ -263,6 +272,11 @@ private fun PopupPreview(
         PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd -> -1
         else -> 1
     }
+    // A laterally-anchored disc spends its horizontal offset revealing more
+    // of itself in place (see CollapsedPopupPreviewContent's clip) instead
+    // of sliding away from the edge, matching the real popup's window.
+    val discRevealsInPlace = preferences.popupStyle == PopupStyle.Disc &&
+        preferences.popupAnchor.discHalf() != DiscHalf.None
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Row(
@@ -322,8 +336,16 @@ private fun PopupPreview(
                                     )
                                 )
                                 .padding(
-                                    start = if (horizontalSign > 0) (preferences.popupOffsetX * previewScale).dp else 0.dp,
-                                    end = if (horizontalSign < 0) (preferences.popupOffsetX * previewScale).dp else 0.dp,
+                                    start = if (horizontalSign > 0 && !discRevealsInPlace) {
+                                        (preferences.popupOffsetX * previewScale).dp
+                                    } else {
+                                        0.dp
+                                    },
+                                    end = if (horizontalSign < 0 && !discRevealsInPlace) {
+                                        (preferences.popupOffsetX * previewScale).dp
+                                    } else {
+                                        0.dp
+                                    },
                                     top = if (verticalSign > 0) (preferences.popupOffsetY * previewScale).dp else 0.dp,
                                     bottom = if (verticalSign < 0) (preferences.popupOffsetY * previewScale).dp else 0.dp
                                 )
@@ -438,36 +460,55 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
 
         PopupStyle.Disc -> {
             val discDiameter = (220 * scale).dp
-            val half = preferences.discHalfFor(discDiameter)
-            VolumeDisc(
-                value = previewFraction,
-                onValueChange = {},
-                diameter = discDiameter,
-                half = half,
-                showDots = preferences.discShowDots,
-                backdropColor = MaterialTheme.colorScheme.background.copy(
-                    alpha = preferences.paintedPanelAlpha()
-                ),
-                icon = if (preferences.popupShowIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
-                label = if (preferences.popupShowValue) previewValueText else null,
-                centerContent = if (preferences.popupShowRingerButton) {
-                    {
-                        Box(
-                            modifier = Modifier
-                                .size((38 * scale).dp)
-                                .clip(RoundedCornerShape(percent = preferences.buttonCornerRadius))
-                                .background(MaterialTheme.colorScheme.tertiary)
-                                .border(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outline,
-                                    RoundedCornerShape(percent = preferences.buttonCornerRadius)
-                                )
-                        )
+            val discSide = preferences.popupAnchor.discHalf()
+            val discRevealWidth = if (discSide == DiscHalf.None) {
+                discDiameter
+            } else {
+                (discDiameter / 2 + preferences.popupOffsetX.dp).coerceAtMost(discDiameter)
+            }
+            val discRevealAlignment = when (discSide) {
+                DiscHalf.Left -> Alignment.CenterEnd
+                DiscHalf.Right -> Alignment.CenterStart
+                DiscHalf.None -> Alignment.Center
+            }
+
+            Box(
+                modifier = Modifier
+                    .width(discRevealWidth)
+                    .height(discDiameter)
+                    .clipToBounds(),
+                contentAlignment = discRevealAlignment
+            ) {
+                VolumeDisc(
+                    value = previewFraction,
+                    onValueChange = {},
+                    diameter = discDiameter,
+                    showDots = preferences.discShowDots,
+                    tickCornerPercent = preferences.discTickCornerPercent,
+                    backdropColor = MaterialTheme.colorScheme.background.copy(
+                        alpha = preferences.paintedPanelAlpha()
+                    ),
+                    icon = if (preferences.popupShowIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
+                    label = if (preferences.popupShowValue) previewValueText else null,
+                    centerContent = if (preferences.popupShowRingerButton) {
+                        {
+                            Box(
+                                modifier = Modifier
+                                    .size((38 * scale).dp)
+                                    .clip(RoundedCornerShape(percent = preferences.buttonCornerRadius))
+                                    .background(MaterialTheme.colorScheme.tertiary)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outline,
+                                        RoundedCornerShape(percent = preferences.buttonCornerRadius)
+                                    )
+                            )
+                        }
+                    } else {
+                        null
                     }
-                } else {
-                    null
-                }
-            )
+                )
+            }
         }
     }
 }
@@ -764,31 +805,38 @@ fun CustomizationScreen(
             // Hidden where it would do nothing: a translucent bar is the
             // system blur, which has no tint to set. The disc always uses it,
             // since its round backdrop is drawn rather than blurred.
-            if (preferences.popupBackground == PopupBackground.Solid ||
-                preferences.popupStyle == PopupStyle.Disc
-            ) {
-                SliderSetting(
-                    label = stringResource(R.string.popup_opacity),
-                    valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
-                    value = preferences.popupBackgroundOpacity,
-                    valueRange = 0f..1f,
-                    onValueChange = { value ->
-                        onUpdate { it.copy(popupBackgroundOpacity = value) }
-                    }
-                )
-            } else {
-                // Translucent is the blur, so what there is to adjust is how
-                // frosted it is -- a different quantity from the solid
-                // panel's opacity, and it gets its own slider.
-                SliderSetting(
-                    label = stringResource(R.string.popup_blur),
-                    valueLabel = "${preferences.popupBlurRadius} px",
-                    value = preferences.popupBlurRadius.toFloat(),
-                    valueRange = 0f..POPUP_BLUR_RADIUS_MAX.toFloat(),
-                    onValueChange = { value ->
-                        onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
-                    }
-                )
+            AnimatedContent(
+                targetState = preferences.popupBackground == PopupBackground.Solid ||
+                    preferences.popupStyle == PopupStyle.Disc,
+                transitionSpec = {
+                    fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
+                },
+                label = "opacityOrBlur"
+            ) { showOpacity ->
+                if (showOpacity) {
+                    SliderSetting(
+                        label = stringResource(R.string.popup_opacity),
+                        valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
+                        value = preferences.popupBackgroundOpacity,
+                        valueRange = 0f..1f,
+                        onValueChange = { value ->
+                            onUpdate { it.copy(popupBackgroundOpacity = value) }
+                        }
+                    )
+                } else {
+                    // Translucent is the blur, so what there is to adjust is
+                    // how frosted it is -- a different quantity from the
+                    // solid panel's opacity, and it gets its own slider.
+                    SliderSetting(
+                        label = stringResource(R.string.popup_blur),
+                        valueLabel = "${preferences.popupBlurRadius} px",
+                        value = preferences.popupBlurRadius.toFloat(),
+                        valueRange = 0f..POPUP_BLUR_RADIUS_MAX.toFloat(),
+                        onValueChange = { value ->
+                            onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
+                        }
+                    )
+                }
             }
 
             // Independent either way: whether the icon/value show at all
@@ -829,36 +877,48 @@ fun CustomizationScreen(
                 }
             )
 
-            if (preferences.popupStyle != PopupStyle.Disc) {
-                // A bar's track has exactly one dead-center spot, so at most
-                // one of the two can claim it -- picking one here disables
-                // the other's toggle until it's turned back off.
-                Text(
-                    text = stringResource(R.string.bar_center_content),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                ToggleSetting(
-                    label = stringResource(R.string.center_value),
-                    checked = preferences.centeredContent == PopupCenterContent.Value,
-                    enabled = preferences.popupShowValue &&
-                        preferences.centeredContent != PopupCenterContent.Icon,
-                    onCheckedChange = { checked ->
-                        onUpdate {
-                            it.copy(centeredContent = if (checked) PopupCenterContent.Value else null)
+            AnimatedVisibility(
+                visible = preferences.popupStyle != PopupStyle.Disc,
+                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeIn(tween(Motion.MorphMillis)),
+                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeOut(tween(160))
+            ) {
+                Column {
+                    // A bar's track has exactly one dead-center spot, so at
+                    // most one of the two can claim it -- picking one here
+                    // disables the other's toggle until it's turned back off.
+                    Text(
+                        text = stringResource(R.string.bar_center_content),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    ToggleSetting(
+                        label = stringResource(R.string.center_value),
+                        checked = preferences.centeredContent == PopupCenterContent.Value,
+                        enabled = preferences.popupShowValue &&
+                            preferences.centeredContent != PopupCenterContent.Icon,
+                        onCheckedChange = { checked ->
+                            onUpdate {
+                                it.copy(
+                                    centeredContent = if (checked) PopupCenterContent.Value else null
+                                )
+                            }
                         }
-                    }
-                )
-                ToggleSetting(
-                    label = stringResource(R.string.center_icon),
-                    checked = preferences.centeredContent == PopupCenterContent.Icon,
-                    enabled = preferences.popupShowIcon &&
-                        preferences.centeredContent != PopupCenterContent.Value,
-                    onCheckedChange = { checked ->
-                        onUpdate {
-                            it.copy(centeredContent = if (checked) PopupCenterContent.Icon else null)
+                    )
+                    ToggleSetting(
+                        label = stringResource(R.string.center_icon),
+                        checked = preferences.centeredContent == PopupCenterContent.Icon,
+                        enabled = preferences.popupShowIcon &&
+                            preferences.centeredContent != PopupCenterContent.Value,
+                        onCheckedChange = { checked ->
+                            onUpdate {
+                                it.copy(
+                                    centeredContent = if (checked) PopupCenterContent.Icon else null
+                                )
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
             ToggleSetting(
                 label = stringResource(R.string.show_ringer_button),
@@ -868,7 +928,14 @@ fun CustomizationScreen(
                 }
             )
 
-            if (preferences.popupStyle == PopupStyle.Disc) {
+            AnimatedVisibility(
+                visible = preferences.popupStyle == PopupStyle.Disc,
+                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeIn(tween(Motion.MorphMillis)),
+                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeOut(tween(160))
+            ) {
+              Column {
                 ToggleSetting(
                     label = stringResource(R.string.disc_dots),
                     checked = preferences.discShowDots,
@@ -876,11 +943,31 @@ fun CustomizationScreen(
                         onUpdate { it.copy(discShowDots = checked) }
                     }
                 )
+                AnimatedVisibility(
+                    visible = preferences.discShowDots,
+                    enter = expandVertically(
+                        tween(Motion.MorphMillis, easing = Motion.Emphasized)
+                    ) + fadeIn(tween(Motion.MorphMillis)),
+                    exit = shrinkVertically(
+                        tween(Motion.MorphMillis, easing = Motion.Emphasized)
+                    ) + fadeOut(tween(160))
+                ) {
+                    SliderSetting(
+                        label = stringResource(R.string.disc_tick_corner),
+                        valueLabel = "${preferences.discTickCornerPercent}%",
+                        value = preferences.discTickCornerPercent.toFloat(),
+                        valueRange = 0f..DISC_TICK_CORNER_MAX.toFloat(),
+                        onValueChange = { value ->
+                            onUpdate { it.copy(discTickCornerPercent = value.roundToInt()) }
+                        }
+                    )
+                }
                 Text(
                     text = stringResource(R.string.disc_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+              }
             }
 
             Button(
@@ -912,7 +999,8 @@ fun CustomizationScreen(
                             popupShowIcon = defaults.popupShowIcon,
                             centeredContent = defaults.centeredContent,
                             popupShowRingerButton = defaults.popupShowRingerButton,
-                            discShowDots = defaults.discShowDots
+                            discShowDots = defaults.discShowDots,
+                            discTickCornerPercent = defaults.discTickCornerPercent
                         )
                     }
                 },

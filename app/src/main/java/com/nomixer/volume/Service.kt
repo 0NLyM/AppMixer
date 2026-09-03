@@ -15,6 +15,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -57,7 +58,10 @@ import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.system.ActivityTaskManagerProxy
+import com.nomixer.volume.compose.DiscHalf
+import com.nomixer.volume.compose.discHalf
 import com.nomixer.volume.data.PopupAnchor
+import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.data.usesWindowBlur
 import com.nomixer.volume.ui.theme.NoMixerTheme
@@ -96,6 +100,13 @@ class Service : AccessibilityService() {
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
         private const val AUTO_REPEAT_INITIAL_DELAY = 500L
+
+        /**
+         * Floor between "Shizuku isn't connected" toasts, so holding a
+         * volume key (or repeatedly tapping the accessibility button) while
+         * disconnected doesn't spam one every single event.
+         */
+        private const val SHIZUKU_WARNING_COOLDOWN_MS = 10_000L
     }
 
     private val windowManager: WindowManager by lazy {
@@ -196,6 +207,15 @@ class Service : AccessibilityService() {
              */
             private var blurred = false
 
+            /**
+             * Same fact as [blurred], but readable from Compose -- the
+             * translucent panel's own painted scrim boosts its opacity
+             * when the system didn't actually grant the blur, so a
+             * translucent popup still reads as an intentional panel
+             * instead of barely-there.
+             */
+            private var blurLandedState by mutableStateOf(false)
+
             /** Radius the live blur drawable was built with, in pixels. */
             private var blurredRadius = -1
 
@@ -217,6 +237,7 @@ class Service : AccessibilityService() {
                         blurred = false
                         blurredRadius = -1
                     }
+                    blurLandedState = false
                     return
                 }
 
@@ -226,6 +247,7 @@ class Service : AccessibilityService() {
                 // slider has to be felt while it's being dragged, and the
                 // radius can only be set when the drawable is built.
                 if (blurred && blurredRadius == radius) {
+                    blurLandedState = true
                     return
                 }
 
@@ -240,6 +262,9 @@ class Service : AccessibilityService() {
                         }.get()
                     blurred = true
                     blurredRadius = radius
+                    blurLandedState = true
+                } else {
+                    blurLandedState = false
                 }
             }
 
@@ -293,7 +318,7 @@ class Service : AccessibilityService() {
                     // opacity bleeds from one background to the other.
                     val panelColor by animateColorAsState(
                         targetValue = MaterialTheme.colorScheme.background.copy(
-                            alpha = preferences.paintedPanelAlpha()
+                            alpha = preferences.paintedPanelAlpha(blurLandedState)
                         ),
                         animationSpec = Motion.ColorShift,
                         label = "mixerPanel"
@@ -374,6 +399,7 @@ class Service : AccessibilityService() {
                                 CollapsedVolumePopup(
                                     audioManager = manager.audioManager,
                                     preferences = preferences,
+                                    blurLanded = blurLandedState,
                                     onExpand = {
                                         expanded = true
                                         this@Service.handler.startIdleTimer()
@@ -426,7 +452,17 @@ class Service : AccessibilityService() {
             PopupAnchor.BottomCenter -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             PopupAnchor.BottomEnd -> Gravity.BOTTOM or Gravity.END
         }
-        params.x = (preferences.popupOffsetX * density).toInt()
+
+        // A laterally-anchored disc spends its horizontal offset revealing
+        // more of itself (see CollapsedVolumePopup's reveal-width clip)
+        // rather than sliding the window away from the edge -- applying
+        // both would move it twice, once from each mechanism. The window
+        // itself stays flush with zero distance from the edge; reaching it
+        // further in, or centering it outright, is what the anchor grid is
+        // for instead.
+        val isLateralDisc = preferences.popupStyle == PopupStyle.Disc &&
+            preferences.popupAnchor.discHalf() != DiscHalf.None
+        params.x = if (isLateralDisc) 0 else (preferences.popupOffsetX * density).toInt()
         params.y = (preferences.popupOffsetY * density).toInt()
     }
 
@@ -506,6 +542,30 @@ class Service : AccessibilityService() {
         }
     }
 
+    private var lastShizukuWarningAtMs = 0L
+
+    /**
+     * The accessibility service can be fully enabled and running yet still
+     * do nothing -- both the volume-key path and the accessibility button
+     * below require Shizuku, and neither said so before. That's read as
+     * "the accessibility service isn't there, only the on-screen button
+     * is" when really the button IS there but tapping it (or a volume key)
+     * silently no-ops. This surfaces the actual reason, rate-limited so it
+     * doesn't spam while Shizuku stays down.
+     */
+    private fun warnShizukuDisconnected() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastShizukuWarningAtMs < SHIZUKU_WARNING_COOLDOWN_MS) {
+            return
+        }
+        lastShizukuWarningAtMs = now
+        Toast.makeText(
+            this,
+            "NoMixer can't reach the volume popup: Shizuku isn't connected",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     override fun onServiceConnected() {
         Log.i(TAG, "onServiceConnected")
 
@@ -517,6 +577,8 @@ class Service : AccessibilityService() {
             override fun onClicked(controller: AccessibilityButtonController?) {
                 if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
                     showView()
+                } else {
+                    warnShizukuDisconnected()
                 }
             }
         })
@@ -558,6 +620,7 @@ class Service : AccessibilityService() {
 
         // Ignore if Shizuku is not ready
         if (manager.shizukuStatus != Manager.ShizukuStatus.Connected) {
+            warnShizukuDisconnected()
             return false
         }
 

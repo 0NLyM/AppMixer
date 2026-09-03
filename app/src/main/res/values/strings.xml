@@ -71,8 +71,9 @@
     <string name="bar_center_content">Slider center</string>
     <string name="center_value">Center the level</string>
     <string name="center_icon">Center the icon</string>
-    <string name="disc_dots">Show dot ring</string>
-    <string name="disc_hint">Anchored to a screen edge the disc becomes a half-moon flush with that edge, becoming a full circle again once dragged far enough from it; anchored to the middle column it stays a full circle. Drag up or down to change the volume.</string>
+    <string name="disc_dots">Show tick ring</string>
+    <string name="disc_tick_corner">Tick corner radius</string>
+    <string name="disc_hint">Anchored to a screen edge the disc reveals itself from that edge inward as the horizontal offset grows, up to a full circle; anchored to the middle column it\'s always a full circle. Drag up or down to change the volume.</string>
     <string name="popup_background">Background</string>
     <string name="background_translucent">Translucent</string>
     <string name="background_solid">Solid</string>

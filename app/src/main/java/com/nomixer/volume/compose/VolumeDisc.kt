@@ -3,10 +3,9 @@ package com.nomixer.volume.compose
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,11 +19,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
@@ -32,28 +33,26 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
 
-private const val DOT_COUNT = 40
+/** Ticks around the ring when [VolumeDisc.showDots] is on. */
+private const val TICK_COUNT = 24
 
 /** How much of its box the disc itself takes; the rest is backdrop fade. */
 private const val DISC_INSET = 0.86f
 
 /**
- * Which part of the disc is drawn. A half disc sits flush against a screen
- * edge with its flat side on that edge, so [Left] is the half that shows
- * when the popup is anchored to the *right* edge, and vice versa.
- */
-enum class DiscHalf {
-    None, Left, Right
-}
-
-/**
- * A volume disc: a full circle when centered on screen, or a half-moon
- * hugging a screen edge. The gesture is a vertical drag over the disc --
- * up raises, down lowers -- matching the bar styles rather than asking for
- * a rotation.
+ * A volume disc: always a complete circle. The gesture is a vertical drag
+ * over the disc -- up raises, down lowers -- matching the bar styles rather
+ * than asking for a rotation.
+ *
+ * A popup anchored to a screen edge gets its "half-moon flush with the
+ * edge" look by being clipped from outside -- the caller's job (see
+ * `CollapsedVolumePopup`), not this composable drawing a half shape itself.
+ * Keeping the disc's own geometry whole regardless of how much of it ends
+ * up visible means its content never has to work out an off-center inset
+ * for a curve that moves depending on how much of it happens to be shown.
  */
 @Composable
 fun VolumeDisc(
@@ -70,7 +69,6 @@ fun VolumeDisc(
      */
     gestureModifier: Modifier = Modifier,
     diameter: Dp = 200.dp,
-    half: DiscHalf = DiscHalf.None,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     trackColor: Color = MaterialTheme.colorScheme.primaryContainer,
     fillColor: Color = MaterialTheme.colorScheme.primary,
@@ -78,6 +76,8 @@ fun VolumeDisc(
     outlineColor: Color = MaterialTheme.colorScheme.outline,
     contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     showDots: Boolean = true,
+    /** Corner rounding of each tick: 0 is square, 50 is a full capsule. */
+    tickCornerPercent: Int = 30,
     /**
      * Backdrop behind the disc: painted as a circle that follows the disc's
      * own radius and fades out to fully transparent at the rim, so the popup
@@ -108,16 +108,12 @@ fun VolumeDisc(
         }
     }
 
-    val sizeModifier = if (half == DiscHalf.None) {
-        Modifier.size(diameter)
-    } else {
-        Modifier
-            .width(diameter / 2)
-            .height(diameter)
-    }
-
     Box(
-        modifier = modifier.then(sizeModifier),
+        // requiredSize, not size: a lateral anchor's caller clips this
+        // disc down to a narrower reveal window (see CollapsedVolumePopup),
+        // and a plain size() would let that narrower parent shrink the
+        // disc itself down to fit instead of clipping it.
+        modifier = modifier.requiredSize(diameter),
         contentAlignment = Alignment.Center
     ) {
         Canvas(
@@ -158,13 +154,7 @@ fun VolumeDisc(
             // up entirely underneath the disc body and was invisible.
             val outerRadius = size.height / 2f
             val radius = outerRadius * DISC_INSET
-            // For a half disc the circle's center sits on the flat edge, so
-            // only the intended half falls inside the box and gets drawn.
-            val center = when (half) {
-                DiscHalf.None -> Offset(size.width / 2f, size.height / 2f)
-                DiscHalf.Left -> Offset(size.width, size.height / 2f)
-                DiscHalf.Right -> Offset(0f, size.height / 2f)
-            }
+            val center = Offset(size.width / 2f, size.height / 2f)
 
             val ringWidth = radius * 0.14f
             val ringRadius = radius - ringWidth / 2f - 1.dp.toPx()
@@ -187,14 +177,10 @@ fun VolumeDisc(
                 )
             }
 
-            // Angles are measured clockwise from 3 o'clock. Every variant
-            // fills from the bottom upwards.
-            val startAngle = if (half == DiscHalf.None) -90f else 90f
-            val fullSweep = when (half) {
-                DiscHalf.None -> 360f
-                DiscHalf.Left -> 180f
-                DiscHalf.Right -> -180f
-            }
+            // Angles are measured clockwise from 3 o'clock. Fills from the
+            // top, going clockwise, all the way around.
+            val startAngle = -90f
+            val fullSweep = 360f
 
             drawCircle(color = trackColor, radius = radius - ringWidth, center = center)
             drawCircle(
@@ -229,90 +215,68 @@ fun VolumeDisc(
             }
 
             if (showDots) {
-                val dotRadius = radius * 0.022f
-                val dotOrbit = ringRadius - ringWidth * 0.95f
-                val dotCount = if (half == DiscHalf.None) DOT_COUNT else DOT_COUNT / 2
-                for (index in 0 until dotCount) {
-                    val angle = startAngle + fullSweep * (index.toFloat() / dotCount)
-                    val radians = Math.toRadians(angle.toDouble())
-                    // Dots behind the fill edge are lit; the few nearest
-                    // it swell and fade back over DotTrail dots, so a change
-                    // travels around the ring as a bright head with a tail
-                    // rather than a block of dots switching on at once.
-                    val behind = dotCount * fraction - index
-                    val lit = behind > 0f
-                    val head = if (lit) {
-                        (1f - behind / Motion.DotTrail).coerceIn(0f, 1f)
-                    } else {
-                        0f
+                // A knob's own marks, lit all the time -- the sense of
+                // "where the level is" comes from the whole ring turning
+                // together by up to one full rotation across the range,
+                // rather than marks switching color as the fill passes
+                // them. An evenly spaced ring of otherwise identical marks
+                // would look the same at any rotation without something to
+                // track, so the three ticks nearest the ring's own zero
+                // point are drawn larger, stepping down from the center one
+                // -- that's the landmark that makes the turn readable, and
+                // it's also where the current level sits.
+                val tickOrbit = ringRadius - ringWidth * 0.95f
+                val tickLength = radius * 0.05f
+                val tickThickness = radius * 0.02f
+                val cornerRadiusPx =
+                    (min(tickLength, tickThickness) / 2f) * (tickCornerPercent / 50f)
+                val ringRotation = fraction * 360f
+
+                for (index in 0 until TICK_COUNT) {
+                    val distanceFromLandmark = min(index, TICK_COUNT - index)
+                    val scale = when (distanceFromLandmark) {
+                        0 -> 1.7f
+                        1 -> 1.3f
+                        else -> 1f
                     }
-                    drawCircle(
-                        color = if (lit) accentColor else outlineColor.copy(alpha = 0.4f),
-                        radius = dotRadius * (1f + head * 0.9f),
-                        center = Offset(
-                            center.x + (cos(radians) * dotOrbit).toFloat(),
-                            center.y + (sin(radians) * dotOrbit).toFloat()
-                        )
+
+                    val angle =
+                        startAngle + (fullSweep / TICK_COUNT) * index + ringRotation
+                    val radians = Math.toRadians(angle.toDouble())
+                    val tickCenter = Offset(
+                        center.x + (cos(radians) * tickOrbit).toFloat(),
+                        center.y + (sin(radians) * tickOrbit).toFloat()
                     )
+                    val length = tickLength * scale
+                    val thickness = tickThickness * scale
+
+                    rotate(degrees = angle, pivot = tickCenter) {
+                        drawRoundRect(
+                            color = accentColor,
+                            topLeft = Offset(
+                                tickCenter.x - length / 2f,
+                                tickCenter.y - thickness / 2f
+                            ),
+                            size = Size(length, thickness),
+                            cornerRadius = CornerRadius(cornerRadiusPx)
+                        )
+                    }
                 }
-            }
-
-            val markerRadians = Math.toRadians((startAngle + fullSweep * fraction).toDouble())
-            drawCircle(
-                color = accentColor,
-                // Swells while the arc is still travelling, like the bars'
-                // marker does.
-                radius = ringWidth * (0.34f + chase * 0.16f),
-                center = Offset(
-                    center.x + (cos(markerRadians) * ringRadius).toFloat(),
-                    center.y + (sin(markerRadians) * ringRadius).toFloat()
+            } else {
+                // Nothing else marks the current level with the ring off,
+                // so fall back to a single marker at the fill's leading
+                // edge, still swelling while the arc is still travelling.
+                val markerRadians = Math.toRadians((startAngle + fullSweep * fraction).toDouble())
+                drawCircle(
+                    color = accentColor,
+                    radius = ringWidth * (0.34f + chase * 0.16f),
+                    center = Offset(
+                        center.x + (cos(markerRadians) * ringRadius).toFloat(),
+                        center.y + (sin(markerRadians) * ringRadius).toFloat()
+                    )
                 )
-            )
-        }
-
-        // The level sits on the disc's own horizontal midline and the icon
-        // or switch rides above it. Both are inset in from the flat edge by
-        // exactly half of the hole's own width at their particular height --
-        // the point that centers each of them within the half-moon's curve
-        // at that height, rather than a single inset shared by both. The
-        // hole narrows away from the midline, so the piece riding above it
-        // needs a smaller inset than the level sitting on the midline itself
-        // -- reusing the midline's inset left it off-center.
-        val contentAlignment = when (half) {
-            DiscHalf.None -> Alignment.Center
-            DiscHalf.Left -> Alignment.CenterEnd
-            DiscHalf.Right -> Alignment.CenterStart
-        }
-        val insetDirection = when (half) {
-            DiscHalf.None -> 0f
-            DiscHalf.Left -> -1f
-            DiscHalf.Right -> 1f
-        }
-
-        // Mirrors the canvas's own radius math so the inset is worked out
-        // against the same circle the hole is actually drawn as -- the flat
-        // trackColor disc inside the ring, not the outer disc edge.
-        val holeRadius = (diameter / 2) * DISC_INSET * (1f - 0.14f)
-
-        fun localInset(verticalOffset: Dp): Dp {
-            if (half == DiscHalf.None) {
-                return 0.dp
             }
-            val d = verticalOffset.value
-            val r = holeRadius.value
-            if (d >= r) {
-                return 0.dp
-            }
-            return (sqrt(r * r - d * d) / 2f).dp
         }
-
-        val topPieceYOffset = diameter * 0.17f
-        val topPieceModifier = Modifier
-            .align(contentAlignment)
-            .offset(x = localInset(topPieceYOffset) * insetDirection, y = -topPieceYOffset)
-        val labelModifier = Modifier
-            .align(contentAlignment)
-            .offset(x = localInset(0.dp) * insetDirection)
 
         val topPiece: (@Composable () -> Unit)? = when {
             centerContent != null -> centerContent
@@ -331,7 +295,10 @@ fun VolumeDisc(
         }
 
         if (topPiece != null) {
-            Box(modifier = topPieceModifier, contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.offset(y = -diameter * 0.17f),
+                contentAlignment = Alignment.Center
+            ) {
                 topPiece()
             }
         }
@@ -340,8 +307,7 @@ fun VolumeDisc(
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
-                color = contentColor,
-                modifier = labelModifier
+                color = contentColor
             )
         }
     }

@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.DoNotDisturbOn
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.RingVolume
-import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -188,14 +187,9 @@ private fun RingFooter(
     onSliderVisibilityChange: (String, Boolean) -> Unit,
     onChange: (() -> Unit)? = null
 ) {
-    var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
     var interruptionFilter by remember { mutableIntStateOf(notificationManagerProxy.getCurrentInterruptionFilter()) }
 
-    SystemBroadcastEffect(
-        AudioManager.RINGER_MODE_CHANGED_ACTION,
-        NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED
-    ) {
-        ringerMode = audioManager.ringerMode
+    SystemBroadcastEffect(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED) {
         interruptionFilter = notificationManagerProxy.getCurrentInterruptionFilter()
     }
 
@@ -203,18 +197,14 @@ private fun RingFooter(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ToggleButton(
-            checked = ringerMode == AudioManager.RINGER_MODE_VIBRATE,
-            checkedDescription = stringResource(R.string.disable_vibrate_mode),
-            checkedIcon = Icons.Default.Vibration,
-            uncheckedDescription = stringResource(R.string.enable_vibrate_mode),
-            uncheckedIcon = Icons.Default.VolumeUp
-        ) {
-            audioManager.ringerMode =
-                if (it) AudioManager.RINGER_MODE_VIBRATE else AudioManager.RINGER_MODE_NORMAL
-            ringerMode = audioManager.ringerMode
-            onChange?.invoke()
-        }
+        // The same ring/vibrate/silent switch the collapsed popup uses,
+        // rather than a second, separately-behaving control that only ever
+        // toggled ring/vibrate -- it couldn't reach silent, which needs the
+        // Shizuku-backed proxy this button already carries.
+        RingerModeButton(
+            audioManager = audioManager,
+            onChange = onChange
+        )
 
         ToggleButton(
             checked = interruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL,
