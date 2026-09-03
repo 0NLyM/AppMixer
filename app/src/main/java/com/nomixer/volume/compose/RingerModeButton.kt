@@ -20,8 +20,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.RingVolume
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +54,7 @@ private const val TAG = "NoMixer.RingerMode"
 private fun ringerFace(mode: Int): Pair<ImageVector, Int> = when (mode) {
     AudioManager.RINGER_MODE_VIBRATE -> Icons.Default.Vibration to R.string.ringer_vibrate
     AudioManager.RINGER_MODE_SILENT -> Icons.Default.NotificationsOff to R.string.ringer_silent
-    else -> Icons.Default.NotificationsActive to R.string.ringer_normal
+    else -> Icons.Default.RingVolume to R.string.ringer_normal
 }
 
 /**

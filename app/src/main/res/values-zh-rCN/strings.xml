@@ -62,11 +62,14 @@
 
     <string name="popup_appearance">外观</string>
     <string name="popup_size">大小</string>
-    <string name="popup_corner">圆角半径</string>
+    <string name="popup_corner">面板圆角半径</string>
+    <string name="slider_corner">滑块圆角半径</string>
+    <string name="button_corner">按钮圆角半径</string>
     <string name="popup_opacity">背景不透明度</string>
     <string name="popup_blur">模糊</string>
     <string name="show_value">显示音量值</string>
     <string name="show_icon">显示图标</string>
+    <string name="bar_center_content">滑块中央内容</string>
     <string name="disc_dots">显示圆点环</string>
     <string name="disc_hint">贴靠屏幕边缘时圆盘显示为半圆，位于中间一列时为完整圆盘。上下拖动即可调节音量。</string>
     <string name="popup_background">背景</string>
@@ -78,4 +81,7 @@
     <string name="ringer_silent">静音，点按切换响铃</string>
     <string name="show_preview">显示实时预览</string>
     <string name="reset_popup">重置弹窗设置</string>
+    <string name="preview_collapsed">收起预览</string>
+    <string name="preview_expanded">展开预览</string>
+    <string name="toggle_preview_mode">切换收起/展开预览</string>
 </resources>

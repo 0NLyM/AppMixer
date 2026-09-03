@@ -61,11 +61,14 @@
 
     <string name="popup_appearance">Appearance</string>
     <string name="popup_size">Size</string>
-    <string name="popup_corner">Corner radius</string>
+    <string name="popup_corner">Panel corner radius</string>
+    <string name="slider_corner">Slider corner radius</string>
+    <string name="button_corner">Button corner radius</string>
     <string name="popup_opacity">Background opacity</string>
     <string name="popup_blur">Blur</string>
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
+    <string name="bar_center_content">Slider center</string>
     <string name="disc_dots">Show dot ring</string>
     <string name="disc_hint">Anchored to a screen edge the disc becomes a half-moon flush with that edge; anchored to the middle column it stays a full circle. Drag up or down to change the volume.</string>
     <string name="popup_background">Background</string>
@@ -77,4 +80,7 @@
     <string name="ringer_silent">Silent, tap for ring</string>
     <string name="show_preview">Show live preview</string>
     <string name="reset_popup">Reset popup settings</string>
+    <string name="preview_collapsed">Collapsed preview</string>
+    <string name="preview_expanded">Expanded preview</string>
+    <string name="toggle_preview_mode">Switch between collapsed and expanded preview</string>
 </resources>

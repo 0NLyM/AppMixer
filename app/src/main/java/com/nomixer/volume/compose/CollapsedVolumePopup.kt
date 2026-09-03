@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,8 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -42,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
 import com.nomixer.volume.data.PopupAnchor
+import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
 import com.nomixer.volume.data.paintedPanelAlpha
@@ -51,13 +49,6 @@ import kotlin.math.roundToInt
 
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
-
-/**
- * How close the disc's readout may come to the side of the screen. A half
- * disc's hole is centred on its flat edge, so the content wants to sit right
- * on the screen edge; this is the margin it keeps instead.
- */
-private const val DISC_CONTENT_EDGE_MARGIN_DP = 12
 
 /**
  * Which half of the disc to show for a given anchor: hugging the right edge
@@ -89,7 +80,7 @@ private fun PopupAnchor.expandDirection(): Int = when (this) {
  * round -- it claims horizontal drags for volume -- so there the gesture is
  * a vertical swipe, up or down.
  */
-private fun Modifier.expandOnSwipe(
+internal fun Modifier.expandOnSwipe(
     verticalAxis: Boolean,
     direction: Int,
     onExpand: () -> Unit
@@ -178,6 +169,9 @@ fun CollapsedVolumePopup(
     // Just the current level: the compact popup is a glance, so the maximum
     // (and the stream's name) are left to the full mixer.
     val valueText = volume.toString()
+    // Mute beats a Bluetooth-connected glyph beats the plain speaker, shared
+    // by every style below instead of each hardcoding the speaker icon.
+    val volumeIcon = rememberVolumeIcon(audioManager, volume)
     val scale = preferences.popupScale
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val half = preferences.popupAnchor.discHalf()
@@ -220,21 +214,28 @@ fun CollapsedVolumePopup(
         label = "discBackdrop"
     )
 
+    // The expand-swipe gesture used to live on this Surface, wrapping the
+    // ringer button along with the slider -- which put the button inside the
+    // same drag-detecting node as the slider it sits beside, and an ancestor
+    // pointerInput can intermittently steal a child's tap before it resolves
+    // as a click. It now lives on just the slider component in each branch
+    // below, so the button is a plain sibling outside the gesture's reach.
+    val expandSwipeModifier = Modifier.expandOnSwipe(
+        // The horizontal bar spends the horizontal axis on volume, so its
+        // expand gesture moves up or down instead.
+        verticalAxis = preferences.popupStyle == PopupStyle.HorizontalBar,
+        direction = if (preferences.popupStyle == PopupStyle.HorizontalBar) {
+            0
+        } else {
+            preferences.popupAnchor.expandDirection()
+        },
+        onExpand = onExpand
+    )
+
     Surface(
         color = panelColor,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        shape = panelShape,
-        modifier = Modifier.expandOnSwipe(
-            // The horizontal bar spends the horizontal axis on volume, so its
-            // expand gesture moves up or down instead.
-            verticalAxis = preferences.popupStyle == PopupStyle.HorizontalBar,
-            direction = if (preferences.popupStyle == PopupStyle.HorizontalBar) {
-                0
-            } else {
-                preferences.popupAnchor.expandDirection()
-            },
-            onExpand = onExpand
-        )
+        shape = panelShape
     ) {
         when (preferences.popupStyle) {
             PopupStyle.HorizontalBar -> Row(
@@ -253,37 +254,31 @@ fun CollapsedVolumePopup(
                 TrackSlider(
                     modifier = Modifier
                         .width((200 * scale).dp)
-                        .height(buttonSize),
+                        .height(buttonSize)
+                        .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
                     onValueChange = { value -> setVolume(value.roundToInt()) }
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = (14 * scale).dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (preferences.popupShowIcon) {
-                            Icon(
-                                imageVector = Icons.Default.VolumeUp,
+                        when (preferences.barCenterContent) {
+                            PopupCenterContent.Icon -> Icon(
+                                imageVector = volumeIcon,
                                 contentDescription = stringResource(R.string.stream_media),
                                 modifier = Modifier.size((22 * scale).dp)
                             )
-                        } else {
-                            Spacer(Modifier.size(0.dp))
-                        }
 
-                        if (preferences.popupShowValue) {
-                            Text(
+                            PopupCenterContent.Value -> Text(
                                 text = valueText,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontSize = (13 * scale).sp,
                                 maxLines = 1
                             )
-                        } else {
-                            Spacer(Modifier.size(0.dp))
                         }
                     }
                 }
@@ -307,37 +302,31 @@ fun CollapsedVolumePopup(
                     // whatever the scale.
                     modifier = Modifier
                         .width(buttonSize)
-                        .height((220 * scale).dp),
+                        .height((220 * scale).dp)
+                        .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
                     onValueChange = { value -> setVolume(value.roundToInt()) }
                 ) {
-                    Column(
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(vertical = (12 * scale).dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceBetween
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (preferences.popupShowValue) {
-                            Text(
+                        when (preferences.barCenterContent) {
+                            PopupCenterContent.Value -> Text(
                                 text = valueText,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontSize = (11 * scale).sp,
                                 maxLines = 1
                             )
-                        } else {
-                            Spacer(Modifier.size(0.dp))
-                        }
 
-                        if (preferences.popupShowIcon) {
-                            Icon(
-                                imageVector = Icons.Default.VolumeUp,
+                            PopupCenterContent.Icon -> Icon(
+                                imageVector = volumeIcon,
                                 contentDescription = stringResource(R.string.stream_media),
                                 modifier = Modifier.size((20 * scale).dp)
                             )
-                        } else {
-                            Spacer(Modifier.size(0.dp))
                         }
                     }
                 }
@@ -352,16 +341,14 @@ fun CollapsedVolumePopup(
                     valueRange = 0f..maxVolume,
                     diameter = (220 * scale).dp,
                     half = half,
-                    // The popup's own offset already holds the disc off the
-                    // screen edge, so only the shortfall has to be made up
-                    // here: park the readout against the flat edge once the
-                    // disc sits far enough in.
-                    contentInset = (DISC_CONTENT_EDGE_MARGIN_DP - preferences.popupOffsetX)
-                        .coerceAtLeast(0)
-                        .dp,
+                    // Scoped to the disc's own drag surface rather than the
+                    // whole component, for the same reason as the bars'
+                    // sliders above -- the ringer switch sits in the middle
+                    // of the disc and must stay outside this gesture's node.
+                    gestureModifier = expandSwipeModifier,
                     showDots = preferences.discShowDots,
                     backdropColor = discBackdrop,
-                    icon = if (preferences.popupShowIcon) Icons.Default.VolumeUp else null,
+                    icon = if (preferences.popupShowIcon) volumeIcon else null,
                     label = if (preferences.popupShowValue) valueText else null,
                     // The disc's hollow middle is where the ringer switch
                     // belongs, rather than stacked above the whole thing.

@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
 
@@ -270,9 +269,8 @@ fun NoMixerTheme(
     }
 
     CompositionLocalProvider(
-        LocalSliderCornerRadius provides preferences.popupCornerRadius.dp,
-        LocalButtonCornerPercent provides
-            (preferences.popupCornerRadius * 50 / POPUP_CORNER_RADIUS_MAX).coerceIn(0, 50)
+        LocalSliderCornerRadius provides preferences.sliderCornerRadius.dp,
+        LocalButtonCornerPercent provides preferences.buttonCornerRadius.coerceIn(0, 50)
     ) {
         val scheme = baseColorScheme(darkTheme).let { base ->
             if (applyColorOverrides) base.withOverrides(preferences) else base

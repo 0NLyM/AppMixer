@@ -40,6 +40,18 @@ private const val DOT_COUNT = 40
 private const val DISC_INSET = 0.86f
 
 /**
+ * Where the readout sits inside a half disc's hole, as a fraction of the
+ * diameter measured in from the flat edge. A half-moon's content wants to
+ * sit at the visual centroid of that hole, not glued to the flat edge nor
+ * pushed out past the middle of the curve -- this fraction is the centroid
+ * of the semicircular track (`4r / 3π`, `r` being the track's own radius, in
+ * terms of the full diameter) rounded to something that reads well.
+ * Independent of any popup offset, unlike the caller-supplied margin this
+ * replaced, which collapsed to zero the moment the offset alone cleared it.
+ */
+private const val DISC_CONTENT_CENTROID_FRACTION = 0.19f
+
+/**
  * Which part of the disc is drawn. A half disc sits flush against a screen
  * edge with its flat side on that edge, so [Left] is the half that shows
  * when the popup is anchored to the *right* edge, and vice versa.
@@ -59,6 +71,15 @@ fun VolumeDisc(
     value: Float,
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Applied to the drag surface alone (the ring itself), not to the whole
+     * component -- so a gesture chained on here, like the popup's
+     * expand-on-swipe, never becomes an ancestor of [centerContent]. An
+     * ancestor pointerInput can intermittently steal a child's tap before it
+     * resolves as a click, which is exactly what made the ringer switch
+     * unresponsive when it sat in the disc's hole.
+     */
+    gestureModifier: Modifier = Modifier,
     diameter: Dp = 200.dp,
     half: DiscHalf = DiscHalf.None,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
@@ -74,15 +95,6 @@ fun VolumeDisc(
      * reads as round rather than sitting on a square panel.
      */
     backdropColor: Color = Color.Transparent,
-    /**
-     * How far to push the readout in from the disc's flat edge. A half
-     * disc's hole is centred on that edge, which is also the screen edge, so
-     * the content belongs as far that way as it can go -- but not so far
-     * that it ends up against the side of the screen. The caller works out
-     * what the popup's own horizontal offset already provides and asks for
-     * the remainder.
-     */
-    contentInset: Dp = 0.dp,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -116,34 +128,37 @@ fun VolumeDisc(
     }
 
     Box(
-        modifier = modifier
-            .then(sizeModifier)
-            .pointerInput(range) {
-                var startValue = 0f
-                var startY = 0f
-
-                detectVerticalDragGestures(
-                    onDragStart = { offset ->
-                        startValue = latestValue
-                        startY = offset.y
-                        dragging = true
-                    },
-                    onDragEnd = { dragging = false },
-                    onDragCancel = { dragging = false }
-                ) { change, _ ->
-                    // Dragging up raises the volume.
-                    val dragAmount = startY - change.position.y
-                    val newValue = startValue + (dragAmount / size.height.toFloat()) * range
-                    val coercedNewValue =
-                        newValue.coerceIn(valueRange.start, valueRange.endInclusive)
-                    if (coercedNewValue != latestValue) {
-                        onValueChange(coercedNewValue)
-                    }
-                }
-            },
+        modifier = modifier.then(sizeModifier),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.matchParentSize()) {
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .pointerInput(range) {
+                    var startValue = 0f
+                    var startY = 0f
+
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            startValue = latestValue
+                            startY = offset.y
+                            dragging = true
+                        },
+                        onDragEnd = { dragging = false },
+                        onDragCancel = { dragging = false }
+                    ) { change, _ ->
+                        // Dragging up raises the volume.
+                        val dragAmount = startY - change.position.y
+                        val newValue = startValue + (dragAmount / size.height.toFloat()) * range
+                        val coercedNewValue =
+                            newValue.coerceIn(valueRange.start, valueRange.endInclusive)
+                        if (coercedNewValue != latestValue) {
+                            onValueChange(coercedNewValue)
+                        }
+                    }
+                }
+                .then(gestureModifier)
+        ) {
             // Read in the draw phase, so the sweep animates without
             // recomposing the disc.
             val fraction = fill.value
@@ -267,9 +282,10 @@ fun VolumeDisc(
         }
 
         // The level sits on the disc's own horizontal midline and the icon
-        // or switch rides above it. Horizontally both hug the flat edge --
-        // the side the hole is centred on -- pushed back in by whatever
-        // [contentInset] asks for.
+        // or switch rides above it. Horizontally both sit at the hole's
+        // centroid -- a fixed fraction of the diameter in from the flat
+        // edge, the same for every popup offset -- rather than hugging the
+        // edge itself.
         val contentAlignment = when (half) {
             DiscHalf.None -> Alignment.Center
             DiscHalf.Left -> Alignment.CenterEnd
@@ -280,9 +296,14 @@ fun VolumeDisc(
             DiscHalf.Left -> -1f
             DiscHalf.Right -> 1f
         }
+        val centroidInset = if (half == DiscHalf.None) {
+            0.dp
+        } else {
+            diameter * DISC_CONTENT_CENTROID_FRACTION
+        }
         val contentModifier = Modifier
             .align(contentAlignment)
-            .offset(x = contentInset * insetDirection)
+            .offset(x = centroidInset * insetDirection)
 
         val topPiece: (@Composable () -> Unit)? = when {
             centerContent != null -> centerContent

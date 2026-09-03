@@ -2,8 +2,14 @@ package com.nomixer.volume.data
 
 import kotlinx.serialization.Serializable
 
-/** Top of the corner-radius slider's range, in dp. */
+/** Top of the panel corner-radius slider's range, in dp. */
 const val POPUP_CORNER_RADIUS_MAX = 48
+
+/** Top of the slider-track corner-radius slider's range, in dp. */
+const val SLIDER_CORNER_RADIUS_MAX = 40
+
+/** Top of the button corner-radius slider's range, as a percent (0 = square, 50 = pill). */
+const val BUTTON_CORNER_RADIUS_MAX = 50
 
 /** Top of the blur-radius slider's range, in pixels. */
 const val POPUP_BLUR_RADIUS_MAX = 300
@@ -34,6 +40,17 @@ enum class PopupBackground {
 }
 
 /**
+ * What sits in the middle of a bar-style slider's track: the volume icon or
+ * the numeric level, never both. The disc style keeps its own independent
+ * [UiPreferences.popupShowValue]/[UiPreferences.popupShowIcon] flags -- it
+ * has room to place icon, value and ringer switch at different points on the
+ * circle, so nothing there needs to be exclusive.
+ */
+enum class PopupCenterContent {
+    Icon, Value
+}
+
+/**
  * User-facing look & feel settings. Colors are nullable ARGB ints: `null`
  * means "use the built-in Nothing OS palette for the current theme mode",
  * so a user who never opens the customization screen keeps the stock look
@@ -55,8 +72,12 @@ data class UiPreferences(
     val popupOffsetY: Int = 0,
     /** Multiplier on the popup's natural size, 0.6x - 1.6x. */
     val popupScale: Float = 1f,
-    /** Applies to the popup panel and, for coherence, to every slider. */
+    /** Corner radius of the popup panel itself, in dp. */
     val popupCornerRadius: Int = 28,
+    /** Corner radius of slider tracks (collapsed and expanded), in dp. */
+    val sliderCornerRadius: Int = 20,
+    /** Corner radius of round buttons (ringer switch, expand handle...), as a percent. */
+    val buttonCornerRadius: Int = 50,
     val popupBackground: PopupBackground = PopupBackground.Translucent,
     /**
      * Panel opacity, 0f - 1f. Drives the solid panel, and the disc's radial
@@ -73,6 +94,8 @@ data class UiPreferences(
     val popupBlurRadius: Int = 200,
     val popupShowValue: Boolean = true,
     val popupShowIcon: Boolean = true,
+    /** Icon or value at the center of a VerticalBar/HorizontalBar slider's track. */
+    val barCenterContent: PopupCenterContent = PopupCenterContent.Value,
     /** Ring / vibrate / silent switch alongside the collapsed popup. */
     val popupShowRingerButton: Boolean = true,
     /** Draw the ring of Nothing-style dots around the disc. */
