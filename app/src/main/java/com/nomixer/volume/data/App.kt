@@ -36,17 +36,8 @@ data class App(
 
         val transliterator: Transliterator by lazy { Transliterator.getInstance("Han-Latin") }
 
-        // Broken by packageName when two apps share a display name, so
-        // sortedWith always resolves to the same order regardless of the
-        // input list's own (not necessarily stable) iteration order --
-        // apps comes from a mutableStateMapOf elsewhere, whose iteration
-        // order isn't guaranteed to stay put across structural changes.
-        val defaultComparator: Comparator<App> by lazy {
-            compareBy<App>(collator) { it.name }.thenBy { it.packageName }
-        }
-
-        val chineseComparator: Comparator<App> by lazy {
-            compareBy<App, String>(Comparator { a, b ->
+        private val chineseNameComparator: Comparator<String> by lazy {
+            Comparator { a, b ->
                 for ((aChar, bChar) in a.zip(b)) {
                     if (aChar == bChar) {
                         continue
@@ -81,7 +72,26 @@ data class App(
                 }
 
                 return@Comparator a.length - b.length
-            }) { it.name }.thenBy { it.packageName }
+            }
+        }
+
+        // Broken by packageName when two apps share a display name, so
+        // sortedWith always resolves to the same order regardless of the
+        // input list's own (not necessarily stable) iteration order --
+        // apps comes from a mutableStateMapOf elsewhere, whose iteration
+        // order isn't guaranteed to stay put across structural changes.
+        val defaultComparator: Comparator<App> by lazy {
+            Comparator { a, b ->
+                val byName = collator.compare(a.name, b.name)
+                if (byName != 0) byName else a.packageName.compareTo(b.packageName)
+            }
+        }
+
+        val chineseComparator: Comparator<App> by lazy {
+            Comparator { a, b ->
+                val byName = chineseNameComparator.compare(a.name, b.name)
+                if (byName != 0) byName else a.packageName.compareTo(b.packageName)
+            }
         }
 
         val comparator: Comparator<App>
