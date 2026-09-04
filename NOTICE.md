@@ -377,5 +377,36 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   volume-key path and the on-screen accessibility button now show a
   rate-limited toast naming the actual reason.
 
+## 2026-09-04 — 1.0.4
+
+- Root-caused why the ringer switch had stopped responding entirely: the
+  disc's reveal-width clip was clipping the *whole* component, including
+  `centerContent`, which sits at the disc's true, unmoving center -- at low
+  offsets (including the 16dp stock default) that center fell right at or
+  past the clip boundary, making the switch unreachable. The clip now
+  applies only to the ring/canvas's drawn content, never to the component
+  itself, so the center is always fully visible and clickable regardless
+  of how much of the ring is currently revealed.
+- The reveal ramp is steeper: it used to take about half the disc's own
+  diameter of offset to go from half-revealed to complete, which is why it
+  still looked cut at the default. A fixed 24dp span now covers the whole
+  transition, and stops responding to further offset past that -- reaching
+  further in, or centering the disc outright, is what the anchor grid is
+  for.
+- The disc's own backdrop is decoupled from the panel's Translucent/Solid
+  selector -- which is about whether a *rectangular* panel gets the system
+  blur, something the disc never asks for even expanded -- and gets its
+  own on/off toggle plus the shared opacity slider directly, with no
+  Translucent-mode reduction.
+- Disc ticks are bigger, so the corner-radius setting has enough area to
+  read clearly; the landmark cluster's sizes are more pronounced (2x
+  center, 1.5x adjacent -- exactly between the landmark and a normal
+  tick); and each tick's corner radius is now worked out from its own
+  scaled size instead of one shared value, so the pill look is consistent
+  across every tick size.
+- Redrew the launcher's three volume bars as full capsules (corner radius
+  equal to half each bar's own width) instead of plain rectangles, to
+  match the fully rounded track look of the app's own sliders.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
