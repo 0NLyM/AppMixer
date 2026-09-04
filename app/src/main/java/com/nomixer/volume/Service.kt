@@ -59,6 +59,7 @@ import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.system.ActivityTaskManagerProxy
+import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupStyle
@@ -108,14 +109,6 @@ class Service : AccessibilityService() {
          * disconnected doesn't spam one every single event.
          */
         private const val SHIZUKU_WARNING_COOLDOWN_MS = 10_000L
-
-        /**
-         * How far a fully-revealed lateral disc still sits from the screen
-         * edge, in dp -- flush would leave it with nowhere left to go as the
-         * offset keeps climbing past this point, and no visible gap to read
-         * as "as far in as this control goes".
-         */
-        private const val DISC_EDGE_GAP_DP = 8f
     }
 
     private val windowManager: WindowManager by lazy {
@@ -228,40 +221,54 @@ class Service : AccessibilityService() {
             /** Radius the live blur drawable was built with, in pixels. */
             private var blurredRadius = -1
 
+            /** Corner radius the live blur drawable was built with, in pixels. */
+            private var blurredCornerRadiusPx = -1f
+
             /**
              * The blur *is* the panel in translucent mode, so the composable
              * draws no fill of its own; in solid mode there's no blur and the
              * composable's panel is the only background. Either way there's
-             * one object, at the configured corner radius.
-             *
-             * Toggled rather than set once, because the collapsed disc has to
-             * do without it -- a blur drawable is a rounded rectangle, which
-             * would put a square panel back behind a round popup -- while the
-             * mixer it expands into is a rounded rectangle and gets it back.
+             * one object, at the configured corner radius -- matching
+             * whatever shape the Compose panel itself is using underneath,
+             * disc included, so the window-level blur drawable's own corners
+             * don't show through past the (differently-rounded) panel it's
+             * meant to sit flush behind.
              */
-            fun applyWindowBlur(wanted: Boolean) {
+            fun applyWindowBlur(wanted: Boolean, expanded: Boolean = false) {
                 if (!wanted) {
                     if (blurred) {
                         background = null
                         blurred = false
                         blurredRadius = -1
+                        blurredCornerRadiusPx = -1f
                     }
                     blurLandedState = false
                     return
                 }
 
-                val radius = manager.uiPreferences.popupBlurRadius
+                val prefs = manager.uiPreferences
+                val density = resources.displayMetrics.density
+                val radius = prefs.popupBlurRadius
+                // The expanded mixer is a rounded rectangle whatever the
+                // collapsed style is, and uses popupCornerRadius directly
+                // for its own Surface -- only the *collapsed* disc gets the
+                // derived, disc-hugging radius instead, mirroring
+                // CollapsedVolumePopup's own panel shape.
+                val cornerRadiusPx = if (!expanded && prefs.popupStyle == PopupStyle.Disc) {
+                    val discRadiusDp = 220f * prefs.popupScale / 2f
+                    (discRadiusDp + prefs.discPanelMargin) * density
+                } else {
+                    prefs.popupCornerRadius * density
+                }
 
-                // A live drawable is kept unless the radius changed: the
-                // slider has to be felt while it's being dragged, and the
-                // radius can only be set when the drawable is built.
-                if (blurred && blurredRadius == radius) {
+                // A live drawable is kept unless the radius or the corner
+                // radius changed: the slider has to be felt while it's
+                // being dragged, and either one can only be set when the
+                // drawable is built.
+                if (blurred && blurredRadius == radius && blurredCornerRadiusPx == cornerRadiusPx) {
                     blurLandedState = true
                     return
                 }
-
-                val cornerRadiusPx =
-                    manager.uiPreferences.popupCornerRadius * resources.displayMetrics.density
 
                 @Suppress("SpellCheckingInspection") if (windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
                     background =
@@ -271,6 +278,7 @@ class Service : AccessibilityService() {
                         }.get()
                     blurred = true
                     blurredRadius = radius
+                    blurredCornerRadiusPx = cornerRadiusPx
                     blurLandedState = true
                 } else {
                     blurLandedState = false
@@ -312,15 +320,16 @@ class Service : AccessibilityService() {
                     // this particular window stays up.
                     var expanded by remember { mutableStateOf(false) }
 
-                    // Expanding turns the popup into a rounded rectangle, so
-                    // the blur the collapsed disc has to skip comes back.
+                    // Expanding always switches to the mixer's own rounded
+                    // rectangle, so the blur drawable's corner radius has to
+                    // be rebuilt for it regardless of the collapsed style.
                     LaunchedEffect(
                         expanded,
                         preferences.popupBackground,
                         preferences.popupStyle,
                         preferences.popupBlurRadius
                     ) {
-                        applyWindowBlur(preferences.usesWindowBlur(expanded = expanded))
+                        applyWindowBlur(preferences.usesWindowBlur(), expanded = expanded)
                     }
 
                     // Animated, so switching translucent/solid or nudging the

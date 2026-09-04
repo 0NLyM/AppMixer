@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -38,7 +37,7 @@ import kotlin.math.sin
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
 private const val TICK_COUNT = 24
 
-/** How much of its box the disc itself takes; the rest is backdrop fade. */
+/** How much of its box the disc's own circle takes, leaving a small margin. */
 private const val DISC_INSET = 0.86f
 
 /**
@@ -71,16 +70,21 @@ fun VolumeDisc(
     showDots: Boolean = true,
     /** Corner rounding of each tick: 0 is square, 50 is a full capsule. */
     tickCornerPercent: Int = 30,
-    /**
-     * Backdrop behind the disc: painted as a circle that follows the disc's
-     * own radius and fades out to fully transparent at the rim, so the popup
-     * reads as round rather than sitting on a square panel.
-     */
-    backdropColor: Color = Color.Transparent,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
-    centerContent: (@Composable () -> Unit)? = null
+    centerContent: (@Composable () -> Unit)? = null,
+    /**
+     * Horizontal pull on [centerContent] and [label] together, away from
+     * the disc's own true center. A laterally-anchored disc's window can
+     * sit mostly off-screen (see CollapsedVolumePopup), and this content
+     * would otherwise always render at the disc's fixed center regardless
+     * -- riding right off the visible edge along with it. The caller works
+     * out how far back onto the visible side to pull it; zero (the
+     * default) leaves it exactly centered, as if the whole disc were on
+     * screen.
+     */
+    centerContentOffsetX: Dp = 0.dp
 ) {
     val range = valueRange.endInclusive - valueRange.start
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -138,33 +142,14 @@ fun VolumeDisc(
             val fraction = fill.value
             val chase = (abs(targetFraction - fraction) * 7f).coerceAtMost(1f)
 
-            // The disc is inset inside its box so the backdrop has a ring of
-            // its own to fade across. Drawn edge to edge, the backdrop ended
-            // up entirely underneath the disc body and was invisible.
+            // The disc's own circle is inset slightly inside its box, for a
+            // small margin around its own rim.
             val outerRadius = size.height / 2f
             val radius = outerRadius * DISC_INSET
             val center = Offset(size.width / 2f, size.height / 2f)
 
             val ringWidth = radius * 0.14f
             val ringRadius = radius - ringWidth / 2f - 1.dp.toPx()
-
-            // Round backdrop: solid out to the disc's own edge, then
-            // dissolving to nothing across the ring left around it.
-            if (backdropColor.alpha > 0f) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colorStops = arrayOf(
-                            0f to backdropColor,
-                            DISC_INSET to backdropColor,
-                            1f to backdropColor.copy(alpha = 0f)
-                        ),
-                        center = center,
-                        radius = outerRadius
-                    ),
-                    radius = outerRadius,
-                    center = center
-                )
-            }
 
             // Angles are measured clockwise from 3 o'clock. Fills from the
             // top, going clockwise, all the way around.
@@ -218,6 +203,12 @@ fun VolumeDisc(
                 val tickLength = radius * 0.05f
                 val tickThickness = radius * 0.028f
                 val ringRotation = fraction * 360f
+                // The shared outer boundary every tick's own outer end sits
+                // on, worked out from the base (non-landmark) length -- so a
+                // landmark tick's extra length grows inward, toward the
+                // center, rather than growing outward past where the normal
+                // ticks end.
+                val tickOuterRadius = tickOrbit + tickLength / 2f
 
                 for (index in 0 until TICK_COUNT) {
                     val distanceFromLandmark = min(index, TICK_COUNT - index)
@@ -230,19 +221,21 @@ fun VolumeDisc(
                         else -> 1f
                     }
 
-                    val angle =
-                        startAngle + (fullSweep / TICK_COUNT) * index + ringRotation
-                    val radians = Math.toRadians(angle.toDouble())
-                    val tickCenter = Offset(
-                        center.x + (cos(radians) * tickOrbit).toFloat(),
-                        center.y + (sin(radians) * tickOrbit).toFloat()
-                    )
                     // Only length grows for a landmark tick -- thickness
                     // stays the same as every other tick, so the taper reads
                     // as "longer pill" rather than "fatter mark".
                     val length = tickLength * scale
                     val thickness = tickThickness
                     val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
+
+                    val angle =
+                        startAngle + (fullSweep / TICK_COUNT) * index + ringRotation
+                    val radians = Math.toRadians(angle.toDouble())
+                    val tickCenterRadius = tickOuterRadius - length / 2f
+                    val tickCenter = Offset(
+                        center.x + (cos(radians) * tickCenterRadius).toFloat(),
+                        center.y + (sin(radians) * tickCenterRadius).toFloat()
+                    )
 
                     rotate(degrees = angle, pivot = tickCenter) {
                         drawRoundRect(
@@ -280,14 +273,25 @@ fun VolumeDisc(
             // pushed there would sit off from where its own clickable area
             // visually reads as being, and the value label at the box's
             // true center would land right on top of it.
-            centerContent()
+            //
+            // Both pull sideways by the same amount, via
+            // [centerContentOffsetX], so a laterally-anchored disc that's
+            // mostly off-screen keeps its own switch and label on the
+            // visible side instead of riding the disc's fixed center
+            // straight past the physical edge.
+            Box(
+                modifier = Modifier.offset(x = centerContentOffsetX),
+                contentAlignment = Alignment.Center
+            ) {
+                centerContent()
+            }
 
             if (label != null) {
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelMedium,
                     color = contentColor,
-                    modifier = Modifier.offset(y = diameter * 0.19f)
+                    modifier = Modifier.offset(x = centerContentOffsetX, y = diameter * 0.19f)
                 )
             }
         } else {

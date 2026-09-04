@@ -71,6 +71,7 @@ import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.ui.theme.Motion
 import com.nomixer.volume.ui.theme.PopupColors
 import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
+import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
 import com.nomixer.volume.data.POPUP_BLUR_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
@@ -81,7 +82,6 @@ import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.SLIDER_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
-import com.nomixer.volume.data.discBackdropAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.baseColorScheme
 import kotlin.math.roundToInt
@@ -293,7 +293,7 @@ private fun PopupPreview(
     val discPreviewDiameter = 220.dp * (preferences.popupScale * previewScale * 1.6f)
     val discRevealFraction =
         (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
-    val discEdgeGap = 8.dp * previewScale
+    val discEdgeGap = DISC_EDGE_GAP_DP.dp * previewScale
     val discHiddenShift = discPreviewDiameter / 2
     val discShiftX =
         (discHiddenShift - (discHiddenShift + discEdgeGap) * discRevealFraction) * discOutwardSign
@@ -484,16 +484,40 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
         PopupStyle.Disc -> {
             val discDiameter = (220 * scale).dp
 
+            // Mirrors CollapsedVolumePopup's own centerContentOffsetX math
+            // exactly (same shape, scaled for the preview), so the live
+            // preview shows the same edge-clearance behavior the real
+            // popup now has.
+            val discIsLateral = preferences.popupAnchor in setOf(
+                PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart,
+                PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd
+            )
+            val centerContentOffsetX = if (discIsLateral) {
+                val discOutwardSign = when (preferences.popupAnchor) {
+                    PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
+                    else -> -1
+                }
+                val revealFraction =
+                    (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
+                val radius = discDiameter / 2
+                val edgeGap = DISC_EDGE_GAP_DP.dp * previewScale
+                val overhang = (radius - (radius + edgeGap) * revealFraction).coerceAtLeast(0.dp)
+                val contentHalfWidth = (38 * scale).dp / 2
+                val maxLocalCenter = radius - overhang - edgeGap - contentHalfWidth
+                val localCenter = if (maxLocalCenter < 0.dp) maxLocalCenter else 0.dp
+                localCenter * discOutwardSign
+            } else {
+                0.dp
+            }
+
             Box(contentAlignment = Alignment.Center) {
                 VolumeDisc(
                     value = previewFraction,
                     onValueChange = {},
                     diameter = discDiameter,
+                    centerContentOffsetX = centerContentOffsetX,
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
-                    backdropColor = MaterialTheme.colorScheme.background.copy(
-                        alpha = preferences.discBackdropAlpha()
-                    ),
                     icon = if (preferences.popupShowIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (preferences.popupShowValue) previewValueText else null,
                     centerContent = if (preferences.popupShowRingerButton) {
@@ -823,53 +847,53 @@ fun CustomizationScreen(
                 onSelect = { background -> onUpdate { it.copy(popupBackground = background) } }
             )
 
-            // Hidden where it would do nothing: a translucent bar is the
-            // system blur, which has no tint to set. The disc always uses
-            // this opacity for its own backdrop -- unless that backdrop is
-            // turned off entirely, in which case neither slider does
-            // anything and both stay hidden.
-            AnimatedVisibility(
-                visible = !(preferences.popupStyle == PopupStyle.Disc && !preferences.discShowBackdrop),
-                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                    fadeIn(tween(Motion.MorphMillis)),
-                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                    fadeOut(tween(160))
-            ) {
-                AnimatedContent(
-                    targetState = preferences.popupBackground == PopupBackground.Solid ||
-                        preferences.popupStyle == PopupStyle.Disc,
-                    transitionSpec = {
-                        fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
-                    },
-                    label = "opacityOrBlur"
-                ) { showOpacity ->
-                    if (showOpacity) {
-                        SliderSetting(
-                            label = stringResource(R.string.popup_opacity),
-                            valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
-                            value = preferences.popupBackgroundOpacity,
-                            valueRange = 0f..1f,
-                            onValueChange = { value ->
-                                onUpdate { it.copy(popupBackgroundOpacity = value) }
-                            }
-                        )
-                    } else {
-                        // Translucent is the blur, so what there is to adjust
-                        // is how frosted it is -- a different quantity from
-                        // the solid panel's opacity, and it gets its own
-                        // slider.
-                        SliderSetting(
-                            label = stringResource(R.string.popup_blur),
-                            valueLabel = "${preferences.popupBlurRadius} px",
-                            value = preferences.popupBlurRadius.toFloat(),
-                            valueRange = 0f..POPUP_BLUR_RADIUS_MAX.toFloat(),
-                            onValueChange = { value ->
-                                onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
-                            }
-                        )
-                    }
+            // Always visible now, and always about the panel's own fill --
+            // every style has one, disc included -- never the separate
+            // painted glow below, which has its own toggle instead.
+            AnimatedContent(
+                targetState = preferences.popupBackground == PopupBackground.Solid,
+                transitionSpec = {
+                    fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
+                },
+                label = "opacityOrBlur"
+            ) { showOpacity ->
+                if (showOpacity) {
+                    SliderSetting(
+                        label = stringResource(R.string.popup_opacity),
+                        valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
+                        value = preferences.popupBackgroundOpacity,
+                        valueRange = 0f..1f,
+                        onValueChange = { value ->
+                            onUpdate { it.copy(popupBackgroundOpacity = value) }
+                        }
+                    )
+                } else {
+                    // Translucent is the blur, so what there is to adjust
+                    // is how frosted it is -- a different quantity from
+                    // the solid panel's opacity, and it gets its own
+                    // slider.
+                    SliderSetting(
+                        label = stringResource(R.string.popup_blur),
+                        valueLabel = "${preferences.popupBlurRadius} px",
+                        value = preferences.popupBlurRadius.toFloat(),
+                        valueRange = 0f..POPUP_BLUR_RADIUS_MAX.toFloat(),
+                        onValueChange = { value ->
+                            onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
+                        }
+                    )
                 }
             }
+
+            // The panel's own separate painted glow -- every style now, not
+            // just the disc -- independent of the Translucent/Solid fill
+            // above.
+            ToggleSetting(
+                label = stringResource(R.string.popup_show_glow),
+                checked = preferences.popupShowGlow,
+                onCheckedChange = { checked ->
+                    onUpdate { it.copy(popupShowGlow = checked) }
+                }
+            )
 
             // Independent either way: whether the icon/value show at all
             // isn't tied to where they sit. Hiding whichever one is
@@ -968,11 +992,13 @@ fun CustomizationScreen(
                     fadeOut(tween(160))
             ) {
               Column {
-                ToggleSetting(
-                    label = stringResource(R.string.disc_show_backdrop),
-                    checked = preferences.discShowBackdrop,
-                    onCheckedChange = { checked ->
-                        onUpdate { it.copy(discShowBackdrop = checked) }
+                SliderSetting(
+                    label = stringResource(R.string.disc_panel_margin),
+                    valueLabel = "${preferences.discPanelMargin} dp",
+                    value = preferences.discPanelMargin.toFloat(),
+                    valueRange = 0f..64f,
+                    onValueChange = { value ->
+                        onUpdate { it.copy(discPanelMargin = value.roundToInt()) }
                     }
                 )
                 ToggleSetting(
@@ -1040,7 +1066,8 @@ fun CustomizationScreen(
                             popupShowRingerButton = defaults.popupShowRingerButton,
                             discShowDots = defaults.discShowDots,
                             discTickCornerPercent = defaults.discTickCornerPercent,
-                            discShowBackdrop = defaults.discShowBackdrop
+                            discPanelMargin = defaults.discPanelMargin,
+                            popupShowGlow = defaults.popupShowGlow
                         )
                     }
                 },

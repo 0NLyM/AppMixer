@@ -67,12 +67,13 @@
     <string name="button_corner">按钮圆角半径</string>
     <string name="popup_opacity">背景不透明度</string>
     <string name="popup_blur">模糊</string>
+    <string name="popup_show_glow">显示光晕</string>
     <string name="show_value">显示音量值</string>
     <string name="show_icon">显示图标</string>
     <string name="bar_center_content">滑块中央内容</string>
     <string name="center_value">音量值居中</string>
     <string name="center_icon">图标居中</string>
-    <string name="disc_show_backdrop">显示背景光晕</string>
+    <string name="disc_panel_margin">与圆盘的距离</string>
     <string name="disc_dots">显示刻度环</string>
     <string name="disc_tick_corner">刻度圆角半径</string>
     <string name="disc_hint">贴靠屏幕边缘时，圆盘会随着水平偏移增大从边缘向内逐渐显露，直至完整圆盘；位于中间一列时始终为完整圆盘。上下拖动即可调节音量。</string>

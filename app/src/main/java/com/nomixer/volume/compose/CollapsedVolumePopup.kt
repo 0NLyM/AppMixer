@@ -29,26 +29,38 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
+import com.nomixer.volume.data.DISC_EDGE_GAP_DP
+import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
-import com.nomixer.volume.data.discBackdropAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
+import com.nomixer.volume.data.popupGlowAlpha
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
+
+/**
+ * How far the glow bleeds past the panel's own edge on every side, in dp --
+ * added to both the glow's own size and its corner radius, so a square
+ * panel's glow stays exactly as round as the panel itself, just bigger.
+ */
+private const val GLOW_MARGIN_DP = 24
 
 /**
  * Direction the expand swipe has to travel, away from the edge the popup
@@ -122,9 +134,7 @@ fun CollapsedVolumePopup(
     preferences: UiPreferences,
     /**
      * Whether the real overlay window actually got the system blur behind
-     * it. Only meaningful for the bar styles' own panel -- the disc never
-     * asks for the window blur while collapsed, so its own backdrop always
-     * treats this as landed=false regardless of what's passed here.
+     * the panel -- every style's panel now, disc included.
      */
     blurLanded: Boolean = false,
     onExpand: () -> Unit,
@@ -174,44 +184,81 @@ fun CollapsedVolumePopup(
     val isDisc = preferences.popupStyle == PopupStyle.Disc
     val cornerRadius = preferences.popupCornerRadius.dp
 
-    // The disc paints its own round backdrop, so the rectangular panel gets
-    // out of the way entirely -- no fill, no shape, no padding to hold it
-    // off the screen edge.
-    val panelShape = if (isDisc) RectangleShape else RoundedCornerShape(cornerRadius)
-    val panelPadding = if (isDisc) PaddingValues(0.dp) else PaddingValues(10.dp)
+    // The disc gets a panel of its own too, same as a bar -- just a round
+    // one, sized to hug the disc's own circle with an adjustable margin
+    // rather than the fixed 10dp every other style uses. Its corner radius
+    // is derived from the disc's own size rather than the shared
+    // popupCornerRadius setting, so it always reads as a circle wrapped
+    // around the disc regardless of how big the disc itself is scaled.
+    val discPanelCornerRadius = discDiameter / 2 + preferences.discPanelMargin.dp
+    val panelShape = RoundedCornerShape(if (isDisc) discPanelCornerRadius else cornerRadius)
+    val panelPadding = if (isDisc) {
+        PaddingValues(preferences.discPanelMargin.dp)
+    } else {
+        PaddingValues(10.dp)
+    }
 
-    // One background object: this panel, with the system blur behind it in
-    // translucent mode. The disc paints its own round backdrop below
-    // instead, since a rectangular panel can't follow a circle.
+    // How far the disc's own center content (ringer switch, value label)
+    // needs pulling back from the disc's true center, so it stays clear of
+    // the physical screen edge instead of riding the disc's fixed center
+    // straight past it. Mirrors Service.kt's clampToScreenOnceLaidOut
+    // exactly -- same revealFraction, same DISC_EDGE_GAP_DP, and the same
+    // window half-width (the disc plus its own panel and glow margins, not
+    // just the disc alone) -- so this content-layer math and the real
+    // window's own position always agree on where the cut line actually is.
+    val discIsLateral = isDisc && preferences.popupAnchor in setOf(
+        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart,
+        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd
+    )
+    val centerContentOffsetX = if (discIsLateral) {
+        val discOutwardSign = when (preferences.popupAnchor) {
+            PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
+            else -> -1
+        }
+        val revealFraction =
+            (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
+        val windowHalfWidth = discPanelCornerRadius + GLOW_MARGIN_DP.dp
+        val edgeGap = DISC_EDGE_GAP_DP.dp
+        val overhang =
+            (windowHalfWidth - (windowHalfWidth + edgeGap) * revealFraction).coerceAtLeast(0.dp)
+        // The ringer button is the widest thing that can sit in the hole,
+        // so its own half-width is the clearance to protect -- plus a
+        // small minimum gap so it never rides right up against the cut
+        // line either.
+        val contentHalfWidth = (buttonSize * 0.8f) / 2
+        val maxLocalCenter = windowHalfWidth - overhang - edgeGap - contentHalfWidth
+        val localCenter = if (maxLocalCenter < 0.dp) maxLocalCenter else 0.dp
+        localCenter * discOutwardSign
+    } else {
+        0.dp
+    }
+
+    // One background object for every style now: this panel, with the
+    // system blur behind it in translucent mode. Neither one touches the
+    // disc's own ring/track colors, which stay whatever the palette says.
     //
-    // Both the fill and the backdrop are animated, so switching between
-    // translucent and solid -- or nudging the opacity -- bleeds from one to
-    // the other rather than cutting.
+    // Animated, so switching translucent/solid or nudging the opacity
+    // bleeds from one to the other rather than cutting.
     val panelColor by animateColorAsState(
-        targetValue = if (isDisc) {
-            Color.Transparent
-        } else {
-            MaterialTheme.colorScheme.background.copy(
-                alpha = preferences.paintedPanelAlpha(blurLanded)
-            )
-        },
+        targetValue = MaterialTheme.colorScheme.background.copy(
+            alpha = preferences.paintedPanelAlpha(blurLanded)
+        ),
         animationSpec = Motion.ColorShift,
         label = "popupPanel"
     )
 
-    // The disc's own round backdrop, independent of the panel's
-    // Translucent/Solid choice -- that's about whether a rectangular panel
-    // gets the system blur, which the disc never asks for even expanded, so
-    // tying its backdrop to the same switch made a choice that does nothing
-    // for it read as if it should. Just its own on/off toggle and the
-    // shared opacity slider instead, always dissolving to nothing at the
-    // rim.
-    val discBackdrop by animateColorAsState(
+    // A soft glow behind the panel, independent of its Translucent/Solid
+    // fill -- its own on/off toggle at a fixed intensity, painted as a
+    // rounded rect the same shape as the panel itself (a circle for the
+    // disc, once its corner radius is that large) but grown outward by a
+    // fixed margin on every side, dissolving to nothing at its own,
+    // correspondingly larger edge.
+    val popupGlow by animateColorAsState(
         targetValue = MaterialTheme.colorScheme.background.copy(
-            alpha = preferences.discBackdropAlpha()
+            alpha = preferences.popupGlowAlpha()
         ),
         animationSpec = Motion.ColorShift,
-        label = "discBackdrop"
+        label = "popupGlow"
     )
 
     // The expand-swipe gesture used to live on this Surface, wrapping the
@@ -232,12 +279,32 @@ fun CollapsedVolumePopup(
         onExpand = onExpand
     )
 
-    Surface(
-        color = panelColor,
-        contentColor = MaterialTheme.colorScheme.onBackground,
-        shape = panelShape
+    val glowCornerRadius = if (isDisc) discPanelCornerRadius else cornerRadius
+
+    Box(
+        modifier = Modifier
+            .drawBehind {
+                if (popupGlow.alpha > 0f) {
+                    val glowCornerRadiusPx = glowCornerRadius.toPx() + GLOW_MARGIN_DP.dp.toPx()
+                    drawRoundRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(popupGlow, popupGlow.copy(alpha = 0f)),
+                            center = center,
+                            radius = hypot(size.width, size.height) / 2f
+                        ),
+                        cornerRadius = CornerRadius(glowCornerRadiusPx)
+                    )
+                }
+            }
+            .padding(GLOW_MARGIN_DP.dp),
+        contentAlignment = Alignment.Center
     ) {
-        when (preferences.popupStyle) {
+        Surface(
+            color = panelColor,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            shape = panelShape
+        ) {
+            when (preferences.popupStyle) {
             PopupStyle.HorizontalBar -> Row(
                 modifier = Modifier.padding(panelPadding),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -391,7 +458,6 @@ fun CollapsedVolumePopup(
                         gestureModifier = expandSwipeModifier,
                         showDots = preferences.discShowDots,
                         tickCornerPercent = preferences.discTickCornerPercent,
-                        backdropColor = discBackdrop,
                         icon = if (preferences.popupShowIcon) volumeIcon else null,
                         label = if (preferences.popupShowValue) valueText else null,
                         // The disc's hollow middle is where the ringer
@@ -408,10 +474,12 @@ fun CollapsedVolumePopup(
                         } else {
                             null
                         },
+                        centerContentOffsetX = centerContentOffsetX,
                         onValueChange = { value -> setVolume(value.roundToInt()) }
                     )
                 }
             }
+        }
         }
     }
 }

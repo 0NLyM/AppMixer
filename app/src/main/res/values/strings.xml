@@ -66,12 +66,13 @@
     <string name="button_corner">Button corner radius</string>
     <string name="popup_opacity">Background opacity</string>
     <string name="popup_blur">Blur</string>
+    <string name="popup_show_glow">Show glow</string>
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
     <string name="bar_center_content">Slider center</string>
     <string name="center_value">Center the level</string>
     <string name="center_icon">Center the icon</string>
-    <string name="disc_show_backdrop">Show backdrop</string>
+    <string name="disc_panel_margin">Distance from disc</string>
     <string name="disc_dots">Show tick ring</string>
     <string name="disc_tick_corner">Tick corner radius</string>
     <string name="disc_hint">Anchored to a screen edge the disc reveals itself from that edge inward as the horizontal offset grows, up to a full circle; anchored to the middle column it\'s always a full circle. Drag up or down to change the volume.</string>
