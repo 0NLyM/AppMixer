@@ -36,8 +36,13 @@ data class App(
 
         val transliterator: Transliterator by lazy { Transliterator.getInstance("Han-Latin") }
 
+        // Broken by packageName when two apps share a display name, so
+        // sortedWith always resolves to the same order regardless of the
+        // input list's own (not necessarily stable) iteration order --
+        // apps comes from a mutableStateMapOf elsewhere, whose iteration
+        // order isn't guaranteed to stay put across structural changes.
         val defaultComparator: Comparator<App> by lazy {
-            compareBy(collator) { it.name }
+            compareBy(collator) { it.name }.thenBy { it.packageName }
         }
 
         val chineseComparator: Comparator<App> by lazy {
@@ -76,7 +81,7 @@ data class App(
                 }
 
                 return@Comparator a.length - b.length
-            }) { it.name }
+            }) { it.name }.thenBy { it.packageName }
         }
 
         val comparator: Comparator<App>

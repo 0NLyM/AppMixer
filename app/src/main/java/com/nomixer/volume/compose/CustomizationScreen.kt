@@ -82,6 +82,7 @@ import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.SLIDER_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.discShadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.baseColorScheme
 import kotlin.math.roundToInt
@@ -510,6 +511,22 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                 0.dp
             }
 
+            val besideButton = preferences.discValueBesideButton &&
+                preferences.popupShowRingerButton && preferences.popupShowValue
+            val mockButton = @Composable {
+                Box(
+                    modifier = Modifier
+                        .size((38 * scale).dp)
+                        .clip(RoundedCornerShape(percent = preferences.buttonCornerRadius))
+                        .background(MaterialTheme.colorScheme.tertiary)
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline,
+                            RoundedCornerShape(percent = preferences.buttonCornerRadius)
+                        )
+                )
+            }
+
             Box(contentAlignment = Alignment.Center) {
                 VolumeDisc(
                     value = previewFraction,
@@ -518,21 +535,28 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     centerContentOffsetX = centerContentOffsetX,
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
+                    backdropColor = MaterialTheme.colorScheme.background.copy(
+                        alpha = preferences.discShadowAlpha()
+                    ),
                     icon = if (preferences.popupShowIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
-                    label = if (preferences.popupShowValue) previewValueText else null,
+                    label = if (preferences.popupShowValue && !besideButton) previewValueText else null,
                     centerContent = if (preferences.popupShowRingerButton) {
                         {
-                            Box(
-                                modifier = Modifier
-                                    .size((38 * scale).dp)
-                                    .clip(RoundedCornerShape(percent = preferences.buttonCornerRadius))
-                                    .background(MaterialTheme.colorScheme.tertiary)
-                                    .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outline,
-                                        RoundedCornerShape(percent = preferences.buttonCornerRadius)
+                            if (besideButton) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    mockButton()
+                                    Text(
+                                        text = previewValueText,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontSize = (11 * scale).sp
                                     )
-                            )
+                                }
+                            } else {
+                                mockButton()
+                            }
                         }
                     } else {
                         null
@@ -779,6 +803,11 @@ fun CustomizationScreen(
             )
 
             SectionHeader(stringResource(R.string.popup_appearance))
+            Text(
+                text = stringResource(R.string.popup_appearance_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             SliderSetting(
                 label = stringResource(R.string.popup_size),
@@ -834,9 +863,11 @@ fun CustomizationScreen(
                     )
                 }
             }
+            SectionHeader(stringResource(R.string.popup_background))
             Text(
-                text = stringResource(R.string.popup_background),
-                style = MaterialTheme.typography.bodyLarge
+                text = stringResource(R.string.popup_background_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             ChipRow(
                 options = listOf(
@@ -848,8 +879,7 @@ fun CustomizationScreen(
             )
 
             // Always visible now, and always about the panel's own fill --
-            // every style has one, disc included -- never the separate
-            // painted glow below, which has its own toggle instead.
+            // every style has one, disc included.
             AnimatedContent(
                 targetState = preferences.popupBackground == PopupBackground.Solid,
                 transitionSpec = {
@@ -884,15 +914,11 @@ fun CustomizationScreen(
                 }
             }
 
-            // The panel's own separate painted glow -- every style now, not
-            // just the disc -- independent of the Translucent/Solid fill
-            // above.
-            ToggleSetting(
-                label = stringResource(R.string.popup_show_glow),
-                checked = preferences.popupShowGlow,
-                onCheckedChange = { checked ->
-                    onUpdate { it.copy(popupShowGlow = checked) }
-                }
+            SectionHeader(stringResource(R.string.popup_content))
+            Text(
+                text = stringResource(R.string.popup_content_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             // Independent either way: whether the icon/value show at all
@@ -992,13 +1018,25 @@ fun CustomizationScreen(
                     fadeOut(tween(160))
             ) {
               Column {
-                SliderSetting(
-                    label = stringResource(R.string.disc_panel_margin),
-                    valueLabel = "${preferences.discPanelMargin} dp",
-                    value = preferences.discPanelMargin.toFloat(),
-                    valueRange = 0f..64f,
-                    onValueChange = { value ->
-                        onUpdate { it.copy(discPanelMargin = value.roundToInt()) }
+                SectionHeader(stringResource(R.string.style_disc))
+                Text(
+                    text = stringResource(R.string.disc_section_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                ToggleSetting(
+                    label = stringResource(R.string.disc_show_shadow),
+                    checked = preferences.discShowShadow,
+                    onCheckedChange = { checked ->
+                        onUpdate { it.copy(discShowShadow = checked) }
+                    }
+                )
+                ToggleSetting(
+                    label = stringResource(R.string.disc_value_beside_button),
+                    checked = preferences.discValueBesideButton,
+                    enabled = preferences.popupShowRingerButton && preferences.popupShowValue,
+                    onCheckedChange = { checked ->
+                        onUpdate { it.copy(discValueBesideButton = checked) }
                     }
                 )
                 ToggleSetting(
@@ -1066,8 +1104,8 @@ fun CustomizationScreen(
                             popupShowRingerButton = defaults.popupShowRingerButton,
                             discShowDots = defaults.discShowDots,
                             discTickCornerPercent = defaults.discTickCornerPercent,
-                            discPanelMargin = defaults.discPanelMargin,
-                            popupShowGlow = defaults.popupShowGlow
+                            discShowShadow = defaults.discShowShadow,
+                            discValueBesideButton = defaults.discValueBesideButton
                         )
                     }
                 },

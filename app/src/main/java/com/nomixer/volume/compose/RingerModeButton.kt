@@ -31,11 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,7 +79,6 @@ fun RingerModeButton(
     val context = LocalContext.current
     val audioProxy = remember(context) { AudioManagerProxy(context) }
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
-    val scope = rememberCoroutineScope()
 
     SystemBroadcastEffect(AudioManager.RINGER_MODE_CHANGED_ACTION) {
         ringerMode = audioManager.ringerMode
@@ -196,30 +191,18 @@ fun RingerModeButton(
                 // went through a moment later. The broadcast still corrects
                 // this if something else changed the mode in the meantime.
                 ringerMode = next
-                onChange?.invoke()
 
-                // setRingerMode is a blocking Shizuku binder call -- run it
-                // off this synchronous click handler, in its own coroutine.
-                // Calling it inline here used to mean a fast, silent refusal
-                // set `ringerMode` back to its old value before Compose ever
-                // got a frame to draw the optimistic one drawn above: both
-                // writes landed in the same recomposition, so the switch
-                // looked like it had ignored the tap entirely rather than
-                // having flipped and bounced back. Off in its own coroutine,
-                // the tap always visibly lands first; a refusal only reverts
-                // it a moment later, on its own frame.
-                scope.launch {
-                    val accepted = withContext(Dispatchers.IO) { audioProxy.setRingerMode(next) }
-                    // Silent needs Do Not Disturb access, which the proxy
-                    // gets through Shizuku. If even that is refused the mode
-                    // is left alone rather than bounced back to ringing --
-                    // the old fallback is what made the switch look like a
-                    // two-position one, skipping silent entirely.
-                    if (!accepted) {
-                        Log.w(TAG, "Ringer mode $next was refused")
-                        ringerMode = audioManager.ringerMode
-                    }
+                // Silent needs Do Not Disturb access, which the proxy gets
+                // through Shizuku. If even that is refused the mode is left
+                // alone rather than bounced back to ringing -- the old
+                // fallback is what made the switch look like a two-position
+                // one, skipping silent entirely.
+                if (!audioProxy.setRingerMode(next)) {
+                    Log.w(TAG, "Ringer mode $next was refused")
+                    ringerMode = audioManager.ringerMode
                 }
+
+                onChange?.invoke()
             },
         contentAlignment = Alignment.Center
     ) {

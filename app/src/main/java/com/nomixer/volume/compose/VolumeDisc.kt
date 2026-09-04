@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -37,7 +38,7 @@ import kotlin.math.sin
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
 private const val TICK_COUNT = 24
 
-/** How much of its box the disc's own circle takes, leaving a small margin. */
+/** How much of its box the disc itself takes; the rest is shadow fade. */
 private const val DISC_INSET = 0.86f
 
 /**
@@ -70,6 +71,13 @@ fun VolumeDisc(
     showDots: Boolean = true,
     /** Corner rounding of each tick: 0 is square, 50 is a full capsule. */
     tickCornerPercent: Int = 30,
+    /**
+     * A light shadow behind the disc's own ring: painted as a circle that
+     * follows the disc's own radius and fades out to fully transparent at
+     * the rim, so the disc reads as round and lifted rather than a flat
+     * circle pasted on top of whatever's behind it.
+     */
+    backdropColor: Color = Color.Transparent,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -142,14 +150,33 @@ fun VolumeDisc(
             val fraction = fill.value
             val chase = (abs(targetFraction - fraction) * 7f).coerceAtMost(1f)
 
-            // The disc's own circle is inset slightly inside its box, for a
-            // small margin around its own rim.
+            // The disc is inset inside its box so the shadow has a ring of
+            // its own to fade across. Drawn edge to edge, the shadow ended
+            // up entirely underneath the disc body and was invisible.
             val outerRadius = size.height / 2f
             val radius = outerRadius * DISC_INSET
             val center = Offset(size.width / 2f, size.height / 2f)
 
             val ringWidth = radius * 0.14f
             val ringRadius = radius - ringWidth / 2f - 1.dp.toPx()
+
+            // Round shadow: solid out to the disc's own edge, then
+            // dissolving to nothing across the ring left around it.
+            if (backdropColor.alpha > 0f) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colorStops = arrayOf(
+                            0f to backdropColor,
+                            DISC_INSET to backdropColor,
+                            1f to backdropColor.copy(alpha = 0f)
+                        ),
+                        center = center,
+                        radius = outerRadius
+                    ),
+                    radius = outerRadius,
+                    center = center
+                )
+            }
 
             // Angles are measured clockwise from 3 o'clock. Fills from the
             // top, going clockwise, all the way around.

@@ -60,6 +60,7 @@ import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.system.ActivityTaskManagerProxy
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
+import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupStyle
@@ -256,7 +257,7 @@ class Service : AccessibilityService() {
                 // CollapsedVolumePopup's own panel shape.
                 val cornerRadiusPx = if (!expanded && prefs.popupStyle == PopupStyle.Disc) {
                     val discRadiusDp = 220f * prefs.popupScale / 2f
-                    (discRadiusDp + prefs.discPanelMargin) * density
+                    (discRadiusDp + DISC_PANEL_MARGIN_DP) * density
                 } else {
                     prefs.popupCornerRadius * density
                 }
@@ -420,6 +421,18 @@ class Service : AccessibilityService() {
                                     blurLanded = blurLandedState,
                                     onExpand = {
                                         expanded = true
+                                        // The window is about to resize for
+                                        // the mixer's own (usually much
+                                        // wider) content -- a fresh one-shot
+                                        // listener catches that resize and
+                                        // repositions for it, since a lateral
+                                        // disc's own x is deliberately tuned
+                                        // for its own, narrower window and
+                                        // would otherwise carry over stale,
+                                        // pushing the wider mixer off-screen.
+                                        this@Service.view?.let {
+                                            this@Service.clampToScreenOnceLaidOut(it, expanded = true)
+                                        }
                                         this@Service.handler.startIdleTimer()
                                     },
                                     onInteract = this@Service.handler::startIdleTimer
@@ -485,24 +498,31 @@ class Service : AccessibilityService() {
     /**
      * The window is WRAP_CONTENT, so its real size is unknown until its
      * first layout pass -- only then can its position be corrected against
-     * that real size.
+     * that real size. Registers a one-shot listener, so this has to be
+     * called again for every layout the window's own size can change with
+     * -- collapsed on first show, and again on [expanded] toggling true,
+     * since the expanded mixer is a completely different (and usually much
+     * wider) size than whatever collapsed style it grew from.
      *
      * A bar-style popup always stays fully on screen: an offset that would
      * push it past the display edge is pulled back in rather than letting
-     * the display cut it off.
+     * the display cut it off. The expanded mixer behaves exactly like a bar
+     * here too, whatever the collapsed style underneath it was -- it's
+     * always a plain rounded rectangle, never revealed by degrees the way a
+     * lateral disc is.
      *
      * A laterally-anchored disc (hugging a side, not the horizontal center)
-     * is deliberately the opposite: the disc itself is always drawn whole
-     * (see VolumeDisc's own doc comment), but the *window* holding it is
-     * allowed to sit partly off the physical screen, cut only by the
-     * display's own edge rather than by any clipping in the app -- exactly
-     * like a stock Android control that pokes out from the side. Horizontal
-     * offset controls how much of it pokes out: at zero the window sits
-     * half off-screen, and by the top of the offset range it's fully back
-     * on screen with a small gap left to the edge, rather than sliding
-     * further in from there the way a bar would.
+     * while collapsed is deliberately the opposite: the disc itself is
+     * always drawn whole (see VolumeDisc's own doc comment), but the
+     * *window* holding it is allowed to sit partly off the physical screen,
+     * cut only by the display's own edge rather than by any clipping in the
+     * app -- exactly like a stock Android control that pokes out from the
+     * side. Horizontal offset controls how much of it pokes out: at zero
+     * the window sits half off-screen, and by the top of the offset range
+     * it's fully back on screen with a small gap left to the edge, rather
+     * than sliding further in from there the way a bar would.
      */
-    private fun clampToScreenOnceLaidOut(target: View) {
+    private fun clampToScreenOnceLaidOut(target: View, expanded: Boolean) {
         target.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 target.viewTreeObserver.removeOnGlobalLayoutListener(this)
@@ -516,7 +536,7 @@ class Service : AccessibilityService() {
                 val horizontalGravity = layoutParams.gravity and Gravity.HORIZONTAL_GRAVITY_MASK
                 val verticalGravity = layoutParams.gravity and Gravity.VERTICAL_GRAVITY_MASK
 
-                val isLateralDisc = preferences.popupStyle == PopupStyle.Disc &&
+                val isLateralDisc = !expanded && preferences.popupStyle == PopupStyle.Disc &&
                     (horizontalGravity == Gravity.LEFT || horizontalGravity == Gravity.RIGHT)
 
                 val clampedX = if (isLateralDisc) {
@@ -563,7 +583,7 @@ class Service : AccessibilityService() {
             // popup was shown.
             applyConfiguredPosition(layoutParams)
             windowManager.addView(view, layoutParams)
-            clampToScreenOnceLaidOut(view!!)
+            clampToScreenOnceLaidOut(view!!, expanded = false)
         }
 
         if (!viewVisible) {

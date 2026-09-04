@@ -28,6 +28,15 @@ const val POPUP_OFFSET_X_MAX_DP = 200
  */
 const val DISC_EDGE_GAP_DP = 8
 
+/**
+ * Gap between the disc's own circle and the panel surrounding it, in dp --
+ * fixed rather than user-adjustable, shared between the real window's own
+ * blur-drawable shape (Service.kt) and the disc's panel/content-layer math
+ * (CollapsedVolumePopup.kt) so both always agree on the panel's exact size,
+ * with no risk of the two reading a mutable setting at different moments.
+ */
+const val DISC_PANEL_MARGIN_DP = 16
+
 /** Shape the collapsed (volume-key) popup takes. */
 enum class PopupStyle {
     VerticalBar, HorizontalBar, Disc
@@ -102,7 +111,7 @@ data class UiPreferences(
      * including the disc's. Translucent is the system blur instead, sized
      * by [popupBlurRadius]. Neither one touches the disc's own ring/track
      * colors, which stay whatever the palette says, nor the separate
-     * painted glow [popupShowGlow] toggles.
+     * painted shadow [discShowShadow] toggles.
      */
     val popupBackgroundOpacity: Float = 0.85f,
     /**
@@ -127,20 +136,18 @@ data class UiPreferences(
     /** Corner rounding of each disc tick, as a percent: 0 square, 50 a capsule. */
     val discTickCornerPercent: Int = 30,
     /**
-     * Gap between the disc's own circle and the panel surrounding it, in dp.
-     * Only meaningful for the disc style -- a bar's panel wraps its slider
-     * with the fixed padding every style used before the disc got its own
-     * panel back.
+     * Whether the disc paints its own soft shadow behind its ring at all.
+     * Independent of [popupBackground]: that Translucent/Solid choice is
+     * about the *panel's* own fill (and, in Translucent mode, the system
+     * blur behind it), not this separate light shadow painted inside the
+     * disc itself. Disc-only -- the bar styles never had one.
      */
-    val discPanelMargin: Int = 16,
+    val discShowShadow: Boolean = true,
     /**
-     * Whether the popup paints a soft glow behind its own panel at all,
-     * whatever shape that panel is. Independent of [popupBackground]:
-     * that Translucent/Solid choice is about the panel's own fill (and,
-     * in Translucent mode, the system blur behind it), not this separate
-     * painted glow around the outside of it.
+     * Puts the volume value beside the ringer switch, in the disc's hollow
+     * middle, instead of below it.
      */
-    val popupShowGlow: Boolean = true
+    val discValueBesideButton: Boolean = false
 )
 
 /**
@@ -179,14 +186,15 @@ fun UiPreferences.paintedPanelAlpha(blurLanded: Boolean = true): Float {
     return popupBackgroundOpacity * translucentMultiplier
 }
 
-/** Peak alpha of the soft glow painted behind a panel, at its own center. */
-private const val POPUP_GLOW_ALPHA = 0.7f
+/** Peak alpha of the disc's own shadow, at its own center. Deliberately light. */
+private const val DISC_SHADOW_ALPHA = 0.35f
 
 /**
- * Alpha of the soft glow behind the popup's panel -- just [popupShowGlow]'s
- * on/off, at a fixed intensity of its own rather than sharing
+ * Alpha of the disc's own shadow -- just [discShowShadow]'s on/off, at a
+ * fixed, light intensity of its own rather than sharing
  * [popupBackgroundOpacity]: that slider is dedicated to the panel's own
- * fill, a different quantity from this separate painted glow around it.
+ * fill, a different quantity from this separate shadow painted inside the
+ * disc itself.
  */
-fun UiPreferences.popupGlowAlpha(): Float =
-    if (popupShowGlow) POPUP_GLOW_ALPHA else 0f
+fun UiPreferences.discShadowAlpha(): Float =
+    if (discShowShadow) DISC_SHADOW_ALPHA else 0f

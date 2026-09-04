@@ -162,7 +162,19 @@ fun AppVolumeList(
 
         if (!showAll) {
             if (activePlayers.isNotEmpty()) {
-                items(items = activePlayers, key = { app -> app.packageName }) { app ->
+                // apps comes from a mutableStateMapOf, whose iteration order
+                // isn't insertion order and isn't guaranteed stable across
+                // structural changes elsewhere in the map -- feeding that
+                // straight into an animateItem()-tracked list let an
+                // unrelated change anywhere in the map read as this list
+                // silently reordering itself, animating a "move" that
+                // never really happened. Sorted the same way the grouped
+                // list below already is, so the order here only changes
+                // when it's actually supposed to.
+                items(
+                    items = activePlayers.sortedWith(App.comparator),
+                    key = { app -> app.packageName }
+                ) { app ->
                     AppVolumeSlider(
                         app,
                         showOptions = false,
