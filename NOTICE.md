@@ -408,5 +408,30 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   equal to half each bar's own width) instead of plain rectangles, to
   match the fully rounded track look of the app's own sliders.
 
+## 2026-09-04 — 1.0.5
+
+- Removed the disc's reveal-width clip entirely: the disc is now always a
+  complete circle, positioned by the popup window exactly like the bar
+  styles rather than being drawn as a partial shape near a screen edge.
+  The window itself now clamps its own offset, once laid out, so it never
+  gets cut off the display edge whatever style it holds -- the same fix
+  covers every style, not just the disc.
+- Root-caused the ringer switch's continued unresponsiveness: `setRingerMode`
+  is a blocking Shizuku binder call that used to run inline in the click
+  handler, so a fast, silent refusal reverted the optimistic UI update
+  before Compose ever got a frame to draw it -- both writes landed in the
+  same recomposition, and the switch looked like it had ignored the tap
+  outright rather than having flipped and bounced back. It now runs in its
+  own coroutine, off the click handler, so a tap always visibly registers
+  first.
+- The disc's ringer switch and its value label no longer share the icon's
+  up-shifted slot, where they could overlap: the switch now sits dead
+  center in the disc's hollow middle, with the label moved below it.
+- The 3 corner-radius sliders (panel, slider track, button) are hidden
+  while the disc style is active, since none of them apply to it.
+- Disc ticks are shorter overall, and the 3 landmark ticks now grow only
+  in length, not thickness, so they read as longer pills rather than
+  fatter marks.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
