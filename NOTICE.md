@@ -483,5 +483,45 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   panel) and the shared panel corner radius once expanded into the
   full mixer, rather than skipping the disc's blur outright.
 
+## 2026-09-04 — 1.0.8
+
+- Reverted the ringer switch back to its synchronous `setRingerMode` call:
+  the 1.0.7 coroutine wrapper, based on a plausible but wrong theory about
+  same-frame writes, made the switch animate on tap without ever actually
+  changing the mode.
+- 1.0.7's "Show glow" is scoped back to the disc's own knob (the manopola)
+  only, renamed to "Show shadow", and lowered from a 70% panel-wide effect
+  to a light 35% one, closer to what it looked like before that round.
+- Removed the disc's "Distance from disc" margin slider: it only ever
+  shifted the whole knob vertically as a side effect, never the button
+  offset it was meant to control, which the button now handles on its
+  own. The margin is a fixed internal constant again, shared between the
+  overlay window's blur shape and the panel's own drawn shape -- the two
+  had been read from separate places, which is the actual bug behind the
+  disc panel sometimes staying opaque instead of blurring in Translucent
+  mode.
+- Added a "Value beside switch" toggle for the disc style, placing the
+  volume level next to the ringer switch instead of below it.
+- Fixed the expanded mixer rendering off-screen when opened from a
+  laterally-anchored disc popup: the one-shot listener that clamps the
+  window on-screen only ran once, at the collapsed popup's initial
+  layout, and never accounted for how much wider the window gets once
+  expanded into the full mixer. It now re-arms on the collapsed-to-
+  expanded transition too.
+- The collapsed active-players list could appear to silently reorder
+  itself (rows flickering into a new order, occasionally duplicated
+  mid-animation) whenever the volume changed. Root cause: it read
+  directly off a `mutableStateMapOf`, whose iteration order isn't
+  insertion-ordered and isn't guaranteed to hold steady across unrelated
+  structural changes elsewhere in the map, feeding that straight into a
+  list that animates every reorder it sees. Sorted it the same way the
+  grouped/full view already was, and hardened both name comparators with
+  a `packageName` tie-break so two apps sharing a display name can't
+  still flip order between recompositions. Diagnosed from the code, not
+  reproduced live on a device -- flag it if the flicker is still there.
+- The customization screen's settings are now grouped into titled
+  sections with a one-line description of what each section's toggles
+  actually do, instead of one long undivided list.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
