@@ -453,5 +453,35 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   using its phone silhouette's own clip to stand in for the real display
   edge.
 
+## 2026-09-04 — 1.0.7
+
+- The disc's ringer switch and value label now pull back from the disc's
+  true center whenever a laterally-anchored disc's window is mostly
+  off-screen, staying a minimum distance clear of the physical cut edge
+  and converging back to dead center as the offset reveals more of the
+  disc, instead of riding the fixed center straight past the edge.
+- Disc tick ring: every tick's outer end now sits on the same shared
+  boundary; a landmark tick's extra length grows inward instead of also
+  pushing its outer edge further out, so the whole ring reads as flush
+  at the rim.
+- The disc has a real background panel again: a circle hugging the disc
+  with an adjustable margin (new "Distance from disc" setting) instead
+  of a fixed corner radius, so it always reads as proportional to the
+  disc regardless of scale.
+- The Translucent/Solid background and Blur/Opacity controls now apply
+  uniformly to every style's panel, disc included, and are always
+  visible -- previously the whole block vanished whenever the disc's own
+  backdrop toggle was off. None of this touches the disc's own ring and
+  track colors, which stay whatever the palette says.
+- The old disc-only "Show backdrop" toggle is now a general "Show glow"
+  toggle: a soft painted aura behind the panel, independent of the
+  Translucent/Solid fill, available for every style now rather than just
+  the disc, at its own fixed intensity instead of sharing the panel's
+  opacity slider.
+- The window-level system blur now reaches the disc too: it requests the
+  disc's own derived corner radius while collapsed (matching its new
+  panel) and the shared panel corner radius once expanded into the
+  full mixer, rather than skipping the disc's blur outright.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
