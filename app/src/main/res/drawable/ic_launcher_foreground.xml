@@ -3,22 +3,27 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Three ascending volume bars, black on the adaptive icon's white
-         background, kept within the safe zone (the centered ~66dp circle
-         every launcher mask respects). Each is a full capsule, corner
-         radius equal to half its own width, matching the fully rounded
-         track the app's own sliders use, rather than a plain rectangle. -->
+    <!-- Three horizontal rounded sliders (Nothing style), black on the
+         adaptive icon's white background, mirroring the app's own
+         extended-mixer sliders. Corner radius is always half the bar's
+         own thickness (a true capsule, the maximum possible without
+         self-intersecting). The middle slider is shortened, its red
+         "handle" dot separated by the same gap as between the three
+         bars, and the dot's own right edge lines up with the two long
+         bars' right edge. Kept within the ~66dp safe zone every
+         launcher mask respects, with a small margin. -->
     <path
-        android:pathData="M44,65 A5,5 0 1,0 34,65 L34,69 A5,5 0 1,0 44,69 Z"
+        android:pathData="M36.201,28.872 L71.799,28.872 A7.329,7.329 0 0,1 71.799,43.530 L36.201,43.530 A7.329,7.329 0 0,1 36.201,28.872 Z"
         android:fillColor="#1A1A1A"/>
     <path
-        android:pathData="M59,55 A5,5 0 1,0 49,55 L49,69 A5,5 0 1,0 59,69 Z"
+        android:pathData="M36.201,46.671 L54.000,46.671 A7.329,7.329 0 0,1 54.000,61.329 L36.201,61.329 A7.329,7.329 0 0,1 36.201,46.671 Z"
         android:fillColor="#1A1A1A"/>
     <path
-        android:pathData="M74,45 A5,5 0 1,0 64,45 L64,69 A5,5 0 1,0 74,69 Z"
+        android:pathData="M36.201,64.470 L71.799,64.470 A7.329,7.329 0 0,1 71.799,79.128 L36.201,79.128 A7.329,7.329 0 0,1 36.201,64.470 Z"
         android:fillColor="#1A1A1A"/>
-    <!-- The one red dot, Nothing's signature accent. -->
+    <!-- The one red dot, Nothing's signature accent, here doubling as
+         the middle slider's handle. -->
     <path
-        android:pathData="M76,34 A4,4 0 1,0 68,34 A4,4 0 1,0 76,34 Z"
+        android:pathData="M79.128,54.000 A7.329,7.329 0 1,0 64.470,54.000 A7.329,7.329 0 1,0 79.128,54.000 Z"
         android:fillColor="#D7191E"/>
 </vector>
