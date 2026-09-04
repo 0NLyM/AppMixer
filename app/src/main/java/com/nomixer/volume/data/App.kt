@@ -42,11 +42,11 @@ data class App(
         // apps comes from a mutableStateMapOf elsewhere, whose iteration
         // order isn't guaranteed to stay put across structural changes.
         val defaultComparator: Comparator<App> by lazy {
-            compareBy(collator) { it.name }.thenBy { it.packageName }
+            compareBy<App>(collator) { it.name }.thenBy { it.packageName }
         }
 
         val chineseComparator: Comparator<App> by lazy {
-            compareBy(Comparator { a, b ->
+            compareBy<App, String>(Comparator { a, b ->
                 for ((aChar, bChar) in a.zip(b)) {
                     if (aChar == bChar) {
                         continue
