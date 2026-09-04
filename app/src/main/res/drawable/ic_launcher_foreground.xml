@@ -5,15 +5,17 @@
     android:viewportHeight="108">
     <!-- Three ascending volume bars, black on the adaptive icon's white
          background, kept within the safe zone (the centered ~66dp circle
-         every launcher mask respects). -->
+         every launcher mask respects). Each is a full capsule, corner
+         radius equal to half its own width, matching the fully rounded
+         track the app's own sliders use, rather than a plain rectangle. -->
     <path
-        android:pathData="M34,60L44,60L44,74L34,74Z"
+        android:pathData="M44,65 A5,5 0 1,0 34,65 L34,69 A5,5 0 1,0 44,69 Z"
         android:fillColor="#1A1A1A"/>
     <path
-        android:pathData="M49,50L59,50L59,74L49,74Z"
+        android:pathData="M59,55 A5,5 0 1,0 49,55 L49,69 A5,5 0 1,0 59,69 Z"
         android:fillColor="#1A1A1A"/>
     <path
-        android:pathData="M64,40L74,40L74,74L64,74Z"
+        android:pathData="M74,45 A5,5 0 1,0 64,45 L64,69 A5,5 0 1,0 74,69 Z"
         android:fillColor="#1A1A1A"/>
     <!-- The one red dot, Nothing's signature accent. -->
     <path

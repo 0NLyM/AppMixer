@@ -112,7 +112,16 @@ data class UiPreferences(
     /** Draw the ring of ticks around the disc. */
     val discShowDots: Boolean = true,
     /** Corner rounding of each disc tick, as a percent: 0 square, 50 a capsule. */
-    val discTickCornerPercent: Int = 30
+    val discTickCornerPercent: Int = 30,
+    /**
+     * Whether the disc paints its own round backdrop at all. Independent of
+     * [popupBackground]: that Translucent/Solid choice is about whether a
+     * *rectangular* panel gets the system blur, which the disc never asks
+     * for even when expanded to it -- so tying the disc's own backdrop to
+     * the same switch made a choice that does nothing for the disc read as
+     * if it should.
+     */
+    val discShowBackdrop: Boolean = true
 )
 
 /**
@@ -154,3 +163,13 @@ fun UiPreferences.paintedPanelAlpha(blurLanded: Boolean = true): Float {
     }
     return popupBackgroundOpacity * translucentMultiplier
 }
+
+/**
+ * Alpha of the disc's own round backdrop -- [discShowBackdrop]'s on/off
+ * gated over the same opacity slider the panel uses, but without
+ * [paintedPanelAlpha]'s Translucent-mode reduction: that reduction exists
+ * because the *panel* is meant to be a light scrim alongside a real system
+ * blur, and the disc never gets that blur to be light alongside.
+ */
+fun UiPreferences.discBackdropAlpha(): Float =
+    if (discShowBackdrop) popupBackgroundOpacity else 0f

@@ -60,8 +60,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -80,6 +81,7 @@ import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.SLIDER_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.discBackdropAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.baseColorScheme
 import kotlin.math.roundToInt
@@ -461,32 +463,43 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
         PopupStyle.Disc -> {
             val discDiameter = (220 * scale).dp
             val discSide = preferences.popupAnchor.discHalf()
-            val discRevealWidth = if (discSide == DiscHalf.None) {
-                discDiameter
+            // Mirrors CollapsedVolumePopup exactly: only the ring/canvas is
+            // ever clipped, never the whole component, so this preview's
+            // ringer switch stays clickable at every offset the same way
+            // the real popup's does.
+            val discRevealFraction = if (discSide == DiscHalf.None) {
+                1f
             } else {
-                (discDiameter / 2 + preferences.popupOffsetX.dp).coerceAtMost(discDiameter)
+                (preferences.popupOffsetX / DISC_REVEAL_SPAN_DP).coerceIn(0f, 1f)
             }
-            val discRevealAlignment = when (discSide) {
-                DiscHalf.Left -> Alignment.CenterEnd
-                DiscHalf.Right -> Alignment.CenterStart
-                DiscHalf.None -> Alignment.Center
+            val discRevealWidth = discDiameter * (0.5f + 0.5f * discRevealFraction)
+            val discRevealClipModifier = if (discSide == DiscHalf.None) {
+                Modifier
+            } else {
+                Modifier.drawWithContent {
+                    val visiblePx = discRevealWidth.toPx()
+                    if (discSide == DiscHalf.Left) {
+                        clipRect(left = size.width - visiblePx) {
+                            this@drawWithContent.drawContent()
+                        }
+                    } else {
+                        clipRect(right = visiblePx) {
+                            this@drawWithContent.drawContent()
+                        }
+                    }
+                }
             }
 
-            Box(
-                modifier = Modifier
-                    .width(discRevealWidth)
-                    .height(discDiameter)
-                    .clipToBounds(),
-                contentAlignment = discRevealAlignment
-            ) {
+            Box(contentAlignment = Alignment.Center) {
                 VolumeDisc(
                     value = previewFraction,
                     onValueChange = {},
                     diameter = discDiameter,
+                    revealClipModifier = discRevealClipModifier,
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
                     backdropColor = MaterialTheme.colorScheme.background.copy(
-                        alpha = preferences.paintedPanelAlpha()
+                        alpha = preferences.discBackdropAlpha()
                     ),
                     icon = if (preferences.popupShowIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (preferences.popupShowValue) previewValueText else null,
@@ -803,39 +816,50 @@ fun CustomizationScreen(
             )
 
             // Hidden where it would do nothing: a translucent bar is the
-            // system blur, which has no tint to set. The disc always uses it,
-            // since its round backdrop is drawn rather than blurred.
-            AnimatedContent(
-                targetState = preferences.popupBackground == PopupBackground.Solid ||
-                    preferences.popupStyle == PopupStyle.Disc,
-                transitionSpec = {
-                    fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
-                },
-                label = "opacityOrBlur"
-            ) { showOpacity ->
-                if (showOpacity) {
-                    SliderSetting(
-                        label = stringResource(R.string.popup_opacity),
-                        valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
-                        value = preferences.popupBackgroundOpacity,
-                        valueRange = 0f..1f,
-                        onValueChange = { value ->
-                            onUpdate { it.copy(popupBackgroundOpacity = value) }
-                        }
-                    )
-                } else {
-                    // Translucent is the blur, so what there is to adjust is
-                    // how frosted it is -- a different quantity from the
-                    // solid panel's opacity, and it gets its own slider.
-                    SliderSetting(
-                        label = stringResource(R.string.popup_blur),
-                        valueLabel = "${preferences.popupBlurRadius} px",
-                        value = preferences.popupBlurRadius.toFloat(),
-                        valueRange = 0f..POPUP_BLUR_RADIUS_MAX.toFloat(),
-                        onValueChange = { value ->
-                            onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
-                        }
-                    )
+            // system blur, which has no tint to set. The disc always uses
+            // this opacity for its own backdrop -- unless that backdrop is
+            // turned off entirely, in which case neither slider does
+            // anything and both stay hidden.
+            AnimatedVisibility(
+                visible = !(preferences.popupStyle == PopupStyle.Disc && !preferences.discShowBackdrop),
+                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeIn(tween(Motion.MorphMillis)),
+                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeOut(tween(160))
+            ) {
+                AnimatedContent(
+                    targetState = preferences.popupBackground == PopupBackground.Solid ||
+                        preferences.popupStyle == PopupStyle.Disc,
+                    transitionSpec = {
+                        fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
+                    },
+                    label = "opacityOrBlur"
+                ) { showOpacity ->
+                    if (showOpacity) {
+                        SliderSetting(
+                            label = stringResource(R.string.popup_opacity),
+                            valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
+                            value = preferences.popupBackgroundOpacity,
+                            valueRange = 0f..1f,
+                            onValueChange = { value ->
+                                onUpdate { it.copy(popupBackgroundOpacity = value) }
+                            }
+                        )
+                    } else {
+                        // Translucent is the blur, so what there is to adjust
+                        // is how frosted it is -- a different quantity from
+                        // the solid panel's opacity, and it gets its own
+                        // slider.
+                        SliderSetting(
+                            label = stringResource(R.string.popup_blur),
+                            valueLabel = "${preferences.popupBlurRadius} px",
+                            value = preferences.popupBlurRadius.toFloat(),
+                            valueRange = 0f..POPUP_BLUR_RADIUS_MAX.toFloat(),
+                            onValueChange = { value ->
+                                onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
+                            }
+                        )
+                    }
                 }
             }
 
@@ -937,6 +961,13 @@ fun CustomizationScreen(
             ) {
               Column {
                 ToggleSetting(
+                    label = stringResource(R.string.disc_show_backdrop),
+                    checked = preferences.discShowBackdrop,
+                    onCheckedChange = { checked ->
+                        onUpdate { it.copy(discShowBackdrop = checked) }
+                    }
+                )
+                ToggleSetting(
                     label = stringResource(R.string.disc_dots),
                     checked = preferences.discShowDots,
                     onCheckedChange = { checked ->
@@ -1000,7 +1031,8 @@ fun CustomizationScreen(
                             centeredContent = defaults.centeredContent,
                             popupShowRingerButton = defaults.popupShowRingerButton,
                             discShowDots = defaults.discShowDots,
-                            discTickCornerPercent = defaults.discTickCornerPercent
+                            discTickCornerPercent = defaults.discTickCornerPercent,
+                            discShowBackdrop = defaults.discShowBackdrop
                         )
                     }
                 },

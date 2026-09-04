@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -68,6 +67,17 @@ fun VolumeDisc(
      * unresponsive when it sat in the disc's hole.
      */
     gestureModifier: Modifier = Modifier,
+    /**
+     * A visual-only crop applied to the ring/canvas alone (drawn content,
+     * not layout), for a lateral anchor's "half-moon flush with the edge"
+     * look. Never applied to the whole component: [centerContent] sits at
+     * this disc's true, unmoving center regardless of how much of the ring
+     * around it happens to be revealed, so it's never itself clipped away
+     * or pushed outside the popup window's own bounds -- clipping the
+     * *component* rather than just its drawing is what made the ringer
+     * switch unreachable while the disc was still mostly cut.
+     */
+    revealClipModifier: Modifier = Modifier,
     diameter: Dp = 200.dp,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     trackColor: Color = MaterialTheme.colorScheme.primaryContainer,
@@ -109,16 +119,13 @@ fun VolumeDisc(
     }
 
     Box(
-        // requiredSize, not size: a lateral anchor's caller clips this
-        // disc down to a narrower reveal window (see CollapsedVolumePopup),
-        // and a plain size() would let that narrower parent shrink the
-        // disc itself down to fit instead of clipping it.
-        modifier = modifier.requiredSize(diameter),
+        modifier = modifier.size(diameter),
         contentAlignment = Alignment.Center
     ) {
         Canvas(
             modifier = Modifier
                 .matchParentSize()
+                .then(revealClipModifier)
                 .pointerInput(range) {
                     var startValue = 0f
                     var startY = 0f
@@ -226,17 +233,18 @@ fun VolumeDisc(
                 // -- that's the landmark that makes the turn readable, and
                 // it's also where the current level sits.
                 val tickOrbit = ringRadius - ringWidth * 0.95f
-                val tickLength = radius * 0.05f
-                val tickThickness = radius * 0.02f
-                val cornerRadiusPx =
-                    (min(tickLength, tickThickness) / 2f) * (tickCornerPercent / 50f)
+                val tickLength = radius * 0.07f
+                val tickThickness = radius * 0.028f
                 val ringRotation = fraction * 360f
 
                 for (index in 0 until TICK_COUNT) {
                     val distanceFromLandmark = min(index, TICK_COUNT - index)
+                    // The middle adjacent step sits exactly halfway between
+                    // the landmark and a normal tick, so the size actually
+                    // reads as a taper rather than two arbitrary sizes.
                     val scale = when (distanceFromLandmark) {
-                        0 -> 1.7f
-                        1 -> 1.3f
+                        0 -> 2f
+                        1 -> 1.5f
                         else -> 1f
                     }
 
@@ -249,6 +257,11 @@ fun VolumeDisc(
                     )
                     val length = tickLength * scale
                     val thickness = tickThickness * scale
+                    // Worked out per tick, from its own scaled thickness --
+                    // sharing one corner radius across every size left the
+                    // landmark ticks under-rounded relative to their own
+                    // bulk, and the effect barely read at all.
+                    val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
 
                     rotate(degrees = angle, pivot = tickCenter) {
                         drawRoundRect(

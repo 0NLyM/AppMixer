@@ -72,6 +72,7 @@
     <string name="bar_center_content">滑块中央内容</string>
     <string name="center_value">音量值居中</string>
     <string name="center_icon">图标居中</string>
+    <string name="disc_show_backdrop">显示背景光晕</string>
     <string name="disc_dots">显示刻度环</string>
     <string name="disc_tick_corner">刻度圆角半径</string>
     <string name="disc_hint">贴靠屏幕边缘时，圆盘会随着水平偏移增大从边缘向内逐渐显露，直至完整圆盘；位于中间一列时始终为完整圆盘。上下拖动即可调节音量。</string>
