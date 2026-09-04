@@ -14,13 +14,13 @@
          launcher mask respects, with a small margin. -->
     <path
         android:pathData="M36.201,28.872 L71.799,28.872 A7.329,7.329 0 0,1 71.799,43.530 L36.201,43.530 A7.329,7.329 0 0,1 36.201,28.872 Z"
-        android:fillColor="#1A1A1A"/>
+        android:fillColor="#000000"/>
     <path
         android:pathData="M36.201,46.671 L54.000,46.671 A7.329,7.329 0 0,1 54.000,61.329 L36.201,61.329 A7.329,7.329 0 0,1 36.201,46.671 Z"
-        android:fillColor="#1A1A1A"/>
+        android:fillColor="#000000"/>
     <path
         android:pathData="M36.201,64.470 L71.799,64.470 A7.329,7.329 0 0,1 71.799,79.128 L36.201,79.128 A7.329,7.329 0 0,1 36.201,64.470 Z"
-        android:fillColor="#1A1A1A"/>
+        android:fillColor="#000000"/>
     <!-- The one red dot, Nothing's signature accent, here doubling as
          the middle slider's handle. -->
     <path
