@@ -29,10 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -51,35 +49,6 @@ import kotlin.math.roundToInt
 
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
-
-/**
- * How much horizontal offset it takes for a laterally-anchored disc to go
- * from half-revealed (flush with the edge) to fully revealed, in dp. Small
- * on purpose: past this point extra offset does nothing further for the
- * disc, since revealing it is this range's only job here -- reaching it
- * further in, or centering it outright, is what the anchor grid is for.
- */
-internal const val DISC_REVEAL_SPAN_DP = 24f
-
-/**
- * Which side of the screen a laterally-anchored disc peeks out from: hugging
- * the right edge reveals starting from the left, and vice versa. Anything
- * centered horizontally is never clipped at all.
- */
-enum class DiscHalf {
-    None, Left, Right
-}
-
-/**
- * Which side a given anchor hugs, for [DiscHalf] purposes: hugging the right
- * edge means the disc is revealed from its left side inward, and vice versa.
- * Anything centered horizontally gets the full circle with nothing clipped.
- */
-internal fun PopupAnchor.discHalf(): DiscHalf = when (this) {
-    PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> DiscHalf.Left
-    PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> DiscHalf.Right
-    else -> DiscHalf.None
-}
 
 /**
  * Direction the expand swipe has to travel, away from the edge the popup
@@ -202,7 +171,6 @@ fun CollapsedVolumePopup(
     val scale = preferences.popupScale
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val discDiameter = (220 * scale).dp
-    val discSide = preferences.popupAnchor.discHalf()
     val isDisc = preferences.popupStyle == PopupStyle.Disc
     val cornerRadius = preferences.popupCornerRadius.dp
 
@@ -403,47 +371,10 @@ fun CollapsedVolumePopup(
             }
 
             PopupStyle.Disc -> {
-                // The disc itself is always drawn whole (see VolumeDisc's
-                // own doc comment); a lateral anchor's "half-moon flush with
-                // the edge" look comes from clipping only its ring/canvas
-                // here instead. At offset zero only the near half is
-                // revealed, exactly like the old drawn half-moon; offset
-                // reveals more of it fast, capped once the whole circle is
-                // showing -- past that point more offset does nothing for
-                // the disc, since its job here is purely revealing the
-                // circle, not repositioning it. Reaching further in, or
-                // centering it outright, is what the anchor grid is for.
-                //
-                // Deliberately never applied to the whole component the way
-                // an outer clipToBounds() once was: centerContent sits at
-                // the disc's true, unmoving center, and clipping the
-                // component along with the ring clipped that center away
-                // too whenever the disc wasn't fully revealed -- including
-                // at the default offset -- making the ringer switch
-                // unreachable.
-                val discRevealFraction = if (discSide == DiscHalf.None) {
-                    1f
-                } else {
-                    (preferences.popupOffsetX / DISC_REVEAL_SPAN_DP).coerceIn(0f, 1f)
-                }
-                val discRevealWidth = discDiameter * (0.5f + 0.5f * discRevealFraction)
-                val discRevealClipModifier = if (discSide == DiscHalf.None) {
-                    Modifier
-                } else {
-                    Modifier.drawWithContent {
-                        val visiblePx = discRevealWidth.toPx()
-                        if (discSide == DiscHalf.Left) {
-                            clipRect(left = size.width - visiblePx) {
-                                this@drawWithContent.drawContent()
-                            }
-                        } else {
-                            clipRect(right = visiblePx) {
-                                this@drawWithContent.drawContent()
-                            }
-                        }
-                    }
-                }
-
+                // The disc is always a complete circle (see VolumeDisc's own
+                // doc comment) and sits in the popup window exactly like any
+                // other style -- the window itself is what stays clipped to
+                // the screen edge, never the disc.
                 Box(
                     modifier = Modifier.padding(panelPadding),
                     contentAlignment = Alignment.Center
@@ -458,7 +389,6 @@ fun CollapsedVolumePopup(
                         // the middle of the disc and must stay outside this
                         // gesture's node.
                         gestureModifier = expandSwipeModifier,
-                        revealClipModifier = discRevealClipModifier,
                         showDots = preferences.discShowDots,
                         tickCornerPercent = preferences.discTickCornerPercent,
                         backdropColor = discBackdrop,

@@ -60,9 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -274,11 +272,6 @@ private fun PopupPreview(
         PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd -> -1
         else -> 1
     }
-    // A laterally-anchored disc spends its horizontal offset revealing more
-    // of itself in place (see CollapsedPopupPreviewContent's clip) instead
-    // of sliding away from the edge, matching the real popup's window.
-    val discRevealsInPlace = preferences.popupStyle == PopupStyle.Disc &&
-        preferences.popupAnchor.discHalf() != DiscHalf.None
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Row(
@@ -338,12 +331,12 @@ private fun PopupPreview(
                                     )
                                 )
                                 .padding(
-                                    start = if (horizontalSign > 0 && !discRevealsInPlace) {
+                                    start = if (horizontalSign > 0) {
                                         (preferences.popupOffsetX * previewScale).dp
                                     } else {
                                         0.dp
                                     },
-                                    end = if (horizontalSign < 0 && !discRevealsInPlace) {
+                                    end = if (horizontalSign < 0) {
                                         (preferences.popupOffsetX * previewScale).dp
                                     } else {
                                         0.dp
@@ -462,40 +455,12 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
 
         PopupStyle.Disc -> {
             val discDiameter = (220 * scale).dp
-            val discSide = preferences.popupAnchor.discHalf()
-            // Mirrors CollapsedVolumePopup exactly: only the ring/canvas is
-            // ever clipped, never the whole component, so this preview's
-            // ringer switch stays clickable at every offset the same way
-            // the real popup's does.
-            val discRevealFraction = if (discSide == DiscHalf.None) {
-                1f
-            } else {
-                (preferences.popupOffsetX / DISC_REVEAL_SPAN_DP).coerceIn(0f, 1f)
-            }
-            val discRevealWidth = discDiameter * (0.5f + 0.5f * discRevealFraction)
-            val discRevealClipModifier = if (discSide == DiscHalf.None) {
-                Modifier
-            } else {
-                Modifier.drawWithContent {
-                    val visiblePx = discRevealWidth.toPx()
-                    if (discSide == DiscHalf.Left) {
-                        clipRect(left = size.width - visiblePx) {
-                            this@drawWithContent.drawContent()
-                        }
-                    } else {
-                        clipRect(right = visiblePx) {
-                            this@drawWithContent.drawContent()
-                        }
-                    }
-                }
-            }
 
             Box(contentAlignment = Alignment.Center) {
                 VolumeDisc(
                     value = previewFraction,
                     onValueChange = {},
                     diameter = discDiameter,
-                    revealClipModifier = discRevealClipModifier,
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
                     backdropColor = MaterialTheme.colorScheme.background.copy(
@@ -771,37 +736,52 @@ fun CustomizationScreen(
                 steps = 9,
                 onValueChange = { value -> onUpdate { it.copy(popupScale = value) } }
             )
-            SliderSetting(
-                label = stringResource(R.string.popup_corner),
-                valueLabel = "${preferences.popupCornerRadius} dp",
-                value = preferences.popupCornerRadius.toFloat(),
-                valueRange = 0f..POPUP_CORNER_RADIUS_MAX.toFloat(),
-                onValueChange = { value ->
-                    onUpdate { it.copy(popupCornerRadius = value.roundToInt()) }
+            // None of the three apply to the disc: it paints its own round
+            // panel, its own track ring, and its own tick corners (their own
+            // slider lives in the disc section below) rather than using
+            // any of these.
+            AnimatedVisibility(
+                visible = preferences.popupStyle != PopupStyle.Disc,
+                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeIn(tween(Motion.MorphMillis)),
+                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeOut(tween(160))
+            ) {
+                Column {
+                    SliderSetting(
+                        label = stringResource(R.string.popup_corner),
+                        valueLabel = "${preferences.popupCornerRadius} dp",
+                        value = preferences.popupCornerRadius.toFloat(),
+                        valueRange = 0f..POPUP_CORNER_RADIUS_MAX.toFloat(),
+                        onValueChange = { value ->
+                            onUpdate { it.copy(popupCornerRadius = value.roundToInt()) }
+                        }
+                    )
+                    // Its own radius, not a share of the panel's: a large
+                    // panel radius used to derive the slider's too, so a
+                    // small vertical bar came out looking like a capsule at
+                    // settings that left the panel itself only modestly
+                    // rounded.
+                    SliderSetting(
+                        label = stringResource(R.string.slider_corner),
+                        valueLabel = "${preferences.sliderCornerRadius} dp",
+                        value = preferences.sliderCornerRadius.toFloat(),
+                        valueRange = 0f..SLIDER_CORNER_RADIUS_MAX.toFloat(),
+                        onValueChange = { value ->
+                            onUpdate { it.copy(sliderCornerRadius = value.roundToInt()) }
+                        }
+                    )
+                    SliderSetting(
+                        label = stringResource(R.string.button_corner),
+                        valueLabel = "${preferences.buttonCornerRadius}%",
+                        value = preferences.buttonCornerRadius.toFloat(),
+                        valueRange = 0f..BUTTON_CORNER_RADIUS_MAX.toFloat(),
+                        onValueChange = { value ->
+                            onUpdate { it.copy(buttonCornerRadius = value.roundToInt()) }
+                        }
+                    )
                 }
-            )
-            // Its own radius, not a share of the panel's: a large panel
-            // radius used to derive the slider's too, so a small vertical
-            // bar came out looking like a capsule at settings that left the
-            // panel itself only modestly rounded.
-            SliderSetting(
-                label = stringResource(R.string.slider_corner),
-                valueLabel = "${preferences.sliderCornerRadius} dp",
-                value = preferences.sliderCornerRadius.toFloat(),
-                valueRange = 0f..SLIDER_CORNER_RADIUS_MAX.toFloat(),
-                onValueChange = { value ->
-                    onUpdate { it.copy(sliderCornerRadius = value.roundToInt()) }
-                }
-            )
-            SliderSetting(
-                label = stringResource(R.string.button_corner),
-                valueLabel = "${preferences.buttonCornerRadius}%",
-                value = preferences.buttonCornerRadius.toFloat(),
-                valueRange = 0f..BUTTON_CORNER_RADIUS_MAX.toFloat(),
-                onValueChange = { value ->
-                    onUpdate { it.copy(buttonCornerRadius = value.roundToInt()) }
-                }
-            )
+            }
             Text(
                 text = stringResource(R.string.popup_background),
                 style = MaterialTheme.typography.bodyLarge

@@ -42,16 +42,10 @@ private const val TICK_COUNT = 24
 private const val DISC_INSET = 0.86f
 
 /**
- * A volume disc: always a complete circle. The gesture is a vertical drag
- * over the disc -- up raises, down lowers -- matching the bar styles rather
- * than asking for a rotation.
- *
- * A popup anchored to a screen edge gets its "half-moon flush with the
- * edge" look by being clipped from outside -- the caller's job (see
- * `CollapsedVolumePopup`), not this composable drawing a half shape itself.
- * Keeping the disc's own geometry whole regardless of how much of it ends
- * up visible means its content never has to work out an off-center inset
- * for a curve that moves depending on how much of it happens to be shown.
+ * A volume disc: always a complete circle, positioned by the popup window
+ * exactly like any other style -- never clipped to a partial shape. The
+ * gesture is a vertical drag over the disc -- up raises, down lowers --
+ * matching the bar styles rather than asking for a rotation.
  */
 @Composable
 fun VolumeDisc(
@@ -67,17 +61,6 @@ fun VolumeDisc(
      * unresponsive when it sat in the disc's hole.
      */
     gestureModifier: Modifier = Modifier,
-    /**
-     * A visual-only crop applied to the ring/canvas alone (drawn content,
-     * not layout), for a lateral anchor's "half-moon flush with the edge"
-     * look. Never applied to the whole component: [centerContent] sits at
-     * this disc's true, unmoving center regardless of how much of the ring
-     * around it happens to be revealed, so it's never itself clipped away
-     * or pushed outside the popup window's own bounds -- clipping the
-     * *component* rather than just its drawing is what made the ringer
-     * switch unreachable while the disc was still mostly cut.
-     */
-    revealClipModifier: Modifier = Modifier,
     diameter: Dp = 200.dp,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     trackColor: Color = MaterialTheme.colorScheme.primaryContainer,
@@ -125,7 +108,6 @@ fun VolumeDisc(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
-                .then(revealClipModifier)
                 .pointerInput(range) {
                     var startValue = 0f
                     var startY = 0f
@@ -233,7 +215,7 @@ fun VolumeDisc(
                 // -- that's the landmark that makes the turn readable, and
                 // it's also where the current level sits.
                 val tickOrbit = ringRadius - ringWidth * 0.95f
-                val tickLength = radius * 0.07f
+                val tickLength = radius * 0.05f
                 val tickThickness = radius * 0.028f
                 val ringRotation = fraction * 360f
 
@@ -255,12 +237,11 @@ fun VolumeDisc(
                         center.x + (cos(radians) * tickOrbit).toFloat(),
                         center.y + (sin(radians) * tickOrbit).toFloat()
                     )
+                    // Only length grows for a landmark tick -- thickness
+                    // stays the same as every other tick, so the taper reads
+                    // as "longer pill" rather than "fatter mark".
                     val length = tickLength * scale
-                    val thickness = tickThickness * scale
-                    // Worked out per tick, from its own scaled thickness --
-                    // sharing one corner radius across every size left the
-                    // landmark ticks under-rounded relative to their own
-                    // bulk, and the effect barely read at all.
+                    val thickness = tickThickness
                     val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
 
                     rotate(degrees = angle, pivot = tickCenter) {
@@ -291,10 +272,30 @@ fun VolumeDisc(
             }
         }
 
-        val topPiece: (@Composable () -> Unit)? = when {
-            centerContent != null -> centerContent
-            icon != null -> {
-                {
+        if (centerContent != null) {
+            // The disc's hollow middle is where the ringer switch belongs,
+            // dead center at the outer Box's own alignment -- not sharing
+            // the icon's usual spot shifted up to leave room underneath for
+            // a label, since a full-size button (unlike a small glyph)
+            // pushed there would sit off from where its own clickable area
+            // visually reads as being, and the value label at the box's
+            // true center would land right on top of it.
+            centerContent()
+
+            if (label != null) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = contentColor,
+                    modifier = Modifier.offset(y = diameter * 0.19f)
+                )
+            }
+        } else {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier.offset(y = -diameter * 0.17f),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
@@ -304,24 +305,13 @@ fun VolumeDisc(
                 }
             }
 
-            else -> null
-        }
-
-        if (topPiece != null) {
-            Box(
-                modifier = Modifier.offset(y = -diameter * 0.17f),
-                contentAlignment = Alignment.Center
-            ) {
-                topPiece()
+            if (label != null) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = contentColor
+                )
             }
-        }
-
-        if (label != null) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                color = contentColor
-            )
         }
     }
 }

@@ -21,6 +21,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -58,8 +59,6 @@ import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.system.ActivityTaskManagerProxy
-import com.nomixer.volume.compose.DiscHalf
-import com.nomixer.volume.compose.discHalf
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.paintedPanelAlpha
@@ -453,17 +452,46 @@ class Service : AccessibilityService() {
             PopupAnchor.BottomEnd -> Gravity.BOTTOM or Gravity.END
         }
 
-        // A laterally-anchored disc spends its horizontal offset revealing
-        // more of itself (see CollapsedVolumePopup's reveal-width clip)
-        // rather than sliding the window away from the edge -- applying
-        // both would move it twice, once from each mechanism. The window
-        // itself stays flush with zero distance from the edge; reaching it
-        // further in, or centering it outright, is what the anchor grid is
-        // for instead.
-        val isLateralDisc = preferences.popupStyle == PopupStyle.Disc &&
-            preferences.popupAnchor.discHalf() != DiscHalf.None
-        params.x = if (isLateralDisc) 0 else (preferences.popupOffsetX * density).toInt()
+        params.x = (preferences.popupOffsetX * density).toInt()
         params.y = (preferences.popupOffsetY * density).toInt()
+    }
+
+    /**
+     * The window is WRAP_CONTENT, so its real size is unknown until its
+     * first layout pass -- only then can an offset that would push it past
+     * the screen edge be caught and pulled back in. This keeps the whole
+     * popup window always fully on screen, shrinking its effective offset
+     * rather than letting the display cut it off; the disc drawn inside it
+     * is never itself clipped (see VolumeDisc's own doc comment) -- it just
+     * rides along with whatever offset the window ends up using.
+     */
+    private fun clampToScreenOnceLaidOut(target: View) {
+        target.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                target.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                if (view !== target || target.width == 0 || target.height == 0) {
+                    return
+                }
+
+                val bounds = windowManager.currentWindowMetrics.bounds
+                val clampedX = when (layoutParams.gravity and Gravity.HORIZONTAL_GRAVITY_MASK) {
+                    Gravity.LEFT, Gravity.RIGHT ->
+                        layoutParams.x.coerceIn(0, (bounds.width() - target.width).coerceAtLeast(0))
+                    else -> layoutParams.x
+                }
+                val clampedY = when (layoutParams.gravity and Gravity.VERTICAL_GRAVITY_MASK) {
+                    Gravity.TOP, Gravity.BOTTOM ->
+                        layoutParams.y.coerceIn(0, (bounds.height() - target.height).coerceAtLeast(0))
+                    else -> layoutParams.y
+                }
+
+                if (clampedX != layoutParams.x || clampedY != layoutParams.y) {
+                    layoutParams.x = clampedX
+                    layoutParams.y = clampedY
+                    windowManager.updateViewLayout(target, layoutParams)
+                }
+            }
+        })
     }
 
     private var view: View? = null
@@ -479,6 +507,7 @@ class Service : AccessibilityService() {
             // popup was shown.
             applyConfiguredPosition(layoutParams)
             windowManager.addView(view, layoutParams)
+            clampToScreenOnceLaidOut(view!!)
         }
 
         if (!viewVisible) {
