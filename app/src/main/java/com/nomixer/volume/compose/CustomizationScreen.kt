@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -73,6 +74,7 @@ import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
 import com.nomixer.volume.data.POPUP_BLUR_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
+import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
@@ -273,6 +275,29 @@ private fun PopupPreview(
         else -> 1
     }
 
+    // Mirrors the real popup window's own lateral-disc behavior (see
+    // Service.kt's clampToScreenOnceLaidOut): rather than sliding inward
+    // from the edge the way a bar does, a disc hugging a side spills
+    // outside the phone silhouette at zero offset -- clipped away by the
+    // silhouette's own rounded-rect clip, standing in for the real
+    // display's edge -- and settles fully inside, a small gap from the
+    // edge, by the top of the offset range.
+    val isLateralDisc = preferences.popupStyle == PopupStyle.Disc && preferences.popupAnchor in setOf(
+        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart,
+        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd
+    )
+    val discOutwardSign = when (preferences.popupAnchor) {
+        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
+        else -> -1
+    }
+    val discPreviewDiameter = 220.dp * (preferences.popupScale * previewScale * 1.6f)
+    val discRevealFraction =
+        (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
+    val discEdgeGap = 8.dp * previewScale
+    val discHiddenShift = discPreviewDiameter / 2
+    val discShiftX =
+        (discHiddenShift - (discHiddenShift + discEdgeGap) * discRevealFraction) * discOutwardSign
+
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -331,18 +356,21 @@ private fun PopupPreview(
                                     )
                                 )
                                 .padding(
-                                    start = if (horizontalSign > 0) {
+                                    start = if (!isLateralDisc && horizontalSign > 0) {
                                         (preferences.popupOffsetX * previewScale).dp
                                     } else {
                                         0.dp
                                     },
-                                    end = if (horizontalSign < 0) {
+                                    end = if (!isLateralDisc && horizontalSign < 0) {
                                         (preferences.popupOffsetX * previewScale).dp
                                     } else {
                                         0.dp
                                     },
                                     top = if (verticalSign > 0) (preferences.popupOffsetY * previewScale).dp else 0.dp,
                                     bottom = if (verticalSign < 0) (preferences.popupOffsetY * previewScale).dp else 0.dp
+                                )
+                                .then(
+                                    if (isLateralDisc) Modifier.offset(x = discShiftX) else Modifier
                                 )
                         ) {
                             CollapsedPopupPreviewContent(preferences, previewScale)
@@ -711,7 +739,7 @@ fun CustomizationScreen(
                 label = stringResource(R.string.offset_horizontal),
                 valueLabel = "${preferences.popupOffsetX} dp",
                 value = preferences.popupOffsetX.toFloat(),
-                valueRange = 0f..200f,
+                valueRange = 0f..POPUP_OFFSET_X_MAX_DP.toFloat(),
                 onValueChange = { value ->
                     onUpdate { it.copy(popupOffsetX = value.roundToInt()) }
                 }

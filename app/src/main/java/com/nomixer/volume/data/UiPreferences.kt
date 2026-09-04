@@ -17,6 +17,9 @@ const val POPUP_BLUR_RADIUS_MAX = 300
 /** Top of the disc tick corner-radius slider's range, as a percent. */
 const val DISC_TICK_CORNER_MAX = 50
 
+/** Top of the horizontal-offset slider's range, in dp. */
+const val POPUP_OFFSET_X_MAX_DP = 200
+
 /** Shape the collapsed (volume-key) popup takes. */
 enum class PopupStyle {
     VerticalBar, HorizontalBar, Disc

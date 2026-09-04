@@ -60,6 +60,7 @@ import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.system.ActivityTaskManagerProxy
 import com.nomixer.volume.data.PopupAnchor
+import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.data.usesWindowBlur
@@ -67,6 +68,7 @@ import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.Motion
 import org.joor.Reflect
 import java.util.Objects
+import kotlin.math.roundToInt
 
 /**
  * The point an anchored popup should grow from: the edge it hugs, so it
@@ -106,6 +108,14 @@ class Service : AccessibilityService() {
          * disconnected doesn't spam one every single event.
          */
         private const val SHIZUKU_WARNING_COOLDOWN_MS = 10_000L
+
+        /**
+         * How far a fully-revealed lateral disc still sits from the screen
+         * edge, in dp -- flush would leave it with nowhere left to go as the
+         * offset keeps climbing past this point, and no visible gap to read
+         * as "as far in as this control goes".
+         */
+        private const val DISC_EDGE_GAP_DP = 8f
     }
 
     private val windowManager: WindowManager by lazy {
@@ -424,7 +434,14 @@ class Service : AccessibilityService() {
             // Touch still reaches the popup -- only key/focus events don't,
             // and volume keys arrive through the accessibility service
             // rather than this window.
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            //
+            // FLAG_LAYOUT_NO_LIMITS lets x/y actually place the window
+            // partly off the display -- a lateral disc's whole point is to
+            // sit half (or more) off the physical screen at low offset,
+            // cut only by the screen's own edge. Without it the platform
+            // quietly clamps the window back on screen itself, undoing
+            // that positioning before it ever reaches the compositor.
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT // Make the background translucent
         ).apply {
             applyConfiguredPosition(this)
@@ -458,12 +475,23 @@ class Service : AccessibilityService() {
 
     /**
      * The window is WRAP_CONTENT, so its real size is unknown until its
-     * first layout pass -- only then can an offset that would push it past
-     * the screen edge be caught and pulled back in. This keeps the whole
-     * popup window always fully on screen, shrinking its effective offset
-     * rather than letting the display cut it off; the disc drawn inside it
-     * is never itself clipped (see VolumeDisc's own doc comment) -- it just
-     * rides along with whatever offset the window ends up using.
+     * first layout pass -- only then can its position be corrected against
+     * that real size.
+     *
+     * A bar-style popup always stays fully on screen: an offset that would
+     * push it past the display edge is pulled back in rather than letting
+     * the display cut it off.
+     *
+     * A laterally-anchored disc (hugging a side, not the horizontal center)
+     * is deliberately the opposite: the disc itself is always drawn whole
+     * (see VolumeDisc's own doc comment), but the *window* holding it is
+     * allowed to sit partly off the physical screen, cut only by the
+     * display's own edge rather than by any clipping in the app -- exactly
+     * like a stock Android control that pokes out from the side. Horizontal
+     * offset controls how much of it pokes out: at zero the window sits
+     * half off-screen, and by the top of the offset range it's fully back
+     * on screen with a small gap left to the edge, rather than sliding
+     * further in from there the way a bar would.
      */
     private fun clampToScreenOnceLaidOut(target: View) {
         target.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
@@ -473,13 +501,32 @@ class Service : AccessibilityService() {
                     return
                 }
 
+                val preferences = manager.uiPreferences
+                val density = resources.displayMetrics.density
                 val bounds = windowManager.currentWindowMetrics.bounds
-                val clampedX = when (layoutParams.gravity and Gravity.HORIZONTAL_GRAVITY_MASK) {
-                    Gravity.LEFT, Gravity.RIGHT ->
-                        layoutParams.x.coerceIn(0, (bounds.width() - target.width).coerceAtLeast(0))
-                    else -> layoutParams.x
+                val horizontalGravity = layoutParams.gravity and Gravity.HORIZONTAL_GRAVITY_MASK
+                val verticalGravity = layoutParams.gravity and Gravity.VERTICAL_GRAVITY_MASK
+
+                val isLateralDisc = preferences.popupStyle == PopupStyle.Disc &&
+                    (horizontalGravity == Gravity.LEFT || horizontalGravity == Gravity.RIGHT)
+
+                val clampedX = if (isLateralDisc) {
+                    // Positive x always moves the window inward, off the
+                    // edge it hugs, whichever side that is -- the same
+                    // formula covers both LEFT and RIGHT gravity.
+                    val hiddenX = -(target.width / 2)
+                    val revealedX = (DISC_EDGE_GAP_DP * density).toInt()
+                    val revealFraction =
+                        (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
+                    (hiddenX + (revealedX - hiddenX) * revealFraction).roundToInt()
+                } else {
+                    when (horizontalGravity) {
+                        Gravity.LEFT, Gravity.RIGHT ->
+                            layoutParams.x.coerceIn(0, (bounds.width() - target.width).coerceAtLeast(0))
+                        else -> layoutParams.x
+                    }
                 }
-                val clampedY = when (layoutParams.gravity and Gravity.VERTICAL_GRAVITY_MASK) {
+                val clampedY = when (verticalGravity) {
                     Gravity.TOP, Gravity.BOTTOM ->
                         layoutParams.y.coerceIn(0, (bounds.height() - target.height).coerceAtLeast(0))
                     else -> layoutParams.y
