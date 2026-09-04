@@ -433,5 +433,25 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   in length, not thickness, so they read as longer pills rather than
   fatter marks.
 
+## 2026-09-04 — 1.0.6
+
+- A laterally-anchored disc pokes off the physical screen again, the way
+  the original stock-style edge control did -- but now by moving the
+  overlay *window* partly off the display (`FLAG_LAYOUT_NO_LIMITS`) rather
+  than by clipping anything drawn inside it. The disc itself is still
+  always a complete circle; whatever part of the window ends up beyond the
+  display edge simply isn't rendered by the compositor, the same as any
+  other off-screen window content.
+- Horizontal offset now maps that window position between two ends
+  instead of moving it freely: at zero the window sits half off-screen,
+  and by the top of the offset range it's fully back on screen with a
+  small (8dp) gap left to the edge, computed from the window's own real
+  measured size rather than the raw dp offset.
+- Bar-style popups (and a disc anchored to the middle column) are
+  unaffected: they keep the fully-on-screen clamp from 1.0.5.
+- The customization screen's live preview mirrors the same behavior,
+  using its phone silhouette's own clip to stand in for the real display
+  edge.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
