@@ -618,5 +618,28 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   button and slider already do.
 - The app volume list flicker is still open, being worked separately.
 
+## 2026-09-05 — 1.0.13
+
+- 1.0.12's disc confinement fix only changed what Compose paints, not
+  the real background-blur drawable already sitting behind it -- a
+  single rounded rect sized to the *whole* overlay view (there's no way
+  to shape it as a ring), so Translucent still visibly blurred the
+  entire panel, margin and shadow-fade sliver included, not just the
+  ring's own track. The collapsed disc now never requests that real
+  drawable at all: Translucent falls back to the same fixed,
+  ring-confined dim scrim Solid already uses, so both now sit in
+  exactly the same place. The expanded mixer is unaffected (it's always
+  a plain rounded rectangle regardless of the collapsed style) and
+  keeps the real blur.
+- Reserved a margin around the whole popup window for the real
+  elevation shadow (bars, expanded mixer sliders) to render into: the
+  window is sized exactly to its content with nothing spare, and a
+  shadow drawn outside those bounds had nowhere left to go and was
+  being clipped off at the window's own edge. This one is a best-effort
+  diagnosis, not confirmed live -- flag it if the shadow is still
+  missing, and also check that the popup still hugs the screen edge the
+  way it used to, since the window being a little bigger now could
+  nudge it slightly further in than before.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
