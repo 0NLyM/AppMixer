@@ -68,7 +68,7 @@ import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.paintedPanelAlpha
-import com.nomixer.volume.data.usesWindowBlur
+import com.nomixer.volume.data.wantsRealWindowBlur
 import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.Motion
 import org.joor.Reflect
@@ -93,6 +93,17 @@ private fun PopupAnchor.transformOrigin(): TransformOrigin {
     }
     return TransformOrigin(x, y)
 }
+
+/**
+ * Reserved space around the whole popup so a real elevation shadow
+ * ([com.nomixer.volume.compose.softShadow]) has room to render: the
+ * overlay window is WRAP_CONTENT, sized to exactly the Compose content's
+ * own layout bounds, and a shadow drawn outside those bounds with nothing
+ * reserved around them is clipped off at the window's edge rather than
+ * shown. Comfortably wider than either shadow elevation this app uses
+ * (8dp/12dp) so the full falloff always fits.
+ */
+private val POPUP_SHADOW_MARGIN_DP = 20.dp
 
 @SuppressLint("AccessibilityPolicy")
 class Service : AccessibilityService() {
@@ -294,7 +305,7 @@ class Service : AccessibilityService() {
 
                 Log.i(TAG, "onAttachedToWindow manufacturer: ${Build.MANUFACTURER}")
 
-                applyWindowBlur(manager.uiPreferences.usesWindowBlur())
+                applyWindowBlur(manager.uiPreferences.wantsRealWindowBlur(expanded = false))
 
                 this@Service.handler.startIdleTimer()
             }
@@ -333,7 +344,7 @@ class Service : AccessibilityService() {
                         preferences.popupStyle,
                         preferences.popupBlurRadius
                     ) {
-                        applyWindowBlur(preferences.usesWindowBlur(), expanded = expanded)
+                        applyWindowBlur(preferences.wantsRealWindowBlur(expanded), expanded = expanded)
                     }
 
                     // Animated, so switching translucent/solid or nudging the
@@ -390,14 +401,25 @@ class Service : AccessibilityService() {
                         }
 
                         Box(
-                            modifier = Modifier.graphicsLayer {
-                                val grown = 0.9f + 0.1f * appear.value
-                                alpha = appear.value
-                                scaleX = grown
-                                scaleY = grown
-                                // Grows out of the screen edge it hugs.
-                                transformOrigin = origin
-                            }
+                            // The window is sized WRAP_CONTENT to exactly
+                            // this box's own layout bounds -- a real
+                            // elevation shadow (softShadow, below) draws
+                            // outside those bounds, so with no margin
+                            // reserved here it had nowhere left to render
+                            // and was silently clipped off at the window's
+                            // own edge. This padding is pure reserved space
+                            // for that overflow; it isn't part of the
+                            // panel's own visible padding.
+                            modifier = Modifier
+                                .padding(POPUP_SHADOW_MARGIN_DP)
+                                .graphicsLayer {
+                                    val grown = 0.9f + 0.1f * appear.value
+                                    alpha = appear.value
+                                    scaleX = grown
+                                    scaleY = grown
+                                    // Grows out of the screen edge it hugs.
+                                    transformOrigin = origin
+                                }
                         ) {
                             if (expanded) {
                                 Surface(

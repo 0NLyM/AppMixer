@@ -184,6 +184,23 @@ fun UiPreferences.usesWindowBlur(): Boolean =
     popupShowBackground && popupBackground == PopupBackground.Translucent
 
 /**
+ * Whether the *real* overlay should actually request the platform's
+ * background-blur drawable, as opposed to just wanting a translucent look
+ * ([usesWindowBlur]). The drawable is a single rounded rect sized to the
+ * whole overlay view -- there's no way to shape it as a ring -- so behind a
+ * collapsed disc it would blur the entire panel, margin and shadow-fade
+ * sliver included, not just the ring's own track. Rather than let that leak
+ * past the ring (which [popupShowBackground] and Solid both keep confined
+ * to), the collapsed disc never asks for the real drawable at all and
+ * always falls back to Translucent's fixed dim scrim -- painted, like
+ * Solid, only inside the ring by [paintedPanelAlpha]. The expanded mixer is
+ * always a plain rounded rect regardless of the collapsed style, so it has
+ * no such leak and keeps the real blur.
+ */
+fun UiPreferences.wantsRealWindowBlur(expanded: Boolean): Boolean =
+    usesWindowBlur() && (expanded || popupStyle != PopupStyle.Disc)
+
+/**
  * Fallback alpha for a translucent panel when the platform didn't actually
  * grant the system blur -- a fixed value, independent of
  * [UiPreferences.popupBackgroundOpacity], which belongs to Solid alone. A
