@@ -403,12 +403,14 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
 
     when (preferences.popupStyle) {
         PopupStyle.VerticalBar -> Box {
-            Box(
-                modifier = Modifier
-                    .width((64 * scale).dp)
-                    .height((250 * scale).dp)
-                    .panelShadow(shadow, preferences.popupCornerRadius.dp)
-            )
+            if (preferences.popupShowBackground) {
+                Box(
+                    modifier = Modifier
+                        .width((64 * scale).dp)
+                        .height((250 * scale).dp)
+                        .softShadow(shadow, RoundedCornerShape(preferences.popupCornerRadius.dp), 12.dp)
+                )
+            }
             VerticalTrackSlider(
                 value = previewFraction,
                 onValueChange = {},
@@ -453,12 +455,14 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
         }
 
         PopupStyle.HorizontalBar -> Box {
-            Box(
-                modifier = Modifier
-                    .width((240 * scale).dp)
-                    .height((56 * scale).dp)
-                    .panelShadow(shadow, preferences.popupCornerRadius.dp)
-            )
+            if (preferences.popupShowBackground) {
+                Box(
+                    modifier = Modifier
+                        .width((240 * scale).dp)
+                        .height((56 * scale).dp)
+                        .softShadow(shadow, RoundedCornerShape(preferences.popupCornerRadius.dp), 12.dp)
+                )
+            }
             TrackSlider(
             value = previewFraction,
             onValueChange = {},
