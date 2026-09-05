@@ -73,7 +73,6 @@
     <string name="bar_center_content">滑块中央内容</string>
     <string name="center_value">音量值居中</string>
     <string name="center_icon">图标居中</string>
-    <string name="disc_show_shadow">显示阴影</string>
     <string name="disc_value_beside_button">音量值置于开关旁</string>
     <string name="disc_dots">显示刻度环</string>
     <string name="disc_tick_corner">刻度圆角半径</string>
@@ -85,10 +84,11 @@
     <string name="popup_content">内容</string>
     <string name="popup_content_description">弹窗上显示的内容：音量值、图标和响铃开关。</string>
     <string name="show_ringer_button">显示响铃开关</string>
+    <string name="show_shadow">显示阴影</string>
     <string name="ringer_normal">响铃，点按切换振动</string>
     <string name="ringer_vibrate">振动，点按切换静音</string>
     <string name="ringer_silent">静音，点按切换响铃</string>
-    <string name="disc_section_description">圆盘自身圆环、阴影和音量值位置的专属设置。</string>
+    <string name="disc_section_description">圆盘自身圆环和音量值位置的专属设置。</string>
     <string name="show_preview">显示实时预览</string>
     <string name="reset_popup">重置弹窗设置</string>
     <string name="preview_collapsed">收起预览</string>

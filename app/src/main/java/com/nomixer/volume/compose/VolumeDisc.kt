@@ -20,9 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -78,6 +81,28 @@ fun VolumeDisc(
      * circle pasted on top of whatever's behind it.
      */
     backdropColor: Color = Color.Transparent,
+    /**
+     * Opaque backing for everything outside the disc's own inner body (the
+     * ring's track and the shadow-fade sliver beyond it) -- normally the
+     * same background color the panel around the disc uses, so there's no
+     * visible seam. Without this backing, that whole outer area had nothing
+     * of its own painted behind it and simply showed whatever the panel
+     * happened to be, translucent or not; now only [revealBlurInTrack] can
+     * open a window through it, and only exactly where the ring's own track
+     * is.
+     */
+    opaqueBaseColor: Color = MaterialTheme.colorScheme.background,
+    /**
+     * True only when the panel behind the popup is genuinely translucent
+     * with the system blur actually landed. When true, a hole exactly the
+     * shape of the ring's own track (not the shadow-fade sliver beyond it)
+     * is cut out of [opaqueBaseColor], so the real blur behind the window
+     * shows through there -- tinted by the same light gray wash the track's
+     * unfilled portion always gets, and fully covered again wherever the
+     * fill (or the shadow, faintly) draws over it. False paints the track's
+     * backing solid instead, so nothing behind the popup shows at all.
+     */
+    revealBlurInTrack: Boolean = false,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -159,6 +184,31 @@ fun VolumeDisc(
 
             val ringWidth = radius * 0.14f
             val ringRadius = radius - ringWidth / 2f - 1.dp.toPx()
+            val trackOuterRadius = ringRadius + ringWidth / 2f
+            val trackInnerRadius = ringRadius - ringWidth / 2f
+
+            // Opaque backing for everything outside the disc's own inner
+            // body -- the ring's track and the shadow-fade sliver beyond it
+            // -- so nothing behind the popup shows through by default. Only
+            // [revealBlurInTrack] cuts a hole in it, shaped exactly like the
+            // ring's own track (never the shadow-fade sliver past it), so
+            // the real blur behind the window can only ever show up there.
+            val outerBase = Path().apply {
+                addOval(Rect(center = center, radius = outerRadius))
+            }
+            val basePath = if (revealBlurInTrack) {
+                val trackHole = Path().apply {
+                    op(
+                        Path().apply { addOval(Rect(center = center, radius = trackOuterRadius)) },
+                        Path().apply { addOval(Rect(center = center, radius = trackInnerRadius)) },
+                        PathOperation.Difference
+                    )
+                }
+                Path().apply { op(outerBase, trackHole, PathOperation.Difference) }
+            } else {
+                outerBase
+            }
+            drawPath(basePath, color = opaqueBaseColor)
 
             // Round shadow: solid out to the disc's own edge, then
             // dissolving to nothing across the ring left around it.

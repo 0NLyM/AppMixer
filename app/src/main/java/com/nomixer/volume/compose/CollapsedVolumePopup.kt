@@ -29,9 +29,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
@@ -39,10 +45,11 @@ import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
+import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
-import com.nomixer.volume.data.discShadowAlpha
+import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
@@ -50,6 +57,28 @@ import kotlin.math.roundToInt
 
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
+
+/** How far a bar's own shadow spreads past its track on every side. */
+private val SLIDER_SHADOW_SPREAD_DP = 6.dp
+
+/**
+ * The disc paints its shadow as a radial gradient, since it's a circle; a
+ * bar's track is a rounded rect instead, so its own shadow is a flat halo
+ * the same shape as the track (corner radius grown by the same amount as
+ * the spread, so the corners still read as rounded rather than squared
+ * off), a fixed [SLIDER_SHADOW_SPREAD_DP] past the track on every side.
+ */
+internal fun Modifier.sliderShadow(color: Color, cornerRadius: Dp): Modifier =
+    drawBehind {
+        if (color.alpha <= 0f) return@drawBehind
+        val spreadPx = SLIDER_SHADOW_SPREAD_DP.toPx()
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(-spreadPx, -spreadPx),
+            size = Size(size.width + spreadPx * 2f, size.height + spreadPx * 2f),
+            cornerRadius = CornerRadius((cornerRadius.toPx() + spreadPx))
+        )
+    }
 
 /**
  * Direction the expand swipe has to travel, away from the edge the popup
@@ -236,14 +265,34 @@ fun CollapsedVolumePopup(
         label = "popupPanel"
     )
 
-    // The disc's own light shadow, painted inside VolumeDisc itself --
-    // disc-only, independent of the panel's Translucent/Solid fill.
-    val discShadow by animateColorAsState(
+    // The disc reveals the system blur through its own ring's track, not
+    // through its surrounding panel margin -- so in Translucent mode that
+    // margin is fully opaque, same as the disc's own backing, instead of
+    // sharing the bars' panel-wide translucency and leaking blur past the
+    // ring into the margin and the shadow-fade sliver around it.
+    val discPanelColor by animateColorAsState(
+        targetValue = if (isDisc && preferences.popupBackground == PopupBackground.Translucent) {
+            MaterialTheme.colorScheme.background
+        } else {
+            panelColor
+        },
+        animationSpec = Motion.ColorShift,
+        label = "discPanel"
+    )
+    val discRevealBlurInTrack = isDisc &&
+        preferences.popupBackground == PopupBackground.Translucent &&
+        blurLanded
+
+    // The popup's own light shadow, painted right behind its main shape --
+    // the disc's ring (inside VolumeDisc itself) or a bar's slider track
+    // (drawn behind it here) -- independent of the panel's Translucent/Solid
+    // fill.
+    val shadow by animateColorAsState(
         targetValue = MaterialTheme.colorScheme.background.copy(
-            alpha = preferences.discShadowAlpha()
+            alpha = preferences.shadowAlpha()
         ),
         animationSpec = Motion.ColorShift,
-        label = "discShadow"
+        label = "popupShadow"
     )
 
     // The expand-swipe gesture used to live on this Surface, wrapping the
@@ -265,7 +314,7 @@ fun CollapsedVolumePopup(
     )
 
     Surface(
-        color = panelColor,
+        color = if (isDisc) discPanelColor else panelColor,
         contentColor = MaterialTheme.colorScheme.onBackground,
         shape = panelShape
     ) {
@@ -287,6 +336,7 @@ fun CollapsedVolumePopup(
                     modifier = Modifier
                         .width((200 * scale).dp)
                         .height(buttonSize)
+                        .sliderShadow(shadow, preferences.sliderCornerRadius.dp)
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
@@ -354,6 +404,7 @@ fun CollapsedVolumePopup(
                     modifier = Modifier
                         .width(buttonSize)
                         .height((220 * scale).dp)
+                        .sliderShadow(shadow, preferences.sliderCornerRadius.dp)
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
@@ -432,7 +483,9 @@ fun CollapsedVolumePopup(
                         gestureModifier = expandSwipeModifier,
                         showDots = preferences.discShowDots,
                         tickCornerPercent = preferences.discTickCornerPercent,
-                        backdropColor = discShadow,
+                        backdropColor = shadow,
+                        opaqueBaseColor = discPanelColor,
+                        revealBlurInTrack = discRevealBlurInTrack,
                         icon = if (preferences.popupShowIcon) volumeIcon else null,
                         label = if (preferences.popupShowValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer

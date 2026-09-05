@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.nomixer.volume.data.App
@@ -125,10 +126,20 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
         audioManager.registerAudioPlaybackCallback(
             object : AudioManager.AudioPlaybackCallback() {
                 override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>) {
-                    for (app in apps.values) {
-                        app.clearPlayers()
+                    // Clearing every app's players and re-adding the still-active
+                    // ones are two passes over the same Compose state -- without
+                    // this, a recomposition landing in between them saw every app
+                    // as momentarily not playing, which read as the whole active
+                    // list flickering out and back on every playback config
+                    // change (which fires far more often than "an app started or
+                    // stopped", including on plain volume changes). One snapshot
+                    // means recomposition only ever sees the final state.
+                    Snapshot.withMutableSnapshot {
+                        for (app in apps.values) {
+                            app.clearPlayers()
+                        }
+                        processAudioPlaybackConfigurations(configs)
                     }
-                    processAudioPlaybackConfigurations(configs)
                 }
             }, null
         )

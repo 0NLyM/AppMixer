@@ -72,7 +72,6 @@
     <string name="bar_center_content">Slider center</string>
     <string name="center_value">Center the level</string>
     <string name="center_icon">Center the icon</string>
-    <string name="disc_show_shadow">Show shadow</string>
     <string name="disc_value_beside_button">Value beside switch</string>
     <string name="disc_dots">Show tick ring</string>
     <string name="disc_tick_corner">Tick corner radius</string>
@@ -84,10 +83,11 @@
     <string name="popup_content">Content</string>
     <string name="popup_content_description">What shows on the popup itself: the level, the icon, and the ringer switch.</string>
     <string name="show_ringer_button">Show ringer switch</string>
+    <string name="show_shadow">Show shadow</string>
     <string name="ringer_normal">Ring: on, tap for vibrate</string>
     <string name="ringer_vibrate">Vibrate, tap for silent</string>
     <string name="ringer_silent">Silent, tap for ring</string>
-    <string name="disc_section_description">Settings specific to the disc\'s own ring, shadow and value placement.</string>
+    <string name="disc_section_description">Settings specific to the disc\'s own ring and value placement.</string>
     <string name="show_preview">Show live preview</string>
     <string name="reset_popup">Reset popup settings</string>
     <string name="preview_collapsed">Collapsed preview</string>

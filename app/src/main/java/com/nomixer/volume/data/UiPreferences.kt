@@ -111,7 +111,7 @@ data class UiPreferences(
      * including the disc's. Translucent is the system blur instead, sized
      * by [popupBlurRadius]. Neither one touches the disc's own ring/track
      * colors, which stay whatever the palette says, nor the separate
-     * painted shadow [discShowShadow] toggles.
+     * painted shadow [popupShowShadow] toggles.
      */
     val popupBackgroundOpacity: Float = 0.85f,
     /**
@@ -136,13 +136,15 @@ data class UiPreferences(
     /** Corner rounding of each disc tick, as a percent: 0 square, 50 a capsule. */
     val discTickCornerPercent: Int = 30,
     /**
-     * Whether the disc paints its own soft shadow behind its ring at all.
-     * Independent of [popupBackground]: that Translucent/Solid choice is
-     * about the *panel's* own fill (and, in Translucent mode, the system
-     * blur behind it), not this separate light shadow painted inside the
-     * disc itself. Disc-only -- the bar styles never had one.
+     * Whether the popup paints its own soft shadow behind its main shape at
+     * all -- the disc's ring, or a bar's slider track. Independent of
+     * [popupBackground]: that Translucent/Solid choice is about the
+     * *panel's* own fill (and, in Translucent mode, the system blur behind
+     * it), not this separate light shadow painted right behind the shape
+     * itself. One toggle for every style; each adapts the shadow to its own
+     * shape.
      */
-    val discShowShadow: Boolean = true,
+    val popupShowShadow: Boolean = true,
     /**
      * Puts the volume value beside the ringer switch, in the disc's hollow
      * middle, instead of below it.
@@ -160,41 +162,49 @@ fun UiPreferences.usesWindowBlur(): Boolean =
     popupBackground == PopupBackground.Translucent
 
 /**
- * Alpha of the panel the popup paints for itself.
- *
- * Translucent paints a light scrim *as well as* asking for the blur, rather
- * than leaving the background entirely to it. The system grants the blur
- * only sometimes -- it depends on the device, on hardware acceleration and
- * on whether the platform currently feels like allowing cross-window blur --
- * so a panel that draws nothing of its own is invisible whenever the answer
- * is no. The scrim is what makes translucent look the same either way; the
- * blur, when it lands, frosts what shows through it.
- *
- * [blurLanded] is only known by the real overlay, which finds out at attach
- * time whether the platform actually granted the blur. Without it the scrim
- * alone was faint enough, at the usual 0.4x multiplier, to read as broken
- * rather than deliberately translucent; a caller that can't say either way
- * (a settings preview with no real window behind it) defaults to `true`,
- * keeping the original, optimistic look.
+ * Fallback alpha for a translucent panel when the platform didn't actually
+ * grant the system blur -- a fixed value, independent of
+ * [UiPreferences.popupBackgroundOpacity], which belongs to Solid alone. A
+ * shared value used to let Solid's own opacity leak into Translucent (e.g.
+ * Solid at 100% left a 40%-opaque veil sitting on top of the blur after
+ * switching to Translucent), which is exactly the two modes being not
+ * separate. This is that separation: Solid's opacity never reaches
+ * Translucent, and Translucent draws nothing of its own once the blur lands.
  */
-fun UiPreferences.paintedPanelAlpha(blurLanded: Boolean = true): Float {
-    val translucentMultiplier = if (popupBackground == PopupBackground.Translucent) {
-        if (blurLanded) 0.4f else 0.75f
-    } else {
-        1f
-    }
-    return popupBackgroundOpacity * translucentMultiplier
-}
-
-/** Peak alpha of the disc's own shadow, at its own center. Deliberately light. */
-private const val DISC_SHADOW_ALPHA = 0.35f
+private const val TRANSLUCENT_FALLBACK_ALPHA = 0.55f
 
 /**
- * Alpha of the disc's own shadow -- just [discShowShadow]'s on/off, at a
+ * Alpha of the panel the popup paints for itself.
+ *
+ * Solid: exactly [UiPreferences.popupBackgroundOpacity], the only mode that
+ * slider affects.
+ *
+ * Translucent: the system blur *is* the panel, so nothing is painted once it
+ * lands ([blurLanded]). The blur is granted only sometimes -- it depends on
+ * the device, on hardware acceleration and on whether the platform currently
+ * feels like allowing cross-window blur -- so a fixed fallback scrim
+ * ([TRANSLUCENT_FALLBACK_ALPHA]) stands in when it doesn't, instead of
+ * leaving the panel invisible. [blurLanded] is only known by the real
+ * overlay, which finds out at attach time whether the platform actually
+ * granted the blur; a caller that can't say either way (a settings preview
+ * with no real window behind it) defaults to `true`, so the preview shows
+ * blur landing rather than the fallback.
+ */
+fun UiPreferences.paintedPanelAlpha(blurLanded: Boolean = true): Float =
+    when (popupBackground) {
+        PopupBackground.Solid -> popupBackgroundOpacity
+        PopupBackground.Translucent -> if (blurLanded) 0f else TRANSLUCENT_FALLBACK_ALPHA
+    }
+
+/** Peak alpha of the popup's own shadow, at its brightest point. Deliberately light. */
+private const val POPUP_SHADOW_ALPHA = 0.35f
+
+/**
+ * Alpha of the popup's own shadow -- just [popupShowShadow]'s on/off, at a
  * fixed, light intensity of its own rather than sharing
  * [popupBackgroundOpacity]: that slider is dedicated to the panel's own
- * fill, a different quantity from this separate shadow painted inside the
- * disc itself.
+ * fill, a different quantity from this separate shadow painted right behind
+ * the disc's ring or a bar's track.
  */
-fun UiPreferences.discShadowAlpha(): Float =
-    if (discShowShadow) DISC_SHADOW_ALPHA else 0f
+fun UiPreferences.shadowAlpha(): Float =
+    if (popupShowShadow) POPUP_SHADOW_ALPHA else 0f

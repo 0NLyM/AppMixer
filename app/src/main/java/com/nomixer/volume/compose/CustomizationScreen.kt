@@ -82,7 +82,7 @@ import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.SLIDER_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
-import com.nomixer.volume.data.discShadowAlpha
+import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.baseColorScheme
 import kotlin.math.roundToInt
@@ -397,6 +397,8 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
     val previewValueText = "7"
     val scale = preferences.popupScale * previewScale * 1.6f
 
+    val shadow = MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
+
     when (preferences.popupStyle) {
         PopupStyle.VerticalBar -> VerticalTrackSlider(
             value = previewFraction,
@@ -405,6 +407,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
             modifier = Modifier
                 .width((64 * scale).dp)
                 .height((250 * scale).dp)
+                .sliderShadow(shadow, preferences.sliderCornerRadius.dp)
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 if (preferences.popupShowValue) {
@@ -447,6 +450,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
             modifier = Modifier
                 .width((240 * scale).dp)
                 .height((56 * scale).dp)
+                .sliderShadow(shadow, preferences.sliderCornerRadius.dp)
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 if (preferences.popupShowIcon) {
@@ -536,7 +540,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
                     backdropColor = MaterialTheme.colorScheme.background.copy(
-                        alpha = preferences.discShadowAlpha()
+                        alpha = preferences.shadowAlpha()
                     ),
                     icon = if (preferences.popupShowIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (preferences.popupShowValue && !besideButton) previewValueText else null,
@@ -1009,6 +1013,13 @@ fun CustomizationScreen(
                     onUpdate { it.copy(popupShowRingerButton = checked) }
                 }
             )
+            ToggleSetting(
+                label = stringResource(R.string.show_shadow),
+                checked = preferences.popupShowShadow,
+                onCheckedChange = { checked ->
+                    onUpdate { it.copy(popupShowShadow = checked) }
+                }
+            )
 
             AnimatedVisibility(
                 visible = preferences.popupStyle == PopupStyle.Disc,
@@ -1023,13 +1034,6 @@ fun CustomizationScreen(
                     text = stringResource(R.string.disc_section_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                ToggleSetting(
-                    label = stringResource(R.string.disc_show_shadow),
-                    checked = preferences.discShowShadow,
-                    onCheckedChange = { checked ->
-                        onUpdate { it.copy(discShowShadow = checked) }
-                    }
                 )
                 ToggleSetting(
                     label = stringResource(R.string.disc_value_beside_button),
@@ -1104,7 +1108,7 @@ fun CustomizationScreen(
                             popupShowRingerButton = defaults.popupShowRingerButton,
                             discShowDots = defaults.discShowDots,
                             discTickCornerPercent = defaults.discTickCornerPercent,
-                            discShowShadow = defaults.discShowShadow,
+                            popupShowShadow = defaults.popupShowShadow,
                             discValueBesideButton = defaults.discValueBesideButton
                         )
                     }
