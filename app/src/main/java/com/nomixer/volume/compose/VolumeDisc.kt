@@ -190,13 +190,21 @@ fun VolumeDisc(
                 )
             }
 
-            // Round shadow: solid out to the disc's own edge, then
-            // dissolving to nothing across the ring left around it.
+            // Round shadow: nothing of its own through the disc's whole
+            // body and ring -- so it never sits on top of (and washes out)
+            // the ring's own track backing or gray tint underneath -- then
+            // solid right at the ring's own outer edge, dissolving to
+            // nothing across the fade-sliver left around it. Stops just
+            // short of DISC_INSET itself so the ramp finishes inside that
+            // sliver rather than at its outer boundary.
             if (backdropColor.alpha > 0f) {
+                val ringOuterFraction = ((ringRadius + ringWidth / 2f) / outerRadius)
+                    .coerceIn(0f, DISC_INSET - 0.01f)
                 drawCircle(
                     brush = Brush.radialGradient(
                         colorStops = arrayOf(
-                            0f to backdropColor,
+                            0f to Color.Transparent,
+                            ringOuterFraction to Color.Transparent,
                             DISC_INSET to backdropColor,
                             1f to backdropColor.copy(alpha = 0f)
                         ),
