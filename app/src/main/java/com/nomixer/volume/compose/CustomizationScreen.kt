@@ -73,7 +73,9 @@ import com.nomixer.volume.ui.theme.PopupColors
 import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
+import com.nomixer.volume.data.POPUP_BACKGROUND_OPACITY_MIN
 import com.nomixer.volume.data.POPUP_BLUR_RADIUS_MAX
+import com.nomixer.volume.data.POPUP_BLUR_RADIUS_MIN
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupBackground
@@ -887,49 +889,65 @@ fun CustomizationScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            ChipRow(
-                options = listOf(
-                    PopupBackground.Translucent to stringResource(R.string.background_translucent),
-                    PopupBackground.Solid to stringResource(R.string.background_solid)
-                ),
-                selected = preferences.popupBackground,
-                onSelect = { background -> onUpdate { it.copy(popupBackground = background) } }
+            ToggleSetting(
+                label = stringResource(R.string.popup_show_background),
+                checked = preferences.popupShowBackground,
+                onCheckedChange = { checked ->
+                    onUpdate { it.copy(popupShowBackground = checked) }
+                }
             )
 
-            // Always visible now, and always about the panel's own fill --
-            // every style has one, disc included.
-            AnimatedContent(
-                targetState = preferences.popupBackground == PopupBackground.Solid,
-                transitionSpec = {
-                    fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
-                },
-                label = "opacityOrBlur"
-            ) { showOpacity ->
-                if (showOpacity) {
-                    SliderSetting(
-                        label = stringResource(R.string.popup_opacity),
-                        valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
-                        value = preferences.popupBackgroundOpacity,
-                        valueRange = 0f..1f,
-                        onValueChange = { value ->
-                            onUpdate { it.copy(popupBackgroundOpacity = value) }
-                        }
-                    )
-                } else {
-                    // Translucent is the blur, so what there is to adjust
-                    // is how frosted it is -- a different quantity from
-                    // the solid panel's opacity, and it gets its own
-                    // slider.
-                    SliderSetting(
-                        label = stringResource(R.string.popup_blur),
-                        valueLabel = "${preferences.popupBlurRadius} px",
-                        value = preferences.popupBlurRadius.toFloat(),
-                        valueRange = 0f..POPUP_BLUR_RADIUS_MAX.toFloat(),
-                        onValueChange = { value ->
-                            onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
-                        }
-                    )
+            AnimatedVisibility(
+                visible = preferences.popupShowBackground,
+                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeIn(tween(Motion.MorphMillis)),
+                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeOut(tween(160))
+            ) {
+              Column {
+                ChipRow(
+                    options = listOf(
+                        PopupBackground.Translucent to stringResource(R.string.background_translucent),
+                        PopupBackground.Solid to stringResource(R.string.background_solid)
+                    ),
+                    selected = preferences.popupBackground,
+                    onSelect = { background -> onUpdate { it.copy(popupBackground = background) } }
+                )
+
+                AnimatedContent(
+                    targetState = preferences.popupBackground == PopupBackground.Solid,
+                    transitionSpec = {
+                        fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
+                    },
+                    label = "opacityOrBlur"
+                ) { showOpacity ->
+                    if (showOpacity) {
+                        SliderSetting(
+                            label = stringResource(R.string.popup_opacity),
+                            valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
+                            value = preferences.popupBackgroundOpacity,
+                            valueRange = POPUP_BACKGROUND_OPACITY_MIN..1f,
+                            onValueChange = { value ->
+                                onUpdate { it.copy(popupBackgroundOpacity = value) }
+                            }
+                        )
+                    } else {
+                        // Translucent is the blur, so what there is to adjust
+                        // is how frosted it is -- a different quantity from
+                        // the solid panel's opacity, and it gets its own
+                        // slider.
+                        SliderSetting(
+                            label = stringResource(R.string.popup_blur),
+                            valueLabel = "${preferences.popupBlurRadius} px",
+                            value = preferences.popupBlurRadius.toFloat(),
+                            valueRange = POPUP_BLUR_RADIUS_MIN.toFloat()..POPUP_BLUR_RADIUS_MAX.toFloat(),
+                            onValueChange = { value ->
+                                onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
+                            }
+                        )
+                    }
                 }
+              }
             }
 
             SectionHeader(stringResource(R.string.popup_content))
@@ -1113,6 +1131,7 @@ fun CustomizationScreen(
                             popupCornerRadius = defaults.popupCornerRadius,
                             sliderCornerRadius = defaults.sliderCornerRadius,
                             buttonCornerRadius = defaults.buttonCornerRadius,
+                            popupShowBackground = defaults.popupShowBackground,
                             popupBackground = defaults.popupBackground,
                             popupBackgroundOpacity = defaults.popupBackgroundOpacity,
                             popupBlurRadius = defaults.popupBlurRadius,

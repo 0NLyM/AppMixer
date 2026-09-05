@@ -10,21 +10,20 @@
          self-intersecting). The middle slider is shortened, its red
          "handle" dot separated by the same gap as between the three
          bars, and the dot's own right edge lines up with the two long
-         bars' right edge. Sized to sit comfortably inside the ~66dp
-         safe zone every launcher mask respects, rather than pushed out
-         to its very edge. -->
+         bars' right edge. Scaled down 10% from the safe-zone-filling
+         size, leaving a bit more white margin around it. -->
     <path
-        android:pathData="M37.059,30 L70.941,30 A7,7 0 0,1 70.941,44 L37.059,44 A7,7 0 0,1 37.059,30 Z"
+        android:pathData="M38.753,32.4 L69.247,32.4 A6.3,6.3 0 0,1 69.247,45 L38.753,45 A6.3,6.3 0 0,1 38.753,32.4 Z"
         android:fillColor="#000000"/>
     <path
-        android:pathData="M37.059,47 L53.941,47 A7,7 0 0,1 53.941,61 L37.059,61 A7,7 0 0,1 37.059,47 Z"
+        android:pathData="M38.753,47.7 L53.947,47.7 A6.3,6.3 0 0,1 53.947,60.3 L38.753,60.3 A6.3,6.3 0 0,1 38.753,47.7 Z"
         android:fillColor="#000000"/>
     <path
-        android:pathData="M37.059,64 L70.941,64 A7,7 0 0,1 70.941,78 L37.059,78 A7,7 0 0,1 37.059,64 Z"
+        android:pathData="M38.753,63 L69.247,63 A6.3,6.3 0 0,1 69.247,75.6 L38.753,75.6 A6.3,6.3 0 0,1 38.753,63 Z"
         android:fillColor="#000000"/>
     <!-- The one red dot, Nothing's signature accent, here doubling as
          the middle slider's handle. -->
     <path
-        android:pathData="M77.941,54 A7,7 0 1,0 63.941,54 A7,7 0 1,0 77.941,54 Z"
+        android:pathData="M75.547,54 A6.3,6.3 0 1,0 62.947,54 A6.3,6.3 0 1,0 75.547,54 Z"
         android:fillColor="#D7191E"/>
 </vector>

@@ -29,11 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -58,27 +56,32 @@ import kotlin.math.roundToInt
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
 
-/** How soft a bar-style panel's own shadow is. */
-private val PANEL_SHADOW_BLUR_DP = 14.dp
+/** How far a panel-wrapping shadow lifts, for [Modifier.shadow]'s own elevation model. */
+private val PANEL_SHADOW_ELEVATION_DP = 12.dp
+
+/** Same, for a single element's shadow (ringer button or slider) when the panel is hidden. */
+private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp
 
 /**
- * The disc paints its shadow as a radial gradient, since it's a circle; a
- * bar panel is a rounded rect instead, so its own shadow is the same shape
- * (drawn at the panel's own size and corner radius) with a real Gaussian
- * blur to soften and spread it past the panel's edges, rather than a flat
- * inflated duplicate of the shape -- which read as a smear pasted next to
- * the track rather than a shadow lifting the whole panel. Wraps the whole
- * panel (the ringer button included, not just the slider track), and is
- * independent of the panel's own Translucent/Solid fill, so it stays put
- * even when that fill is fully invisible.
+ * A soft shadow via the platform's own elevation renderer -- proper ambient
+ * falloff around the shape, not a hand-drawn approximation -- tinted with
+ * [color] instead of the default black, so it stays the same light,
+ * theme-colored backing used everywhere else this app calls something a
+ * shadow. [clip] is always off: whatever this is chained onto (a Surface,
+ * a button, a slider) already clips its own content to [shape].
  */
-internal fun Modifier.panelShadow(color: Color, cornerRadius: Dp): Modifier =
-    this
-        .blur(radius = PANEL_SHADOW_BLUR_DP, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-        .drawBehind {
-            if (color.alpha <= 0f) return@drawBehind
-            drawRoundRect(color = color, cornerRadius = CornerRadius(cornerRadius.toPx()))
-        }
+internal fun Modifier.softShadow(color: Color, shape: Shape, elevation: Dp): Modifier =
+    if (color.alpha <= 0f) {
+        this
+    } else {
+        this.shadow(
+            elevation = elevation,
+            shape = shape,
+            clip = false,
+            ambientColor = color,
+            spotColor = color
+        )
+    }
 
 /**
  * Direction the expand swipe has to travel, away from the edge the popup
@@ -251,6 +254,14 @@ fun CollapsedVolumePopup(
         0.dp
     }
 
+    // A dedicated switch, not just Solid at 0% or Translucent with nothing
+    // granted: those still left window blur requested and a panel object
+    // present (if invisible), which is what let the shadow meant for a
+    // hidden panel visibly catch its edge. With the panel off outright,
+    // there's nothing for the shadow to sit on, so it moves to the ringer
+    // button and slider themselves instead (below).
+    val showBackground = preferences.popupShowBackground
+
     // One background object for every style now: this panel, with the
     // system blur behind it in translucent mode. Neither one touches the
     // disc's own ring/track colors, which stay whatever the palette says.
@@ -258,9 +269,13 @@ fun CollapsedVolumePopup(
     // Animated, so switching translucent/solid or nudging the opacity
     // bleeds from one to the other rather than cutting.
     val panelColor by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.background.copy(
-            alpha = preferences.paintedPanelAlpha(blurLanded)
-        ),
+        targetValue = if (!showBackground) {
+            Color.Transparent
+        } else {
+            MaterialTheme.colorScheme.background.copy(
+                alpha = preferences.paintedPanelAlpha(blurLanded)
+            )
+        },
         animationSpec = Motion.ColorShift,
         label = "popupPanel"
     )
@@ -271,22 +286,25 @@ fun CollapsedVolumePopup(
     // sharing the bars' panel-wide translucency and leaking blur past the
     // ring into the margin and the shadow-fade sliver around it.
     val discPanelColor by animateColorAsState(
-        targetValue = if (isDisc && preferences.popupBackground == PopupBackground.Translucent) {
-            MaterialTheme.colorScheme.background
-        } else {
-            panelColor
+        targetValue = when {
+            !showBackground -> Color.Transparent
+            isDisc && preferences.popupBackground == PopupBackground.Translucent ->
+                MaterialTheme.colorScheme.background
+            else -> panelColor
         },
         animationSpec = Motion.ColorShift,
         label = "discPanel"
     )
     val discRevealBlurInTrack = isDisc &&
+        showBackground &&
         preferences.popupBackground == PopupBackground.Translucent &&
         blurLanded
 
     // The popup's own light shadow, painted right behind its main shape --
-    // the disc's ring (inside VolumeDisc itself) or a bar's slider track
-    // (drawn behind it here) -- independent of the panel's Translucent/Solid
-    // fill.
+    // the disc's ring (inside VolumeDisc itself), the whole bar panel when
+    // it has one, or the ringer button and slider individually once
+    // [showBackground] turns that panel off entirely -- independent of the
+    // panel's Translucent/Solid fill either way.
     val shadow by animateColorAsState(
         targetValue = MaterialTheme.colorScheme.background.copy(
             alpha = preferences.shadowAlpha()
@@ -294,6 +312,8 @@ fun CollapsedVolumePopup(
         animationSpec = Motion.ColorShift,
         label = "popupShadow"
     )
+    val buttonShape = RoundedCornerShape(percent = preferences.buttonCornerRadius.coerceIn(0, 50))
+    val sliderShape = RoundedCornerShape(preferences.sliderCornerRadius.dp)
 
     // The expand-swipe gesture used to live on this Surface, wrapping the
     // ringer button along with the slider -- which put the button inside the
@@ -313,26 +333,26 @@ fun CollapsedVolumePopup(
         onExpand = onExpand
     )
 
-    Box {
-        // The disc paints its own shadow internally (VolumeDisc); a bar
-        // panel's shadow lives out here instead, behind the whole panel --
-        // the ringer button included, not just the slider -- so it stays
-        // put even when the panel's own Translucent/Solid fill is fully
-        // invisible.
-        if (!isDisc) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .panelShadow(shadow, cornerRadius)
-            )
-        }
+    // The disc paints its own shadow internally (VolumeDisc). A bar panel
+    // gets the platform's own soft shadow wrapped around it -- the ringer
+    // button included, not just the slider -- as long as it's actually
+    // showing; with [showBackground] off there's no panel to hang a shadow
+    // on, so it moves onto the ringer button and slider individually below
+    // instead.
+    val panelShadowModifier = if (!isDisc && showBackground) {
+        Modifier.softShadow(shadow, panelShape, PANEL_SHADOW_ELEVATION_DP)
+    } else {
+        Modifier
+    }
+    val elementShadowColor = if (!isDisc && !showBackground) shadow else Color.Transparent
 
-        Surface(
-            color = if (isDisc) discPanelColor else panelColor,
-            contentColor = MaterialTheme.colorScheme.onBackground,
-            shape = panelShape
-        ) {
-            when (preferences.popupStyle) {
+    Surface(
+        modifier = panelShadowModifier,
+        color = if (isDisc) discPanelColor else panelColor,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        shape = panelShape
+    ) {
+        when (preferences.popupStyle) {
             PopupStyle.HorizontalBar -> Row(
                 modifier = Modifier.padding(panelPadding),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -341,6 +361,9 @@ fun CollapsedVolumePopup(
                 if (preferences.popupShowRingerButton) {
                     RingerModeButton(
                         audioManager = audioManager,
+                        modifier = Modifier.softShadow(
+                            elementShadowColor, buttonShape, ELEMENT_SHADOW_ELEVATION_DP
+                        ),
                         size = buttonSize,
                         onChange = onInteract
                     )
@@ -350,6 +373,7 @@ fun CollapsedVolumePopup(
                     modifier = Modifier
                         .width((200 * scale).dp)
                         .height(buttonSize)
+                        .softShadow(elementShadowColor, sliderShape, ELEMENT_SHADOW_ELEVATION_DP)
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
@@ -406,6 +430,9 @@ fun CollapsedVolumePopup(
                 if (preferences.popupShowRingerButton) {
                     RingerModeButton(
                         audioManager = audioManager,
+                        modifier = Modifier.softShadow(
+                            elementShadowColor, buttonShape, ELEMENT_SHADOW_ELEVATION_DP
+                        ),
                         size = buttonSize,
                         onChange = onInteract
                     )
@@ -417,6 +444,7 @@ fun CollapsedVolumePopup(
                     modifier = Modifier
                         .width(buttonSize)
                         .height((220 * scale).dp)
+                        .softShadow(elementShadowColor, sliderShape, ELEMENT_SHADOW_ELEVATION_DP)
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
@@ -535,7 +563,6 @@ fun CollapsedVolumePopup(
                         onValueChange = { value -> setVolume(value.roundToInt()) }
                     )
                 }
-            }
             }
         }
     }

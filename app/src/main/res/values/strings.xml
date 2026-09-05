@@ -78,6 +78,7 @@
     <string name="disc_hint">Anchored to a screen edge the disc reveals itself from that edge inward as the horizontal offset grows, up to a full circle; anchored to the middle column it\'s always a full circle. Drag up or down to change the volume.</string>
     <string name="popup_background">Background</string>
     <string name="popup_background_description">Whether the panel is frosted (system blur) or a plain fill, and how strong that effect is. Never changes the disc\'s own ring colors.</string>
+    <string name="popup_show_background">Show background</string>
     <string name="background_translucent">Translucent</string>
     <string name="background_solid">Solid</string>
     <string name="popup_content">Content</string>

@@ -14,6 +14,17 @@ const val BUTTON_CORNER_RADIUS_MAX = 50
 /** Top of the blur-radius slider's range, in pixels. */
 const val POPUP_BLUR_RADIUS_MAX = 300
 
+/**
+ * Bottom of the blur-radius and background-opacity sliders' ranges, instead
+ * of 0. Both used to reach 0, which behaved as a de facto "no panel" state,
+ * but a real, separate [UiPreferences.popupShowBackground] switch does that
+ * job now -- letting these sliders reach 0 too would just be the same state
+ * reachable two ways, one of them still leaving [usesWindowBlur] wanting a
+ * blur no panel exists to show it on.
+ */
+const val POPUP_BLUR_RADIUS_MIN = 1
+const val POPUP_BACKGROUND_OPACITY_MIN = 0.01f
+
 /** Top of the disc tick corner-radius slider's range, as a percent. */
 const val DISC_TICK_CORNER_MAX = 50
 
@@ -107,6 +118,15 @@ data class UiPreferences(
     val buttonCornerRadius: Int = 50,
     val popupBackground: PopupBackground = PopupBackground.Translucent,
     /**
+     * Whether the popup paints a background panel at all. Off takes
+     * [popupBackground] and its opacity/blur slider out of the picture
+     * entirely, rather than the same result being separately reachable by
+     * dragging one of those sliders to a corner -- and moves
+     * [popupShowShadow]'s shadow off the (now absent) panel and onto the
+     * ringer button and slider themselves instead.
+     */
+    val popupShowBackground: Boolean = true,
+    /**
      * Panel opacity, 0f - 1f, in Solid mode -- every style's panel,
      * including the disc's. Translucent is the system blur instead, sized
      * by [popupBlurRadius]. Neither one touches the disc's own ring/track
@@ -156,10 +176,12 @@ data class UiPreferences(
  * True when the overlay window should paint the system blur behind the
  * popup's panel -- collapsed or expanded, whatever style the collapsed one
  * is. The disc has its own panel to ask for it behind, the same as a bar's,
- * so nothing here depends on which shape that panel happens to be.
+ * so nothing here depends on which shape that panel happens to be. Never
+ * true with [UiPreferences.popupShowBackground] off: there's no panel left
+ * for the blur to sit behind.
  */
 fun UiPreferences.usesWindowBlur(): Boolean =
-    popupBackground == PopupBackground.Translucent
+    popupShowBackground && popupBackground == PopupBackground.Translucent
 
 /**
  * Fallback alpha for a translucent panel when the platform didn't actually

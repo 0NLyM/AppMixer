@@ -79,6 +79,7 @@
     <string name="disc_hint">贴靠屏幕边缘时，圆盘会随着水平偏移增大从边缘向内逐渐显露，直至完整圆盘；位于中间一列时始终为完整圆盘。上下拖动即可调节音量。</string>
     <string name="popup_background">背景</string>
     <string name="popup_background_description">面板是磨砂效果（系统模糊）还是纯色填充，以及该效果的强弱。不会改变圆盘自身的圆环颜色。</string>
+    <string name="popup_show_background">显示背景</string>
     <string name="background_translucent">半透明</string>
     <string name="background_solid">纯色</string>
     <string name="popup_content">内容</string>
