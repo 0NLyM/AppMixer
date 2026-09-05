@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,10 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -58,27 +59,27 @@ import kotlin.math.roundToInt
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
 
-/** How far a bar's own shadow spreads past its track on every side. */
-private val SLIDER_SHADOW_SPREAD_DP = 6.dp
+/** How soft a bar-style panel's own shadow is. */
+private val PANEL_SHADOW_BLUR_DP = 14.dp
 
 /**
  * The disc paints its shadow as a radial gradient, since it's a circle; a
- * bar's track is a rounded rect instead, so its own shadow is a flat halo
- * the same shape as the track (corner radius grown by the same amount as
- * the spread, so the corners still read as rounded rather than squared
- * off), a fixed [SLIDER_SHADOW_SPREAD_DP] past the track on every side.
+ * bar panel is a rounded rect instead, so its own shadow is the same shape
+ * (drawn at the panel's own size and corner radius) with a real Gaussian
+ * blur to soften and spread it past the panel's edges, rather than a flat
+ * inflated duplicate of the shape -- which read as a smear pasted next to
+ * the track rather than a shadow lifting the whole panel. Wraps the whole
+ * panel (the ringer button included, not just the slider track), and is
+ * independent of the panel's own Translucent/Solid fill, so it stays put
+ * even when that fill is fully invisible.
  */
-internal fun Modifier.sliderShadow(color: Color, cornerRadius: Dp): Modifier =
-    drawBehind {
-        if (color.alpha <= 0f) return@drawBehind
-        val spreadPx = SLIDER_SHADOW_SPREAD_DP.toPx()
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(-spreadPx, -spreadPx),
-            size = Size(size.width + spreadPx * 2f, size.height + spreadPx * 2f),
-            cornerRadius = CornerRadius((cornerRadius.toPx() + spreadPx))
-        )
-    }
+internal fun Modifier.panelShadow(color: Color, cornerRadius: Dp): Modifier =
+    this
+        .blur(radius = PANEL_SHADOW_BLUR_DP, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+        .drawBehind {
+            if (color.alpha <= 0f) return@drawBehind
+            drawRoundRect(color = color, cornerRadius = CornerRadius(cornerRadius.toPx()))
+        }
 
 /**
  * Direction the expand swipe has to travel, away from the edge the popup
@@ -313,12 +314,26 @@ fun CollapsedVolumePopup(
         onExpand = onExpand
     )
 
-    Surface(
-        color = if (isDisc) discPanelColor else panelColor,
-        contentColor = MaterialTheme.colorScheme.onBackground,
-        shape = panelShape
-    ) {
-        when (preferences.popupStyle) {
+    Box {
+        // The disc paints its own shadow internally (VolumeDisc); a bar
+        // panel's shadow lives out here instead, behind the whole panel --
+        // the ringer button included, not just the slider -- so it stays
+        // put even when the panel's own Translucent/Solid fill is fully
+        // invisible.
+        if (!isDisc) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .panelShadow(shadow, cornerRadius)
+            )
+        }
+
+        Surface(
+            color = if (isDisc) discPanelColor else panelColor,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            shape = panelShape
+        ) {
+            when (preferences.popupStyle) {
             PopupStyle.HorizontalBar -> Row(
                 modifier = Modifier.padding(panelPadding),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -336,7 +351,6 @@ fun CollapsedVolumePopup(
                     modifier = Modifier
                         .width((200 * scale).dp)
                         .height(buttonSize)
-                        .sliderShadow(shadow, preferences.sliderCornerRadius.dp)
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
@@ -404,7 +418,6 @@ fun CollapsedVolumePopup(
                     modifier = Modifier
                         .width(buttonSize)
                         .height((220 * scale).dp)
-                        .sliderShadow(shadow, preferences.sliderCornerRadius.dp)
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
@@ -523,6 +536,7 @@ fun CollapsedVolumePopup(
                         onValueChange = { value -> setVolume(value.roundToInt()) }
                     )
                 }
+            }
             }
         }
     }

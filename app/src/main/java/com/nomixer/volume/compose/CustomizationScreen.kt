@@ -400,57 +400,70 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
     val shadow = MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
 
     when (preferences.popupStyle) {
-        PopupStyle.VerticalBar -> VerticalTrackSlider(
-            value = previewFraction,
-            onValueChange = {},
-            enabled = false,
-            modifier = Modifier
-                .width((64 * scale).dp)
-                .height((250 * scale).dp)
-                .sliderShadow(shadow, preferences.sliderCornerRadius.dp)
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (preferences.popupShowValue) {
-                    Text(
-                        text = previewValueText,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontSize = (11 * scale).sp,
-                        maxLines = 1,
-                        modifier = Modifier.align(
-                            if (preferences.centeredContent == PopupCenterContent.Value) {
-                                Alignment.Center
-                            } else {
-                                Alignment.TopCenter
-                            }
-                        )
-                    )
-                }
-                if (preferences.popupShowIcon) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .align(
-                                if (preferences.centeredContent == PopupCenterContent.Icon) {
+        PopupStyle.VerticalBar -> Box {
+            Box(
+                modifier = Modifier
+                    .width((64 * scale).dp)
+                    .height((250 * scale).dp)
+                    .panelShadow(shadow, preferences.popupCornerRadius.dp)
+            )
+            VerticalTrackSlider(
+                value = previewFraction,
+                onValueChange = {},
+                enabled = false,
+                modifier = Modifier
+                    .width((64 * scale).dp)
+                    .height((250 * scale).dp)
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (preferences.popupShowValue) {
+                        Text(
+                            text = previewValueText,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontSize = (11 * scale).sp,
+                            maxLines = 1,
+                            modifier = Modifier.align(
+                                if (preferences.centeredContent == PopupCenterContent.Value) {
                                     Alignment.Center
                                 } else {
-                                    Alignment.BottomCenter
+                                    Alignment.TopCenter
                                 }
                             )
-                            .size((20 * scale).dp)
-                    )
+                        )
+                    }
+                    if (preferences.popupShowIcon) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .align(
+                                    if (preferences.centeredContent == PopupCenterContent.Icon) {
+                                        Alignment.Center
+                                    } else {
+                                        Alignment.BottomCenter
+                                    }
+                                )
+                                .size((20 * scale).dp)
+                        )
+                    }
                 }
             }
         }
 
-        PopupStyle.HorizontalBar -> TrackSlider(
+        PopupStyle.HorizontalBar -> Box {
+            Box(
+                modifier = Modifier
+                    .width((240 * scale).dp)
+                    .height((56 * scale).dp)
+                    .panelShadow(shadow, preferences.popupCornerRadius.dp)
+            )
+            TrackSlider(
             value = previewFraction,
             onValueChange = {},
             enabled = false,
             modifier = Modifier
                 .width((240 * scale).dp)
                 .height((56 * scale).dp)
-                .sliderShadow(shadow, preferences.sliderCornerRadius.dp)
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 if (preferences.popupShowIcon) {
@@ -484,6 +497,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     )
                 }
             }
+        }
         }
 
         PopupStyle.Disc -> {
