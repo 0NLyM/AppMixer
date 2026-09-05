@@ -641,5 +641,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   way it used to, since the window being a little bigger now could
   nudge it slightly further in than before.
 
+## 2026-09-05 — 1.0.14
+
+- Found the actual reason Translucent didn't show on the disc: the
+  "Show shadow" backdrop gradient was painted fully opaque from the
+  disc's own center out to its edge (only fading out in the sliver
+  beyond that), sitting directly on top of the ring's own track
+  backing and diluting it before the gray tint and fill arcs were even
+  drawn. Solid's usually-high opacity survived that stack well enough
+  to still read through; Translucent's fixed, lower fallback alpha
+  barely did, reading as if nothing were there at all. The shadow now
+  stays fully transparent through the disc's own body and ring, only
+  appearing right at the ring's outer edge and fading out across the
+  sliver beyond it -- never overlapping the track itself.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
