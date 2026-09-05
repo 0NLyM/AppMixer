@@ -561,5 +561,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
 - The ringer switch not responding is a known, separate issue, deferred
   to a follow-up round at the reporter's own request.
 
+## 2026-09-05 — 1.0.10
+
+- The bar styles' "Show shadow" (added in 1.0.9) only ever drew behind
+  the slider track, never the ringer button, as a flat inflated rounded
+  rect with no soft falloff -- reading as a stray smear pasted next to
+  the bar rather than a shadow. It now wraps the whole panel, button
+  included, with a real Gaussian blur behind it instead, matching the
+  panel's own corner radius, and stays independent of whether the
+  panel's own Translucent/Solid fill is visible at all -- so both
+  pieces keep a consistent shadow even when that fill is fully
+  invisible.
+- The app volume list flicker and the disc's Translucent blur are still
+  open; both are being worked separately, one at a time.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
