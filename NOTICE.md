@@ -575,5 +575,29 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
 - The app volume list flicker and the disc's Translucent blur are still
   open; both are being worked separately, one at a time.
 
+## 2026-09-05 — 1.0.11
+
+- 1.0.10's bar-style shadow read as a boxy smear rather than a shadow,
+  and could sit a pixel off the panel's own edge -- both traceable to
+  hand-drawing a flat rounded rect and Gaussian-blurring it as a
+  separate layer trying to line up with the panel. Replaced it with
+  the platform's own elevation shadow (proper ambient falloff), tinted
+  with the same theme color instead of the default black, applied
+  directly to the panel itself rather than a separate layer -- so it's
+  always exactly aligned to whatever it's shadowing.
+- Added a "Show background" switch, next to Translucent/Solid. Off
+  removes the panel entirely instead of that same result being
+  reachable by dragging the opacity or blur slider to a corner, and
+  moves the shadow off the (now absent) panel onto the ringer button
+  and slider individually, each shaped to its own outline.
+- With "Show background" covering "no background", the Solid opacity
+  and Translucent blur-radius sliders no longer go down to 0 -- their
+  floor is 1 now, closing off the same state being reachable two
+  different ways.
+- The launcher icon is about 10% smaller, with a bit more white margin
+  around it.
+- The app volume list flicker and the disc's Translucent blur are
+  still open; both are being worked separately, one at a time.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
