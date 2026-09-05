@@ -523,5 +523,43 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   sections with a one-line description of what each section's toggles
   actually do, instead of one long undivided list.
 
+## 2026-09-05 — 1.0.9
+
+- "Show shadow" is no longer disc-only: the vertical and horizontal bar
+  styles now get the same light shadow, drawn as a soft halo behind their
+  own slider track (shape-matched to its corner radius) instead of the
+  disc's radial gradient. One toggle, moved into the general section,
+  covers all three styles.
+- The disc's Translucent blur was showing through its outer margin and the
+  decorative shadow-fade sliver around the ring, not just the ring's own
+  track -- the actual cause of it reading as "sticking out" and sitting
+  underneath the shadow. The disc's panel is now always fully opaque in
+  Translucent mode, and the ring cuts a hole shaped exactly like its own
+  track -- never the sliver past it -- only when the panel is genuinely
+  translucent and the system actually granted the blur. The filled
+  (white) portion of the ring still draws opaquely on top, so a full
+  volume level reads as fully covered; the unfilled portion tints
+  whatever's behind it, real blur or a plain backing, with the same light
+  gray wash either way.
+- Translucent and Solid shared one opacity value, so adjusting one bled
+  into the other: Solid at 100% left a 40%-opaque veil sitting over the
+  blur after switching to Translucent, and Solid at 0% could still show
+  blur that had nothing to do with the Solid mode it was supposedly in.
+  The two are fully separate now -- Solid only ever reads its own
+  opacity, Translucent paints nothing of its own once the blur lands and
+  a fixed fallback otherwise, with no crossover between the two.
+- Root-caused the app volume list still flickering after 1.0.8's sort
+  fix: the code that reacts to playback changes cleared every app's
+  "is playing" state and then re-added the still-active ones as two
+  separate steps, so a screen redraw landing in between them could catch
+  the whole active list looking momentarily empty -- and that reaction
+  fires on far more than an app starting or stopping, including plain
+  volume changes. The two steps are now one atomic update, so a redraw
+  can only ever see the state before or the state after, never a state
+  in between. Diagnosed from the code, not reproduced live on a device --
+  flag it if the flicker is still there.
+- The ringer switch not responding is a known, separate issue, deferred
+  to a follow-up round at the reporter's own request.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
