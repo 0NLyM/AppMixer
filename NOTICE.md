@@ -599,5 +599,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
 - The app volume list flicker and the disc's Translucent blur are
   still open; both are being worked separately, one at a time.
 
+## 2026-09-05 — 1.0.12
+
+- The disc's Solid/Translucent backing used to fill the whole disc
+  bounding circle -- margin and shadow-fade sliver included, not just
+  the ring's own track -- so it read as a solid disc that swamped the
+  separate "Show shadow" glow and clearly overshot the white volume
+  ring. It's now painted as a plain stroke confined to the ring's own
+  annulus, never wider than the track itself; the disc's surrounding
+  panel is always fully transparent, exactly as it already looked with
+  the background switch off. The light gray tint on the ring's unfilled
+  portion is unaffected and always stays.
+- "Show background" (1.0.11) only ever applied to the collapsed popup.
+  The expanded, full-app mixer now respects it too: with the switch
+  off, its panel goes fully transparent and each individual slider
+  (both app volume rows and the system stream sliders) picks up its
+  own soft shadow instead, the same way the collapsed popup's ringer
+  button and slider already do.
+- The app volume list flicker is still open, being worked separately.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
