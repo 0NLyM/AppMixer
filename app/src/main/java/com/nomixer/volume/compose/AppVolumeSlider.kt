@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -24,8 +25,12 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.App
 import com.nomixer.volume.icons.Hook
 import com.nomixer.volume.icons.HookOff
+import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Typography
 import kotlin.math.roundToInt
+
+/** Same elevation the expanded mixer's per-element shadows use elsewhere. */
+private val APP_SLIDER_SHADOW_ELEVATION_DP = 8.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +38,8 @@ fun AppVolumeSlider(
     app: App,
     showOptions: Boolean,
     enableHide: Boolean = true,
+    /** Painted only when the mixer's own panel background is off. */
+    shadowColor: Color = Color.Transparent,
     onChange: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -42,7 +49,13 @@ fun AppVolumeSlider(
         verticalAlignment = Alignment.CenterVertically
     ) {
         TrackSlider(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .softShadow(
+                    shadowColor,
+                    RoundedCornerShape(LocalSliderCornerRadius.current),
+                    APP_SLIDER_SHADOW_ELEVATION_DP
+                ),
             value = app.volume,
             onValueChange = { value ->
                 app.volume = value

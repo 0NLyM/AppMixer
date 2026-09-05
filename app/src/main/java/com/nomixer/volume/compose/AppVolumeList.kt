@@ -28,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -45,6 +46,7 @@ fun LazyListScope.group(
     header: @Composable () -> String,
     apps: List<App>,
     enableHide: Boolean = true,
+    shadowColor: Color = Color.Transparent,
     onChange: (() -> Unit)? = null,
     onHeaderClick: (() -> Unit)? = null
 ) {
@@ -83,7 +85,14 @@ fun LazyListScope.group(
             items = apps.sortedWith(App.comparator), key = { app -> app.packageName }) { app ->
             // Apps move between groups as they start and stop playing;
             // animateItem slides them there instead of teleporting.
-            AppVolumeSlider(app, true, enableHide, onChange, Modifier.animateItem())
+            AppVolumeSlider(
+                app,
+                true,
+                enableHide,
+                shadowColor = shadowColor,
+                onChange = onChange,
+                modifier = Modifier.animateItem()
+            )
         }
     }
 }
@@ -95,6 +104,7 @@ fun AppVolumeList(
     apps: MutableCollection<App>,
     showEmpty: Boolean = false,
     showAll: Boolean,
+    shadowColor: Color = Color.Transparent,
     onChange: (() -> Unit)? = null,
     onShowAll: (() -> Unit)? = null,
     content: (LazyListScope.() -> Unit)? = null
@@ -178,6 +188,7 @@ fun AppVolumeList(
                     AppVolumeSlider(
                         app,
                         showOptions = false,
+                        shadowColor = shadowColor,
                         onChange = onChange,
                         modifier = Modifier.animateItem()
                     )
@@ -205,7 +216,14 @@ fun AppVolumeList(
         }
 
         groups.forEach { group ->
-            group({ group.name }, group.apps, enableHide = group.enableHide, onChange = onChange, onHeaderClick = { selectedGroup = group.name })
+            group(
+                { group.name },
+                group.apps,
+                enableHide = group.enableHide,
+                shadowColor = shadowColor,
+                onChange = onChange,
+                onHeaderClick = { selectedGroup = group.name }
+            )
         }
     }
 

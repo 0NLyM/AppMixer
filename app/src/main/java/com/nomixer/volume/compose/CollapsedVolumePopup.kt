@@ -43,7 +43,6 @@ import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
-import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
@@ -262,9 +261,11 @@ fun CollapsedVolumePopup(
     // button and slider themselves instead (below).
     val showBackground = preferences.popupShowBackground
 
-    // One background object for every style now: this panel, with the
-    // system blur behind it in translucent mode. Neither one touches the
-    // disc's own ring/track colors, which stay whatever the palette says.
+    // One background value for every style now, bars and disc alike: the
+    // bars paint it across their whole panel, while the disc instead uses
+    // it only as the backing directly underneath its own ring track (see
+    // the Disc branch below) -- never the margin or the shadow-fade sliver
+    // beyond it, which stay exactly as they look with the background off.
     //
     // Animated, so switching translucent/solid or nudging the opacity
     // bleeds from one to the other rather than cutting.
@@ -279,26 +280,6 @@ fun CollapsedVolumePopup(
         animationSpec = Motion.ColorShift,
         label = "popupPanel"
     )
-
-    // The disc reveals the system blur through its own ring's track, not
-    // through its surrounding panel margin -- so in Translucent mode that
-    // margin is fully opaque, same as the disc's own backing, instead of
-    // sharing the bars' panel-wide translucency and leaking blur past the
-    // ring into the margin and the shadow-fade sliver around it.
-    val discPanelColor by animateColorAsState(
-        targetValue = when {
-            !showBackground -> Color.Transparent
-            isDisc && preferences.popupBackground == PopupBackground.Translucent ->
-                MaterialTheme.colorScheme.background
-            else -> panelColor
-        },
-        animationSpec = Motion.ColorShift,
-        label = "discPanel"
-    )
-    val discRevealBlurInTrack = isDisc &&
-        showBackground &&
-        preferences.popupBackground == PopupBackground.Translucent &&
-        blurLanded
 
     // The popup's own light shadow, painted right behind its main shape --
     // the disc's ring (inside VolumeDisc itself), the whole bar panel when
@@ -348,7 +329,12 @@ fun CollapsedVolumePopup(
 
     Surface(
         modifier = panelShadowModifier,
-        color = if (isDisc) discPanelColor else panelColor,
+        // The disc's own panel never paints a background of its own -- its
+        // margin and shadow-fade sliver always stay exactly as they look
+        // with the background off; only the ring's own track (inside
+        // VolumeDisc, below) ever picks up Solid's tint or Translucent's
+        // blur reveal.
+        color = if (isDisc) Color.Transparent else panelColor,
         contentColor = MaterialTheme.colorScheme.onBackground,
         shape = panelShape
     ) {
@@ -524,8 +510,13 @@ fun CollapsedVolumePopup(
                         showDots = preferences.discShowDots,
                         tickCornerPercent = preferences.discTickCornerPercent,
                         backdropColor = shadow,
-                        opaqueBaseColor = discPanelColor,
-                        revealBlurInTrack = discRevealBlurInTrack,
+                        // The same value the bars paint across their whole
+                        // panel, here confined by VolumeDisc itself to the
+                        // ring's own track -- Solid's opacity, Translucent's
+                        // dim fallback, or fully transparent once the real
+                        // system blur has landed, revealing it there and
+                        // nowhere else.
+                        trackBackingColor = panelColor,
                         icon = if (preferences.popupShowIcon) volumeIcon else null,
                         label = if (preferences.popupShowValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer

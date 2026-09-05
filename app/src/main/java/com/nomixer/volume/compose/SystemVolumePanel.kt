@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -55,6 +56,8 @@ fun SystemVolumePanel(
     allowVisibilityConfig: Boolean,
     isSliderVisible: (String) -> Boolean,
     onSliderVisibilityChange: (String, Boolean) -> Unit,
+    /** Painted on each slider only when the mixer's own panel background is off. */
+    shadowColor: Color = Color.Transparent,
     onChange: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -83,6 +86,7 @@ fun SystemVolumePanel(
                     icon = Icons.Default.PhoneInTalk,
                     name = stringResource(R.string.stream_call),
                     audioManager = audioManager,
+                    shadowColor = shadowColor,
                     footer = {
                         SliderVisibilityFooter(
                             sliderId = SystemSliderIds.Call,
@@ -103,6 +107,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.VolumeUp,
                 name = stringResource(R.string.stream_media),
                 audioManager = audioManager,
+                shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(
                         sliderId = SystemSliderIds.Media,
@@ -122,6 +127,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.RingVolume,
                 name = stringResource(R.string.stream_ring),
                 audioManager = audioManager,
+                shadowColor = shadowColor,
                 footer = {
                     RingFooter(
                         audioManager = audioManager,
@@ -142,6 +148,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.Alarm,
                 name = stringResource(R.string.stream_alarm),
                 audioManager = audioManager,
+                shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(
                         sliderId = SystemSliderIds.Alarm,
@@ -161,6 +168,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.NotificationsNone,
                 name = stringResource(R.string.stream_notification),
                 audioManager = audioManager,
+                shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(
                         sliderId = SystemSliderIds.Notification,

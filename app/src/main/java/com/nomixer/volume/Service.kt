@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.AbstractComposeView
@@ -58,6 +59,8 @@ import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
+import com.nomixer.volume.compose.softShadow
+import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.system.ActivityTaskManagerProxy
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
@@ -334,13 +337,30 @@ class Service : AccessibilityService() {
                     }
 
                     // Animated, so switching translucent/solid or nudging the
-                    // opacity bleeds from one background to the other.
+                    // opacity bleeds from one background to the other. Same
+                    // switch as the collapsed popup: with the background off
+                    // there's no panel at all, and the shadow below moves
+                    // onto each slider individually instead.
+                    val showBackground = preferences.popupShowBackground
                     val panelColor by animateColorAsState(
-                        targetValue = MaterialTheme.colorScheme.background.copy(
-                            alpha = preferences.paintedPanelAlpha(blurLandedState)
-                        ),
+                        targetValue = if (!showBackground) {
+                            Color.Transparent
+                        } else {
+                            MaterialTheme.colorScheme.background.copy(
+                                alpha = preferences.paintedPanelAlpha(blurLandedState)
+                            )
+                        },
                         animationSpec = Motion.ColorShift,
                         label = "mixerPanel"
+                    )
+                    val sliderShadowColor by animateColorAsState(
+                        targetValue = if (showBackground) {
+                            Color.Transparent
+                        } else {
+                            MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
+                        },
+                        animationSpec = Motion.ColorShift,
+                        label = "mixerSliderShadow"
                     )
 
                     // One animation for "a panel appeared", replayed when
@@ -397,6 +417,7 @@ class Service : AccessibilityService() {
                                         AppVolumeList(
                                             apps = manager.apps.values,
                                             showAll = false,
+                                            shadowColor = sliderShadowColor,
                                             onChange = this@Service.handler::startIdleTimer
                                         ) {
                                             item("system_volume_panel") {
@@ -408,6 +429,7 @@ class Service : AccessibilityService() {
                                                     allowVisibilityConfig = false,
                                                     isSliderVisible = manager::isSystemSliderVisible,
                                                     onSliderVisibilityChange = manager::setSystemSliderVisible,
+                                                    shadowColor = sliderShadowColor,
                                                     onChange = this@Service.handler::startIdleTimer
                                                 )
                                             }
