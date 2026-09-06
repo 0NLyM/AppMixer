@@ -94,17 +94,6 @@ private fun PopupAnchor.transformOrigin(): TransformOrigin {
     return TransformOrigin(x, y)
 }
 
-/**
- * Reserved space around the whole popup so a real elevation shadow
- * ([com.nomixer.volume.compose.softShadow]) has room to render: the
- * overlay window is WRAP_CONTENT, sized to exactly the Compose content's
- * own layout bounds, and a shadow drawn outside those bounds with nothing
- * reserved around them is clipped off at the window's edge rather than
- * shown. Comfortably wider than either shadow elevation this app uses
- * (8dp/12dp) so the full falloff always fits.
- */
-private val POPUP_SHADOW_MARGIN_DP = 20.dp
-
 @SuppressLint("AccessibilityPolicy")
 class Service : AccessibilityService() {
     companion object {
@@ -240,6 +229,19 @@ class Service : AccessibilityService() {
             private var blurredCornerRadiusPx = -1f
 
             /**
+             * Collapsed style and expanded/collapsed state the live blur
+             * drawable was built for. The drawable is set once as the
+             * view's `background`, covering whatever bounds the view has
+             * *at that moment* -- switching from one collapsed style to
+             * another (vertical bar to horizontal bar, say) resizes the
+             * view without necessarily changing the radius or corner
+             * radius, so nothing else here would have caught the resize
+             * and rebuilt it.
+             */
+            private var blurredStyle: PopupStyle? = null
+            private var blurredExpanded = false
+
+            /**
              * The blur *is* the panel in translucent mode, so the composable
              * draws no fill of its own; in solid mode there's no blur and the
              * composable's panel is the only background. Either way there's
@@ -256,6 +258,7 @@ class Service : AccessibilityService() {
                         blurred = false
                         blurredRadius = -1
                         blurredCornerRadiusPx = -1f
+                        blurredStyle = null
                     }
                     blurLandedState = false
                     return
@@ -276,11 +279,16 @@ class Service : AccessibilityService() {
                     prefs.popupCornerRadius * density
                 }
 
-                // A live drawable is kept unless the radius or the corner
-                // radius changed: the slider has to be felt while it's
-                // being dragged, and either one can only be set when the
-                // drawable is built.
-                if (blurred && blurredRadius == radius && blurredCornerRadiusPx == cornerRadiusPx) {
+                // A live drawable is kept unless the radius, the corner
+                // radius, or the collapsed style/expanded state changed:
+                // the slider has to be felt while it's being dragged (so
+                // radius alone can't force a rebuild on every frame), but
+                // a style switch resizes the view underneath the same
+                // drawable, which needs a fresh one even when the radius
+                // and corner radius happen to match.
+                if (blurred && blurredRadius == radius && blurredCornerRadiusPx == cornerRadiusPx &&
+                    blurredStyle == prefs.popupStyle && blurredExpanded == expanded
+                ) {
                     blurLandedState = true
                     return
                 }
@@ -294,6 +302,8 @@ class Service : AccessibilityService() {
                     blurred = true
                     blurredRadius = radius
                     blurredCornerRadiusPx = cornerRadiusPx
+                    blurredStyle = prefs.popupStyle
+                    blurredExpanded = expanded
                     blurLandedState = true
                 } else {
                     blurLandedState = false
@@ -401,25 +411,14 @@ class Service : AccessibilityService() {
                         }
 
                         Box(
-                            // The window is sized WRAP_CONTENT to exactly
-                            // this box's own layout bounds -- a real
-                            // elevation shadow (softShadow, below) draws
-                            // outside those bounds, so with no margin
-                            // reserved here it had nowhere left to render
-                            // and was silently clipped off at the window's
-                            // own edge. This padding is pure reserved space
-                            // for that overflow; it isn't part of the
-                            // panel's own visible padding.
-                            modifier = Modifier
-                                .padding(POPUP_SHADOW_MARGIN_DP)
-                                .graphicsLayer {
-                                    val grown = 0.9f + 0.1f * appear.value
-                                    alpha = appear.value
-                                    scaleX = grown
-                                    scaleY = grown
-                                    // Grows out of the screen edge it hugs.
-                                    transformOrigin = origin
-                                }
+                            modifier = Modifier.graphicsLayer {
+                                val grown = 0.9f + 0.1f * appear.value
+                                alpha = appear.value
+                                scaleX = grown
+                                scaleY = grown
+                                // Grows out of the screen edge it hugs.
+                                transformOrigin = origin
+                            }
                         ) {
                             if (expanded) {
                                 Surface(
