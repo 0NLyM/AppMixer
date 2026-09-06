@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -156,11 +157,28 @@ fun TrackSlider(
                         return@drawWithContent
                     }
 
-                    drawRoundRect(
-                        color = fillColor,
-                        size = Size(edge, size.height),
-                        cornerRadius = CornerRadius(fillCornerPx)
-                    )
+                    // The trailing edge (against the track's own start) stays
+                    // at the track's usual small corner; the leading edge --
+                    // the one that actually moves as the level changes --
+                    // gets a full half-height cap instead, so the fill reads
+                    // as a rounded bar growing rather than a rectangle with a
+                    // squared-off front.
+                    val leadingRadius = (size.height / 2f).coerceAtMost(edge)
+                    val fillPath = Path().apply {
+                        addRoundRect(
+                            RoundRect(
+                                left = 0f,
+                                top = 0f,
+                                right = edge,
+                                bottom = size.height,
+                                topLeftCornerRadius = CornerRadius(fillCornerPx),
+                                bottomLeftCornerRadius = CornerRadius(fillCornerPx),
+                                topRightCornerRadius = CornerRadius(leadingRadius),
+                                bottomRightCornerRadius = CornerRadius(leadingRadius)
+                            )
+                        )
+                    }
+                    drawPath(fillPath, color = fillColor)
                     clipRect(right = edge) {
                         this@drawWithContent.drawContent()
                     }

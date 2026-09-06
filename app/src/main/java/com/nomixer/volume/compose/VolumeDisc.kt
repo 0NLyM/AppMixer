@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.nomixer.volume.data.DISC_INSET
+import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.cos
@@ -37,9 +39,6 @@ import kotlin.math.sin
 
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
 private const val TICK_COUNT = 24
-
-/** How much of its box the disc itself takes; the rest is shadow fade. */
-private const val DISC_INSET = 0.86f
 
 /**
  * A volume disc: always a complete circle, positioned by the popup window
@@ -168,7 +167,7 @@ fun VolumeDisc(
             val radius = outerRadius * DISC_INSET
             val center = Offset(size.width / 2f, size.height / 2f)
 
-            val ringWidth = radius * 0.14f
+            val ringWidth = radius * DISC_RING_WIDTH_FRACTION
             val ringRadius = radius - ringWidth / 2f - 1.dp.toPx()
             val arcTopLeft = Offset(center.x - ringRadius, center.y - ringRadius)
             val arcSize = Size(ringRadius * 2f, ringRadius * 2f)

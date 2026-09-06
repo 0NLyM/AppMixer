@@ -518,7 +518,14 @@ fun CollapsedVolumePopup(
                         gestureModifier = expandSwipeModifier,
                         showDots = preferences.discShowDots,
                         tickCornerPercent = preferences.discTickCornerPercent,
-                        backdropColor = shadow,
+                        // Gated by showBackground too, not just the shadow
+                        // switch alone: unlike a bar (which moves this same
+                        // shadow onto the ringer button and slider once its
+                        // panel is off), the disc has nowhere else to move it
+                        // to, so with the background off it simply goes away
+                        // instead of leaving the halo as the one remaining
+                        // trace of a panel the user just turned off.
+                        backdropColor = if (showBackground) shadow else Color.Transparent,
                         // The same value the bars paint across their whole
                         // panel, here confined by VolumeDisc itself to the
                         // ring's own track -- Solid's opacity, Translucent's

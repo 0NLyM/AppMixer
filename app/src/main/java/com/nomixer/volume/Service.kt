@@ -10,6 +10,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Outline
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.media.AudioManager
 import android.os.Build
@@ -21,10 +23,12 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -63,10 +67,13 @@ import com.nomixer.volume.compose.softShadow
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.system.ActivityTaskManagerProxy
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
+import com.nomixer.volume.data.DISC_INSET
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
+import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupStyle
+import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.data.wantsRealWindowBlur
@@ -93,6 +100,56 @@ private fun PopupAnchor.transformOrigin(): TransformOrigin {
         else -> 0.5f
     }
     return TransformOrigin(x, y)
+}
+
+/**
+ * A plain native view holding nothing but the system's cross-window blur
+ * drawable, clipped by its own outline to exactly the annulus VolumeDisc's
+ * ring track occupies. The blur drawable itself can only ever be a rounded
+ * rect (see [Service.applyWindowBlur]) -- shaping the *reveal* into a ring
+ * instead takes clipping at the view layer, which an [Outline] can do with
+ * an arbitrary path. Sized to a square spanning exactly the ring's own
+ * outer edge and left otherwise square/invisible until [setRingRadii] gives
+ * it real geometry, this sits as a sibling behind the popup's own
+ * ComposeView (see [Service.createView]) so the disc's Compose content --
+ * ring stroke, ticks, icon, button -- draws in front of it undisturbed.
+ */
+private class DiscRingBlurView(context: Context) : View(context) {
+    private var innerRadiusPx = 0f
+    private var outerRadiusPx = 0f
+
+    init {
+        clipToOutline = true
+        outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                if (outerRadiusPx <= 0f) {
+                    outline.setEmpty()
+                    return
+                }
+
+                val cx = view.width / 2f
+                val cy = view.height / 2f
+                val path = Path().apply {
+                    fillType = Path.FillType.EVEN_ODD
+                    addCircle(cx, cy, outerRadiusPx, Path.Direction.CW)
+                    if (innerRadiusPx > 0f) {
+                        addCircle(cx, cy, innerRadiusPx, Path.Direction.CW)
+                    }
+                }
+                outline.setPath(path)
+            }
+        }
+    }
+
+    /** Both in px, in this view's own local coordinates. */
+    fun setRingRadii(innerRadius: Float, outerRadius: Float) {
+        if (innerRadius == innerRadiusPx && outerRadius == outerRadiusPx) {
+            return
+        }
+        innerRadiusPx = innerRadius
+        outerRadiusPx = outerRadius
+        invalidateOutline()
+    }
 }
 
 @SuppressLint("AccessibilityPolicy")
@@ -132,10 +189,13 @@ class Service : AccessibilityService() {
                 animateAlpha(layoutParams.alpha, 0f, ANIMATION_DURATION) {
                     if (!viewVisible) {
                         Log.i(TAG, "remove view")
-                        view!!.background = null
+                        composeContentView?.background = null
+                        discBlurView?.background = null
                         lifecycle?.currentState = Lifecycle.State.DESTROYED
                         windowManager.removeView(view)
                         view = null
+                        composeContentView = null
+                        discBlurView = null
                     }
                 }
                 viewVisible = false
@@ -179,8 +239,22 @@ class Service : AccessibilityService() {
 
     private var lifecycle: LifecycleRegistry? = null
 
+    /**
+     * The ring-shaped blur backing for a collapsed disc's own track -- a
+     * sibling of the ComposeView returned by [createView], never the
+     * ComposeView itself, so its outline clip never touches the disc's own
+     * icon/button/ticks. Null whenever there's no popup window up at all.
+     */
+    private var discBlurView: DiscRingBlurView? = null
+
+    /** The ComposeView itself, i.e. [createView]'s own return value's inner child -- see [discBlurView]. */
+    private var composeContentView: View? = null
+
     private fun createView(): View {
-        return object : AbstractComposeView(this) {
+        val ringView = DiscRingBlurView(this)
+        discBlurView = ringView
+
+        val composeView = object : AbstractComposeView(this) {
             init {
                 val owner = object : SavedStateRegistryOwner {
                     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -242,17 +316,31 @@ class Service : AccessibilityService() {
             private var blurredStyle: PopupStyle? = null
             private var blurredExpanded = false
 
+            /** Same idea as [blurred], for the separate ring-shaped [discBlurView] instead. */
+            private var ringBlurred = false
+
+            /** Outer radius (px) the ring blur drawable was built with -- see [blurredRadius]. */
+            private var blurredOuterRadius = -1f
+
             /**
              * The blur *is* the panel in translucent mode, so the composable
              * draws no fill of its own; in solid mode there's no blur and the
-             * composable's panel is the only background. Either way there's
-             * one object, at the configured corner radius -- matching
-             * whatever shape the Compose panel itself is using underneath,
-             * disc included, so the window-level blur drawable's own corners
-             * don't show through past the (differently-rounded) panel it's
-             * meant to sit flush behind.
+             * composable's panel is the only background.
+             *
+             * Bars and the expanded mixer get one object, at the configured
+             * corner radius matching whatever shape the Compose panel itself
+             * is using underneath, set directly as this view's own
+             * background. A collapsed disc never touches this view's own
+             * background at all -- that would blur its margin and
+             * shadow-fade sliver right along with the ring -- and instead
+             * sizes and shapes [discBlurView], a separate sibling view, to
+             * exactly the ring's own annulus, leaving that view's own
+             * outline to clip the reveal into a ring.
              */
             fun applyWindowBlur(wanted: Boolean, expanded: Boolean = false) {
+                val prefs = manager.uiPreferences
+                val isCollapsedDisc = !expanded && prefs.popupStyle == PopupStyle.Disc
+
                 if (!wanted) {
                     if (blurred) {
                         background = null
@@ -261,24 +349,97 @@ class Service : AccessibilityService() {
                         blurredCornerRadiusPx = -1f
                         blurredStyle = null
                     }
+                    if (ringBlurred) {
+                        this@Service.discBlurView?.let {
+                            it.background = null
+                            it.setRingRadii(0f, 0f)
+                        }
+                        ringBlurred = false
+                        blurredOuterRadius = -1f
+                    }
                     blurLandedState = false
                     return
                 }
 
-                val prefs = manager.uiPreferences
                 val density = resources.displayMetrics.density
                 val radius = prefs.popupBlurRadius
-                // The expanded mixer is a rounded rectangle whatever the
-                // collapsed style is, and uses popupCornerRadius directly
-                // for its own Surface -- only the *collapsed* disc gets the
-                // derived, disc-hugging radius instead, mirroring
-                // CollapsedVolumePopup's own panel shape.
-                val cornerRadiusPx = if (!expanded && prefs.popupStyle == PopupStyle.Disc) {
-                    val discRadiusDp = 220f * prefs.popupScale / 2f
-                    (discRadiusDp + DISC_PANEL_MARGIN_DP) * density
-                } else {
-                    prefs.popupCornerRadius * density
+
+                if (isCollapsedDisc) {
+                    // Any stray full-panel blur left on this view from a
+                    // previous bar or expanded state has to go: the disc's
+                    // own blur lives entirely on the ring view instead.
+                    if (blurred) {
+                        background = null
+                        blurred = false
+                        blurredRadius = -1
+                        blurredCornerRadiusPx = -1f
+                        blurredStyle = null
+                    }
+
+                    // Same geometry VolumeDisc's own Canvas works out for
+                    // the ring track, in px instead of Dp -- see DISC_INSET
+                    // and DISC_RING_WIDTH_FRACTION's own doc comments for
+                    // why the two have to agree exactly.
+                    val diameterPx = 220f * prefs.activeScale() * density
+                    val outerRadius = (diameterPx / 2f) * DISC_INSET
+                    val ringWidth = outerRadius * DISC_RING_WIDTH_FRACTION
+                    val ringRadius = outerRadius - ringWidth / 2f - density
+                    val outerRingRadius = ringRadius + ringWidth / 2f
+                    val innerRingRadius = ringRadius - ringWidth / 2f
+
+                    if (ringBlurred && blurredRadius == radius && blurredOuterRadius == outerRingRadius) {
+                        blurLandedState = true
+                        return
+                    }
+
+                    val ringView = this@Service.discBlurView
+                    @Suppress("SpellCheckingInspection") if (ringView != null &&
+                        windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated &&
+                        Build.MANUFACTURER != "realme"
+                    ) {
+                        val side = (outerRingRadius * 2f).roundToInt()
+                        ringView.layoutParams?.let { params ->
+                            if (params.width != side || params.height != side) {
+                                params.width = side
+                                params.height = side
+                                ringView.layoutParams = params
+                            }
+                        }
+                        ringView.setRingRadii(innerRingRadius, outerRingRadius)
+                        ringView.background =
+                            Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
+                                call("setBlurRadius", radius)
+                                call("setCornerRadius", outerRingRadius)
+                            }.get()
+                        ringBlurred = true
+                        blurredRadius = radius
+                        blurredOuterRadius = outerRingRadius
+                        blurLandedState = true
+                    } else {
+                        if (ringBlurred) {
+                            ringView?.background = null
+                            ringView?.setRingRadii(0f, 0f)
+                            ringBlurred = false
+                            blurredOuterRadius = -1f
+                        }
+                        blurLandedState = false
+                    }
+                    return
                 }
+
+                if (ringBlurred) {
+                    this@Service.discBlurView?.let {
+                        it.background = null
+                        it.setRingRadii(0f, 0f)
+                    }
+                    ringBlurred = false
+                    blurredOuterRadius = -1f
+                }
+
+                // The expanded mixer is always a plain rounded rectangle,
+                // whatever the collapsed style underneath it is, and uses
+                // popupCornerRadius directly for its own Surface.
+                val cornerRadiusPx = prefs.popupCornerRadius * density
 
                 // A live drawable is kept unless the radius, the corner
                 // radius, or the collapsed style/expanded state changed:
@@ -349,13 +510,19 @@ class Service : AccessibilityService() {
                     // Expanding always switches to the mixer's own rounded
                     // rectangle, so the blur drawable's corner radius has to
                     // be rebuilt for it regardless of the collapsed style.
+                    // Scale is in here too: a collapsed disc's own blur
+                    // lives on a separate ring view sized directly off it
+                    // (see applyWindowBlur), which nothing else here would
+                    // otherwise catch a resize of.
                     LaunchedEffect(
                         expanded,
                         preferences.popupBackground,
                         preferences.discPopupBackground,
                         preferences.popupStyle,
                         preferences.popupBlurRadius,
-                        preferences.discPopupBlurRadius
+                        preferences.discPopupBlurRadius,
+                        preferences.popupScale,
+                        preferences.discPopupScale
                     ) {
                         applyWindowBlur(preferences.wantsRealWindowBlur(expanded), expanded = expanded)
                     }
@@ -488,6 +655,24 @@ class Service : AccessibilityService() {
                     }
                 }
             }
+        }
+
+        composeContentView = composeView
+
+        return FrameLayout(this).apply {
+            // Added first, so it paints behind the ComposeView -- the ring
+            // blur (when there's one to show at all; empty-outlined and
+            // invisible otherwise) has to sit under the disc's own Compose
+            // content, never over it.
+            addView(ringView, FrameLayout.LayoutParams(0, 0, Gravity.CENTER))
+            addView(
+                composeView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER
+                )
+            )
         }
     }
 

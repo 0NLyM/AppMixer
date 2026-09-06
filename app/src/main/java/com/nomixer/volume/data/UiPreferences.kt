@@ -48,6 +48,19 @@ const val DISC_EDGE_GAP_DP = 8
  */
 const val DISC_PANEL_MARGIN_DP = 16
 
+/**
+ * How much of the disc's own box the visible disc occupies -- the rest is
+ * shadow fade. Shared between VolumeDisc's own Canvas and the real
+ * overlay's separate ring-shaped blur view (Service.kt), so both agree on
+ * exactly where the ring track sits without the platform's own blur
+ * drawable (a plain rounded rect, never a ring) ever having to know its
+ * shape -- that view carves the annulus out with its own outline instead.
+ */
+const val DISC_INSET = 0.86f
+
+/** The ring track's own width, as a fraction of the disc's visible radius -- same sharing as [DISC_INSET]. */
+const val DISC_RING_WIDTH_FRACTION = 0.14f
+
 /** Shape the collapsed (volume-key) popup takes. */
 enum class PopupStyle {
     VerticalBar, HorizontalBar, Disc
@@ -290,19 +303,20 @@ fun UiPreferences.usesWindowBlur(): Boolean =
 /**
  * Whether the *real* overlay should actually request the platform's
  * background-blur drawable, as opposed to just wanting a translucent look
- * ([usesWindowBlur]). The drawable is a single rounded rect sized to the
- * whole overlay view -- there's no way to shape it as a ring -- so behind a
- * collapsed disc it would blur the entire panel, margin and shadow-fade
- * sliver included, not just the ring's own track. Rather than let that leak
- * past the ring (which [popupShowBackground] and Solid both keep confined
- * to), the collapsed disc never asks for the real drawable at all and
- * always falls back to Translucent's fixed dim scrim -- painted, like
- * Solid, only inside the ring by [paintedPanelAlpha]. The expanded mixer is
- * always a plain rounded rect regardless of the collapsed style, so it has
- * no such leak and keeps the real blur.
+ * ([usesWindowBlur]).
+ *
+ * The drawable itself is always a plain rounded rect -- there's no way to
+ * shape it as a ring directly -- so a collapsed disc doesn't set it as the
+ * background of its own panel-sized view (that would blur the margin and
+ * shadow-fade sliver right along with the ring's own track). Instead it
+ * lives on a separate native view, sized and positioned to exactly the
+ * ring's own annulus and clipped to that shape by its own outline, sitting
+ * behind the disc's Compose content (see Service.kt's blur handling). The
+ * expanded mixer, and every bar style, stay on the simple single-view path:
+ * always a plain rounded rect regardless of the collapsed style, so there's
+ * no such leak to confine in the first place.
  */
-fun UiPreferences.wantsRealWindowBlur(expanded: Boolean): Boolean =
-    usesWindowBlur() && (expanded || popupStyle != PopupStyle.Disc)
+fun UiPreferences.wantsRealWindowBlur(expanded: Boolean): Boolean = usesWindowBlur()
 
 /**
  * Fallback alpha for a translucent panel when the platform didn't actually

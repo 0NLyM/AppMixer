@@ -584,9 +584,23 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     centerContentOffsetX = centerContentOffsetX,
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
-                    backdropColor = MaterialTheme.colorScheme.background.copy(
-                        alpha = preferences.shadowAlpha()
-                    ),
+                    // Mirrors CollapsedVolumePopup's own gating: with no real
+                    // window behind this preview there's no blur to land, so
+                    // Translucent always previews as the dim fallback -- but
+                    // background off must still read as fully transparent,
+                    // same as the real popup.
+                    backdropColor = if (showBackground) {
+                        MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
+                    } else {
+                        Color.Transparent
+                    },
+                    trackBackingColor = if (showBackground) {
+                        MaterialTheme.colorScheme.background.copy(
+                            alpha = preferences.paintedPanelAlpha(blurLanded = false)
+                        )
+                    } else {
+                        Color.Transparent
+                    },
                     icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (showValue && !besideButton) previewValueText else null,
                     centerContent = if (showRingerButton) {
@@ -912,14 +926,24 @@ fun CustomizationScreen(
                     )
                 }
             }
-            SectionHeader(stringResource(R.string.popup_background))
+            SectionHeader(
+                if (preferences.popupStyle == PopupStyle.Disc) {
+                    stringResource(R.string.popup_background)
+                } else {
+                    stringResource(R.string.popup_background_bar)
+                }
+            )
             Text(
                 text = stringResource(R.string.popup_background_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             ToggleSetting(
-                label = stringResource(R.string.popup_show_background),
+                label = if (preferences.popupStyle == PopupStyle.Disc) {
+                    stringResource(R.string.popup_show_background)
+                } else {
+                    stringResource(R.string.popup_show_background_bar)
+                },
                 checked = preferences.activeShowBackground(),
                 onCheckedChange = { checked ->
                     onUpdate { it.withShowBackground(checked) }
