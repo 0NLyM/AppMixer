@@ -27,7 +27,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -140,28 +139,12 @@ fun VerticalTrackSlider(
                         return@drawWithContent
                     }
 
-                    // The bottom edge (against the track's own start) keeps
-                    // the track's usual small corner; the top edge -- the one
-                    // that actually moves as the level changes -- gets a full
-                    // half-width cap instead, so the fill reads as a rounded
-                    // column growing rather than a rectangle with a
-                    // squared-off leading edge.
-                    val leadingRadius = (size.width / 2f).coerceAtMost(size.height - top)
-                    val fillPath = Path().apply {
-                        addRoundRect(
-                            RoundRect(
-                                left = 0f,
-                                top = top,
-                                right = size.width,
-                                bottom = size.height,
-                                topLeftCornerRadius = CornerRadius(leadingRadius),
-                                topRightCornerRadius = CornerRadius(leadingRadius),
-                                bottomLeftCornerRadius = CornerRadius(fillCornerPx),
-                                bottomRightCornerRadius = CornerRadius(fillCornerPx)
-                            )
-                        )
-                    }
-                    drawPath(fillPath, color = fillColor)
+                    drawRoundRect(
+                        color = fillColor,
+                        topLeft = Offset(0f, top),
+                        size = Size(size.width, size.height - top),
+                        cornerRadius = CornerRadius(fillCornerPx)
+                    )
                     clipRect(top = top) {
                         this@drawWithContent.drawContent()
                     }

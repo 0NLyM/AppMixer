@@ -254,27 +254,34 @@ class Service : AccessibilityService() {
         val ringView = DiscRingBlurView(this)
         discBlurView = ringView
 
+        // Built here, outside the ComposeView itself, so it can be set on
+        // the FrameLayout createView returns too -- that FrameLayout is the
+        // actual window root once added, and AbstractComposeView's own
+        // recomposer setup looks the owner up starting from *that* root
+        // rather than climbing back down into a child, so setting it only
+        // on the ComposeView (as when the ComposeView itself used to be the
+        // window root) left the lookup from the root finding nothing.
+        val owner = object : SavedStateRegistryOwner {
+            private val lifecycleRegistry = LifecycleRegistry(this)
+
+            private val savedStateRegistryController =
+                SavedStateRegistryController.create(this)
+
+            init {
+                savedStateRegistryController.performRestore(null)
+                lifecycleRegistry.currentState = Lifecycle.State.STARTED
+                this@Service.lifecycle = lifecycleRegistry
+            }
+
+            override val lifecycle: Lifecycle
+                get() = lifecycleRegistry
+
+            override val savedStateRegistry: SavedStateRegistry
+                get() = savedStateRegistryController.savedStateRegistry
+        }
+
         val composeView = object : AbstractComposeView(this) {
             init {
-                val owner = object : SavedStateRegistryOwner {
-                    private val lifecycleRegistry = LifecycleRegistry(this)
-
-                    private val savedStateRegistryController =
-                        SavedStateRegistryController.create(this)
-
-                    init {
-                        savedStateRegistryController.performRestore(null)
-                        lifecycleRegistry.currentState = Lifecycle.State.STARTED
-                        this@Service.lifecycle = lifecycleRegistry
-                    }
-
-                    override val lifecycle: Lifecycle
-                        get() = lifecycleRegistry
-
-                    override val savedStateRegistry: SavedStateRegistry
-                        get() = savedStateRegistryController.savedStateRegistry
-                }
-
                 setViewTreeLifecycleOwner(owner)
                 setViewTreeSavedStateRegistryOwner(owner)
             }
@@ -660,6 +667,8 @@ class Service : AccessibilityService() {
         composeContentView = composeView
 
         return FrameLayout(this).apply {
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
             // Added first, so it paints behind the ComposeView -- the ring
             // blur (when there's one to show at all; empty-outlined and
             // invisible otherwise) has to sit under the disc's own Compose
