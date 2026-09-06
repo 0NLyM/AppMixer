@@ -759,5 +759,23 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   if the blur doesn't land exactly on the ring, it needs a follow-up
   fix or another revert.
 
+## 2026-09-06 — 1.0.20 (critical hotfix for 1.0.19)
+
+- 1.0.19 crashed on launch for every user: wrapping the popup's
+  ComposeView in a FrameLayout (to host the new ring-shaped disc blur
+  view alongside it) made that FrameLayout the actual window root, but
+  the lifecycle/saved-state owner was still tagged only on the
+  ComposeView child. Compose's own recomposer setup looks that owner
+  up starting from the window root and never climbs back down into a
+  child, so it found nothing and crashed immediately, falling back to
+  the stock Android volume slider. Fixed by building the owner once
+  and tagging both the FrameLayout and the ComposeView with it.
+- The rounded slider fill-edge introduced in 1.0.19 is now scoped to
+  where it was actually meant to be: reverted entirely on the
+  collapsed Vertical Bar popup, and off by default on the collapsed
+  Horizontal Bar popup too -- both keep their original squared-off
+  fill. It stays on only for the expanded mixer's own sliders (per-app
+  and system volume).
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
