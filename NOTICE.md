@@ -716,5 +716,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   (unconfined to the panel, as it's been since it was reintroduced)
   rather than not working at all.
 
+## 2026-09-06 — 1.0.18
+
+- Bar styles (Vertical Bar, Horizontal Bar) and the Disc now keep fully
+  independent copies of the ten appearance settings that each style can
+  meaningfully differ on: scale, button corner radius, background mode
+  (Translucent/Solid), background on/off switch, background opacity, blur
+  radius, icon visible, value visible, ringer-button visible, and shadow.
+  Changing any of these under one style no longer touches the other.
+  The customization screen and the popup look exactly as before; the
+  change is purely in how the settings are stored and read internally.
+  Users who had already customised any of those ten settings while in Disc
+  mode will find the disc-specific copy reset to defaults and will need to
+  set it once more; the bar-style copy is unchanged.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
