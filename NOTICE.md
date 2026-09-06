@@ -703,5 +703,18 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   off the physical screen edge at an offset of 0, the same as it looked
   before this margin ever existed.
 
+## 2026-09-06 — 1.0.17
+
+- 1.0.16's shadow-room technique (reserved margin plus an anti-leak
+  covering) didn't work on the actual device and made things worse:
+  real Translucent blur stopped showing at all, not just staying
+  unconfined, and none of the three things it set out to fix actually
+  worked. Reverted outright back to 1.0.15's behavior rather than
+  layering another unverified attempt on top of it. Panel-level shadow
+  visibility on bars and the expanded mixer remains an open, unsolved
+  problem; real background blur on those panels is back to working
+  (unconfined to the panel, as it's been since it was reintroduced)
+  rather than not working at all.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
