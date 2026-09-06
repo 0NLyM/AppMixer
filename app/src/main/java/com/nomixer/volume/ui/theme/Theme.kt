@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.activeButtonCornerRadius
 
 /**
  * Corner radius every slider in the app reads, so the user's one radius
@@ -270,7 +271,7 @@ fun NoMixerTheme(
 
     CompositionLocalProvider(
         LocalSliderCornerRadius provides preferences.sliderCornerRadius.dp,
-        LocalButtonCornerPercent provides preferences.buttonCornerRadius.coerceIn(0, 50)
+        LocalButtonCornerPercent provides preferences.activeButtonCornerRadius().coerceIn(0, 50)
     ) {
         val scheme = baseColorScheme(darkTheme).let { base ->
             if (applyColorOverrides) base.withOverrides(preferences) else base

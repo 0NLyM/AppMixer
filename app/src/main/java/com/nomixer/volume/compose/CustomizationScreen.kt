@@ -84,6 +84,26 @@ import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.SLIDER_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.activeBackground
+import com.nomixer.volume.data.activeBackgroundOpacity
+import com.nomixer.volume.data.activeBlurRadius
+import com.nomixer.volume.data.activeButtonCornerRadius
+import com.nomixer.volume.data.activeScale
+import com.nomixer.volume.data.activeShowBackground
+import com.nomixer.volume.data.activeShowIcon
+import com.nomixer.volume.data.activeShowRingerButton
+import com.nomixer.volume.data.activeShowShadow
+import com.nomixer.volume.data.activeShowValue
+import com.nomixer.volume.data.withBackground
+import com.nomixer.volume.data.withBackgroundOpacity
+import com.nomixer.volume.data.withBlurRadius
+import com.nomixer.volume.data.withButtonCornerRadius
+import com.nomixer.volume.data.withScale
+import com.nomixer.volume.data.withShowBackground
+import com.nomixer.volume.data.withShowIcon
+import com.nomixer.volume.data.withShowRingerButton
+import com.nomixer.volume.data.withShowShadow
+import com.nomixer.volume.data.withShowValue
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.baseColorScheme
@@ -293,7 +313,7 @@ private fun PopupPreview(
         PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
         else -> -1
     }
-    val discPreviewDiameter = 220.dp * (preferences.popupScale * previewScale * 1.6f)
+    val discPreviewDiameter = 220.dp * (preferences.activeScale() * previewScale * 1.6f)
     val discRevealFraction =
         (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
     val discEdgeGap = DISC_EDGE_GAP_DP.dp * previewScale
@@ -397,13 +417,18 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
     // just something that reads as "partway up" wherever it's shown.
     val previewFraction = 0.62f
     val previewValueText = "7"
-    val scale = preferences.popupScale * previewScale * 1.6f
+    val scale = preferences.activeScale() * previewScale * 1.6f
+    val showBackground = preferences.activeShowBackground()
+    val showValue = preferences.activeShowValue()
+    val showIcon = preferences.activeShowIcon()
+    val showRingerButton = preferences.activeShowRingerButton()
+    val buttonCornerRadius = preferences.activeButtonCornerRadius()
 
     val shadow = MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
 
     when (preferences.popupStyle) {
         PopupStyle.VerticalBar -> Box {
-            if (preferences.popupShowBackground) {
+            if (showBackground) {
                 Box(
                     modifier = Modifier
                         .width((64 * scale).dp)
@@ -420,7 +445,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     .height((250 * scale).dp)
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    if (preferences.popupShowValue) {
+                    if (showValue) {
                         Text(
                             text = previewValueText,
                             style = MaterialTheme.typography.labelLarge,
@@ -435,7 +460,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                             )
                         )
                     }
-                    if (preferences.popupShowIcon) {
+                    if (showIcon) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                             contentDescription = null,
@@ -455,7 +480,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
         }
 
         PopupStyle.HorizontalBar -> Box {
-            if (preferences.popupShowBackground) {
+            if (showBackground) {
                 Box(
                     modifier = Modifier
                         .width((240 * scale).dp)
@@ -472,7 +497,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                 .height((56 * scale).dp)
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
-                if (preferences.popupShowIcon) {
+                if (showIcon) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = null,
@@ -487,7 +512,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                             .size((22 * scale).dp)
                     )
                 }
-                if (preferences.popupShowValue) {
+                if (showValue) {
                     Text(
                         text = previewValueText,
                         style = MaterialTheme.typography.labelLarge,
@@ -536,17 +561,17 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
             }
 
             val besideButton = preferences.discValueBesideButton &&
-                preferences.popupShowRingerButton && preferences.popupShowValue
+                showRingerButton && showValue
             val mockButton = @Composable {
                 Box(
                     modifier = Modifier
                         .size((38 * scale).dp)
-                        .clip(RoundedCornerShape(percent = preferences.buttonCornerRadius))
+                        .clip(RoundedCornerShape(percent = buttonCornerRadius))
                         .background(MaterialTheme.colorScheme.tertiary)
                         .border(
                             1.dp,
                             MaterialTheme.colorScheme.outline,
-                            RoundedCornerShape(percent = preferences.buttonCornerRadius)
+                            RoundedCornerShape(percent = buttonCornerRadius)
                         )
                 )
             }
@@ -562,9 +587,9 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     backdropColor = MaterialTheme.colorScheme.background.copy(
                         alpha = preferences.shadowAlpha()
                     ),
-                    icon = if (preferences.popupShowIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
-                    label = if (preferences.popupShowValue && !besideButton) previewValueText else null,
-                    centerContent = if (preferences.popupShowRingerButton) {
+                    icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
+                    label = if (showValue && !besideButton) previewValueText else null,
+                    centerContent = if (showRingerButton) {
                         {
                             if (besideButton) {
                                 Row(
@@ -835,11 +860,11 @@ fun CustomizationScreen(
 
             SliderSetting(
                 label = stringResource(R.string.popup_size),
-                valueLabel = formatScale(preferences.popupScale),
-                value = preferences.popupScale,
+                valueLabel = formatScale(preferences.activeScale()),
+                value = preferences.activeScale(),
                 valueRange = 0.6f..1.6f,
                 steps = 9,
-                onValueChange = { value -> onUpdate { it.copy(popupScale = value) } }
+                onValueChange = { value -> onUpdate { it.withScale(value) } }
             )
             // None of the three apply to the disc: it paints its own round
             // panel, its own track ring, and its own tick corners (their own
@@ -878,11 +903,11 @@ fun CustomizationScreen(
                     )
                     SliderSetting(
                         label = stringResource(R.string.button_corner),
-                        valueLabel = "${preferences.buttonCornerRadius}%",
-                        value = preferences.buttonCornerRadius.toFloat(),
+                        valueLabel = "${preferences.activeButtonCornerRadius()}%",
+                        value = preferences.activeButtonCornerRadius().toFloat(),
                         valueRange = 0f..BUTTON_CORNER_RADIUS_MAX.toFloat(),
                         onValueChange = { value ->
-                            onUpdate { it.copy(buttonCornerRadius = value.roundToInt()) }
+                            onUpdate { it.withButtonCornerRadius(value.roundToInt()) }
                         }
                     )
                 }
@@ -895,14 +920,14 @@ fun CustomizationScreen(
             )
             ToggleSetting(
                 label = stringResource(R.string.popup_show_background),
-                checked = preferences.popupShowBackground,
+                checked = preferences.activeShowBackground(),
                 onCheckedChange = { checked ->
-                    onUpdate { it.copy(popupShowBackground = checked) }
+                    onUpdate { it.withShowBackground(checked) }
                 }
             )
 
             AnimatedVisibility(
-                visible = preferences.popupShowBackground,
+                visible = preferences.activeShowBackground(),
                 enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
                     fadeIn(tween(Motion.MorphMillis)),
                 exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
@@ -914,12 +939,12 @@ fun CustomizationScreen(
                         PopupBackground.Translucent to stringResource(R.string.background_translucent),
                         PopupBackground.Solid to stringResource(R.string.background_solid)
                     ),
-                    selected = preferences.popupBackground,
-                    onSelect = { background -> onUpdate { it.copy(popupBackground = background) } }
+                    selected = preferences.activeBackground(),
+                    onSelect = { background -> onUpdate { it.withBackground(background) } }
                 )
 
                 AnimatedContent(
-                    targetState = preferences.popupBackground == PopupBackground.Solid,
+                    targetState = preferences.activeBackground() == PopupBackground.Solid,
                     transitionSpec = {
                         fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
                     },
@@ -928,11 +953,11 @@ fun CustomizationScreen(
                     if (showOpacity) {
                         SliderSetting(
                             label = stringResource(R.string.popup_opacity),
-                            valueLabel = "${(preferences.popupBackgroundOpacity * 100).roundToInt()}%",
-                            value = preferences.popupBackgroundOpacity,
+                            valueLabel = "${(preferences.activeBackgroundOpacity() * 100).roundToInt()}%",
+                            value = preferences.activeBackgroundOpacity(),
                             valueRange = POPUP_BACKGROUND_OPACITY_MIN..1f,
                             onValueChange = { value ->
-                                onUpdate { it.copy(popupBackgroundOpacity = value) }
+                                onUpdate { it.withBackgroundOpacity(value) }
                             }
                         )
                     } else {
@@ -942,11 +967,11 @@ fun CustomizationScreen(
                         // slider.
                         SliderSetting(
                             label = stringResource(R.string.popup_blur),
-                            valueLabel = "${preferences.popupBlurRadius} px",
-                            value = preferences.popupBlurRadius.toFloat(),
+                            valueLabel = "${preferences.activeBlurRadius()} px",
+                            value = preferences.activeBlurRadius().toFloat(),
                             valueRange = POPUP_BLUR_RADIUS_MIN.toFloat()..POPUP_BLUR_RADIUS_MAX.toFloat(),
                             onValueChange = { value ->
-                                onUpdate { it.copy(popupBlurRadius = value.roundToInt()) }
+                                onUpdate { it.withBlurRadius(value.roundToInt()) }
                             }
                         )
                     }
@@ -968,11 +993,10 @@ fun CustomizationScreen(
             // disabled for no visible reason.
             ToggleSetting(
                 label = stringResource(R.string.show_value),
-                checked = preferences.popupShowValue,
+                checked = preferences.activeShowValue(),
                 onCheckedChange = { checked ->
                     onUpdate {
-                        it.copy(
-                            popupShowValue = checked,
+                        it.withShowValue(checked).copy(
                             centeredContent = if (!checked && it.centeredContent == PopupCenterContent.Value) {
                                 null
                             } else {
@@ -984,11 +1008,10 @@ fun CustomizationScreen(
             )
             ToggleSetting(
                 label = stringResource(R.string.show_icon),
-                checked = preferences.popupShowIcon,
+                checked = preferences.activeShowIcon(),
                 onCheckedChange = { checked ->
                     onUpdate {
-                        it.copy(
-                            popupShowIcon = checked,
+                        it.withShowIcon(checked).copy(
                             centeredContent = if (!checked && it.centeredContent == PopupCenterContent.Icon) {
                                 null
                             } else {
@@ -1017,7 +1040,7 @@ fun CustomizationScreen(
                     ToggleSetting(
                         label = stringResource(R.string.center_value),
                         checked = preferences.centeredContent == PopupCenterContent.Value,
-                        enabled = preferences.popupShowValue &&
+                        enabled = preferences.activeShowValue() &&
                             preferences.centeredContent != PopupCenterContent.Icon,
                         onCheckedChange = { checked ->
                             onUpdate {
@@ -1030,7 +1053,7 @@ fun CustomizationScreen(
                     ToggleSetting(
                         label = stringResource(R.string.center_icon),
                         checked = preferences.centeredContent == PopupCenterContent.Icon,
-                        enabled = preferences.popupShowIcon &&
+                        enabled = preferences.activeShowIcon() &&
                             preferences.centeredContent != PopupCenterContent.Value,
                         onCheckedChange = { checked ->
                             onUpdate {
@@ -1044,16 +1067,16 @@ fun CustomizationScreen(
             }
             ToggleSetting(
                 label = stringResource(R.string.show_ringer_button),
-                checked = preferences.popupShowRingerButton,
+                checked = preferences.activeShowRingerButton(),
                 onCheckedChange = { checked ->
-                    onUpdate { it.copy(popupShowRingerButton = checked) }
+                    onUpdate { it.withShowRingerButton(checked) }
                 }
             )
             ToggleSetting(
                 label = stringResource(R.string.show_shadow),
-                checked = preferences.popupShowShadow,
+                checked = preferences.activeShowShadow(),
                 onCheckedChange = { checked ->
-                    onUpdate { it.copy(popupShowShadow = checked) }
+                    onUpdate { it.withShowShadow(checked) }
                 }
             )
 
@@ -1074,7 +1097,7 @@ fun CustomizationScreen(
                 ToggleSetting(
                     label = stringResource(R.string.disc_value_beside_button),
                     checked = preferences.discValueBesideButton,
-                    enabled = preferences.popupShowRingerButton && preferences.popupShowValue,
+                    enabled = preferences.activeShowRingerButton() && preferences.activeShowValue(),
                     onCheckedChange = { checked ->
                         onUpdate { it.copy(discValueBesideButton = checked) }
                     }
@@ -1132,20 +1155,30 @@ fun CustomizationScreen(
                             popupOffsetX = defaults.popupOffsetX,
                             popupOffsetY = defaults.popupOffsetY,
                             popupScale = defaults.popupScale,
+                            discPopupScale = defaults.discPopupScale,
                             popupCornerRadius = defaults.popupCornerRadius,
                             sliderCornerRadius = defaults.sliderCornerRadius,
                             buttonCornerRadius = defaults.buttonCornerRadius,
+                            discButtonCornerRadius = defaults.discButtonCornerRadius,
                             popupShowBackground = defaults.popupShowBackground,
+                            discPopupShowBackground = defaults.discPopupShowBackground,
                             popupBackground = defaults.popupBackground,
+                            discPopupBackground = defaults.discPopupBackground,
                             popupBackgroundOpacity = defaults.popupBackgroundOpacity,
+                            discPopupBackgroundOpacity = defaults.discPopupBackgroundOpacity,
                             popupBlurRadius = defaults.popupBlurRadius,
+                            discPopupBlurRadius = defaults.discPopupBlurRadius,
                             popupShowValue = defaults.popupShowValue,
+                            discPopupShowValue = defaults.discPopupShowValue,
                             popupShowIcon = defaults.popupShowIcon,
+                            discPopupShowIcon = defaults.discPopupShowIcon,
                             centeredContent = defaults.centeredContent,
                             popupShowRingerButton = defaults.popupShowRingerButton,
+                            discPopupShowRingerButton = defaults.discPopupShowRingerButton,
                             discShowDots = defaults.discShowDots,
                             discTickCornerPercent = defaults.discTickCornerPercent,
                             popupShowShadow = defaults.popupShowShadow,
+                            discPopupShowShadow = defaults.discPopupShowShadow,
                             discValueBesideButton = defaults.discValueBesideButton
                         )
                     }

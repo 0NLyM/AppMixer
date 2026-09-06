@@ -46,6 +46,12 @@ import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.activeButtonCornerRadius
+import com.nomixer.volume.data.activeScale
+import com.nomixer.volume.data.activeShowBackground
+import com.nomixer.volume.data.activeShowIcon
+import com.nomixer.volume.data.activeShowRingerButton
+import com.nomixer.volume.data.activeShowValue
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.Motion
@@ -198,10 +204,13 @@ fun CollapsedVolumePopup(
     // Mute beats a Bluetooth-connected glyph beats the plain speaker, shared
     // by every style below instead of each hardcoding the speaker icon.
     val volumeIcon = rememberVolumeIcon(audioManager, volume)
-    val scale = preferences.popupScale
+    val scale = preferences.activeScale()
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val discDiameter = (220 * scale).dp
     val isDisc = preferences.popupStyle == PopupStyle.Disc
+    val showIcon = preferences.activeShowIcon()
+    val showValue = preferences.activeShowValue()
+    val showRingerButton = preferences.activeShowRingerButton()
     val cornerRadius = preferences.popupCornerRadius.dp
 
     // The disc gets a panel of its own too, same as a bar -- just a round
@@ -259,7 +268,7 @@ fun CollapsedVolumePopup(
     // hidden panel visibly catch its edge. With the panel off outright,
     // there's nothing for the shadow to sit on, so it moves to the ringer
     // button and slider themselves instead (below).
-    val showBackground = preferences.popupShowBackground
+    val showBackground = preferences.activeShowBackground()
 
     // One background value for every style now, bars and disc alike: the
     // bars paint it across their whole panel, while the disc instead uses
@@ -293,7 +302,7 @@ fun CollapsedVolumePopup(
         animationSpec = Motion.ColorShift,
         label = "popupShadow"
     )
-    val buttonShape = RoundedCornerShape(percent = preferences.buttonCornerRadius.coerceIn(0, 50))
+    val buttonShape = RoundedCornerShape(percent = preferences.activeButtonCornerRadius().coerceIn(0, 50))
     val sliderShape = RoundedCornerShape(preferences.sliderCornerRadius.dp)
 
     // The expand-swipe gesture used to live on this Surface, wrapping the
@@ -344,7 +353,7 @@ fun CollapsedVolumePopup(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (preferences.popupShowRingerButton) {
+                if (showRingerButton) {
                     RingerModeButton(
                         audioManager = audioManager,
                         modifier = Modifier.softShadow(
@@ -373,7 +382,7 @@ fun CollapsedVolumePopup(
                         // Each piece sits at its own default corner unless
                         // it's the one pulled to dead center; the two are
                         // never both centered at once.
-                        if (preferences.popupShowIcon) {
+                        if (showIcon) {
                             AnimatedVolumeIcon(
                                 icon = volumeIcon,
                                 contentDescription = stringResource(R.string.stream_media),
@@ -389,7 +398,7 @@ fun CollapsedVolumePopup(
                             )
                         }
 
-                        if (preferences.popupShowValue) {
+                        if (showValue) {
                             Text(
                                 text = valueText,
                                 style = MaterialTheme.typography.labelLarge,
@@ -413,7 +422,7 @@ fun CollapsedVolumePopup(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                if (preferences.popupShowRingerButton) {
+                if (showRingerButton) {
                     RingerModeButton(
                         audioManager = audioManager,
                         modifier = Modifier.softShadow(
@@ -444,7 +453,7 @@ fun CollapsedVolumePopup(
                         // Default stacking is value on top, icon below;
                         // whichever is pulled to center leaves the other at
                         // its own default spot.
-                        if (preferences.popupShowValue) {
+                        if (showValue) {
                             Text(
                                 text = valueText,
                                 style = MaterialTheme.typography.labelLarge,
@@ -460,7 +469,7 @@ fun CollapsedVolumePopup(
                             )
                         }
 
-                        if (preferences.popupShowIcon) {
+                        if (showIcon) {
                             AnimatedVolumeIcon(
                                 icon = volumeIcon,
                                 contentDescription = stringResource(R.string.stream_media),
@@ -491,7 +500,7 @@ fun CollapsedVolumePopup(
                 // always sits below) is skipped rather than showing the
                 // value twice.
                 val besideButton = preferences.discValueBesideButton &&
-                    preferences.popupShowRingerButton && preferences.popupShowValue
+                    showRingerButton && showValue
 
                 Box(
                     modifier = Modifier.padding(panelPadding),
@@ -517,12 +526,12 @@ fun CollapsedVolumePopup(
                         // system blur has landed, revealing it there and
                         // nowhere else.
                         trackBackingColor = panelColor,
-                        icon = if (preferences.popupShowIcon) volumeIcon else null,
-                        label = if (preferences.popupShowValue && !besideButton) valueText else null,
+                        icon = if (showIcon) volumeIcon else null,
+                        label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer
                         // switch belongs, rather than stacked above the
                         // whole thing.
-                        centerContent = if (preferences.popupShowRingerButton) {
+                        centerContent = if (showRingerButton) {
                             {
                                 if (besideButton) {
                                     Row(

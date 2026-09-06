@@ -67,6 +67,7 @@ import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupStyle
+import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.data.wantsRealWindowBlur
 import com.nomixer.volume.ui.theme.NoMixerTheme
@@ -351,8 +352,10 @@ class Service : AccessibilityService() {
                     LaunchedEffect(
                         expanded,
                         preferences.popupBackground,
+                        preferences.discPopupBackground,
                         preferences.popupStyle,
-                        preferences.popupBlurRadius
+                        preferences.popupBlurRadius,
+                        preferences.discPopupBlurRadius
                     ) {
                         applyWindowBlur(preferences.wantsRealWindowBlur(expanded), expanded = expanded)
                     }
@@ -362,7 +365,7 @@ class Service : AccessibilityService() {
                     // switch as the collapsed popup: with the background off
                     // there's no panel at all, and the shadow below moves
                     // onto each slider individually instead.
-                    val showBackground = preferences.popupShowBackground
+                    val showBackground = preferences.activeShowBackground()
                     val panelColor by animateColorAsState(
                         targetValue = if (!showBackground) {
                             Color.Transparent
