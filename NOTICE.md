@@ -730,5 +730,34 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   mode will find the disc-specific copy reset to defaults and will need to
   set it once more; the bar-style copy is unchanged.
 
+## 2026-09-06 — 1.0.19
+
+- Disc: turning its Background switch off now leaves it fully
+  transparent. The backdrop/shadow halo painted behind the ring used to
+  stay visible at its own fixed alpha regardless of that switch, which
+  read as the background never actually turning off; the customization
+  screen's live preview got the same fix, and now also previews the
+  ring's own backing tint (Solid/Translucent) instead of always showing
+  nothing there.
+- Renamed the shared "Background" section/toggle to "Bar background" /
+  "Show bar background" while a bar style (Vertical Bar, Horizontal Bar)
+  is selected, since 1.0.18 made the setting bar-only data; unchanged
+  for the Disc.
+- The volume bar sliders' fill now ends in a rounded cap on the edge
+  that actually moves as the level changes, instead of the same small
+  corner radius as the anchored edge -- reads as a rounded bar growing
+  rather than a rectangle with a squared-off front.
+- Disc Translucent mode gets a real, ring-confined system blur again,
+  after 1.0.9-1.0.17's several attempts at this were all abandoned: the
+  platform's own cross-window blur drawable can only ever be a rounded
+  rectangle, never a ring, so a *separate* native view now carries it,
+  clipped by its own annulus-shaped outline to exactly the ring track's
+  geometry and sitting behind the disc's own Compose content -- confined
+  to the same footprint Solid mode already paints its tint in, rather
+  than leaking across the whole panel. Bar styles and the expanded mixer
+  are unaffected. This is a new technique, untested on a real device;
+  if the blur doesn't land exactly on the ring, it needs a follow-up
+  fix or another revert.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
