@@ -655,5 +655,33 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   appearing right at the ring's outer edge and fading out across the
   sliver beyond it -- never overlapping the track itself.
 
+## 2026-09-06 — 1.0.15
+
+- Reverted 1.0.13's popup-shadow outer margin: it was Compose-side
+  padding around the whole popup, but the real system background-blur
+  drawable is set as the overlay *view's* own background, which always
+  covers the view's full bounds with no way to confine it smaller --
+  so in Translucent mode the real blur grew right along with that
+  margin into a visibly oversized, blurred halo well past the actual
+  panel, and the bigger view also pulled the whole popup further in
+  from the screen edge than configured, even at an offset of 0. A real
+  elevation shadow needing external room to bleed into and a real
+  system blur needing the window to stay exactly panel-sized can't
+  both be satisfied on this overlay's single WRAP_CONTENT view --
+  giving the shadow room properly needs one drawn inside the panel's
+  own bounds instead, the way the disc already does it, not a padding
+  patch on top of this. Reverted outright rather than patched further;
+  the oversized halo and the edge gap should both be gone now, back to
+  how bars looked before that change.
+- Fixed a separate, real bug found in the process: switching between
+  collapsed styles (vertical bar to horizontal bar, say) resizes the
+  overlay view without necessarily changing the blur radius or corner
+  radius, so the cached "already blurred, nothing to do" check never
+  caught it and kept the stale drawable sized for the previous style.
+  It now also rebuilds whenever the collapsed style or the
+  expanded/collapsed state changes.
+- The shadow-visibility-on-bars problem itself is still open -- this
+  release only undoes the regression it caused, not the original ask.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
