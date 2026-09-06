@@ -683,5 +683,25 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
 - The shadow-visibility-on-bars problem itself is still open -- this
   release only undoes the regression it caused, not the original ask.
 
+## 2026-09-06 — 1.0.16
+
+- Gave the collapsed bar panel and the expanded mixer's panel real room
+  for their elevation shadow to render into, without letting the real
+  system background-blur drawable leak into that margin the way it did
+  when this was tried in 1.0.13. When a real blur drawable is actually
+  live behind everything (Translucent, background on, blur landed),
+  the reserved margin is painted opaque first, with a hole cut exactly
+  where the panel itself sits -- confining the drawable back to the
+  panel's own shape -- and the covering's own outer edge is softened
+  with a light blur so it fades into the wallpaper instead of sitting
+  on it as a hard rectangle. The panel's own shadow, a real, crisp
+  elevation shadow, draws on top of it. The disc (which draws its own
+  shadow internally, no margin needed) and the per-element case
+  (background off, no real blur to leak there) are unaffected.
+- Taught the overlay window's own edge-hugging position clamp about
+  this margin, so only the margin -- never the panel itself -- can hang
+  off the physical screen edge at an offset of 0, the same as it looked
+  before this margin ever existed.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
