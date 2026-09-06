@@ -2,6 +2,7 @@ package com.nomixer.volume.compose
 
 import android.media.AudioManager
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -29,8 +30,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +49,7 @@ import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
+import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
@@ -56,7 +63,7 @@ import kotlin.math.roundToInt
 private const val BUTTON_SIZE_DP = 48
 
 /** How far a panel-wrapping shadow lifts, for [Modifier.shadow]'s own elevation model. */
-private val PANEL_SHADOW_ELEVATION_DP = 12.dp
+internal val PANEL_SHADOW_ELEVATION_DP = 12.dp
 
 /** Same, for a single element's shadow (ringer button or slider) when the panel is hidden. */
 private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp
@@ -81,6 +88,74 @@ internal fun Modifier.softShadow(color: Color, shape: Shape, elevation: Dp): Mod
             spotColor = color
         )
     }
+
+/**
+ * Room reserved around a panel for [ShadowRoom]'s own shadow to bleed
+ * into. Exposed as a raw value too, so the overlay window's own
+ * edge-hugging clamp (Service.kt) can let exactly this much of the
+ * window -- the margin, never the panel itself -- hang off the physical
+ * screen edge instead of being pulled back in with the rest of it.
+ */
+internal const val SHADOW_ROOM_MARGIN_DP_VALUE = 16f
+private val SHADOW_ROOM_MARGIN_DP = SHADOW_ROOM_MARGIN_DP_VALUE.dp
+
+/**
+ * Wraps a panel-shaped [content] in reserved margin so a real elevation
+ * shadow chained onto its own modifier (see [softShadow]) has somewhere to
+ * render into, instead of being clipped at the overlay window's edge --
+ * the window is sized to exactly the Compose content's own layout bounds,
+ * and a shadow drawn outside those bounds needs genuine extra space, not
+ * just visual overflow.
+ *
+ * That reserved space is a problem of its own whenever the real system
+ * background-blur drawable is live behind everything ([blocksRealBlur]):
+ * it's set as the whole overlay *view's* own background, with no way to
+ * confine it to a smaller region, so it would blur this margin too, not
+ * just [content]'s own shape. This paints the margin opaque with
+ * [backingColor] first, with a hole cut exactly where [content] sits, so
+ * the drawable can only ever show there -- then softens the covering's
+ * own outer edge with a light blur, so it fades into the wallpaper
+ * instead of sitting on it as a hard rectangle. [content]'s own shadow is
+ * unaffected by that blur, drawn crisp on top of the covering.
+ */
+@Composable
+internal fun ShadowRoom(
+    cornerRadius: Dp,
+    blocksRealBlur: Boolean,
+    backingColor: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable (marginModifier: Modifier) -> Unit
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (blocksRealBlur) {
+            Canvas(
+                modifier = Modifier
+                    .matchParentSize()
+                    .blur(SHADOW_ROOM_MARGIN_DP / 2)
+            ) {
+                val marginPx = SHADOW_ROOM_MARGIN_DP.toPx()
+                val cornerPx = cornerRadius.toPx()
+                val outer = Path().apply {
+                    addRoundRect(
+                        RoundRect(0f, 0f, size.width, size.height, CornerRadius(cornerPx + marginPx))
+                    )
+                }
+                val hole = Path().apply {
+                    addRoundRect(
+                        RoundRect(
+                            marginPx, marginPx,
+                            size.width - marginPx, size.height - marginPx,
+                            CornerRadius(cornerPx)
+                        )
+                    )
+                }
+                val punched = Path().apply { op(outer, hole, PathOperation.Difference) }
+                drawPath(punched, color = backingColor)
+            }
+        }
+        content(Modifier.padding(SHADOW_ROOM_MARGIN_DP))
+    }
+}
 
 /**
  * Direction the expand swipe has to travel, away from the edge the popup
@@ -327,8 +402,23 @@ fun CollapsedVolumePopup(
     }
     val elementShadowColor = if (!isDisc && !showBackground) shadow else Color.Transparent
 
+    // Real system blur, when it lands, is set as the whole overlay
+    // *window's* own background -- there's no way to confine it to a
+    // smaller region than the whole view. Reserving room for this
+    // panel's own shadow to bleed into would let that blur bleed into
+    // the same reserved margin too, unconfined, unless something opaque
+    // blocks it there -- which is exactly what ShadowRoom's covering
+    // does, but only when there's an actual live blur drawable behind
+    // everything for it to block in the first place. The disc and the
+    // per-element case (no panel to begin with) never need this room.
+    val needsShadowRoom = !isDisc && showBackground
+    val blocksRealBlur = needsShadowRoom &&
+        preferences.popupBackground == PopupBackground.Translucent &&
+        blurLanded
+
+    val panel: @Composable (Modifier) -> Unit = { marginModifier ->
     Surface(
-        modifier = panelShadowModifier,
+        modifier = marginModifier.then(panelShadowModifier),
         // The disc's own panel never paints a background of its own -- its
         // margin and shadow-fade sliver always stay exactly as they look
         // with the background off; only the ring's own track (inside
@@ -556,5 +646,16 @@ fun CollapsedVolumePopup(
                 }
             }
         }
+    }
+    }
+
+    if (needsShadowRoom) {
+        ShadowRoom(
+            cornerRadius = cornerRadius,
+            blocksRealBlur = blocksRealBlur,
+            backingColor = MaterialTheme.colorScheme.background
+        ) { marginModifier -> panel(marginModifier) }
+    } else {
+        panel(Modifier)
     }
 }

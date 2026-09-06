@@ -57,6 +57,9 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
+import com.nomixer.volume.compose.PANEL_SHADOW_ELEVATION_DP
+import com.nomixer.volume.compose.SHADOW_ROOM_MARGIN_DP_VALUE
+import com.nomixer.volume.compose.ShadowRoom
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.softShadow
@@ -65,6 +68,7 @@ import com.nomixer.volume.system.ActivityTaskManagerProxy
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.PopupAnchor
+import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.paintedPanelAlpha
@@ -383,6 +387,19 @@ class Service : AccessibilityService() {
                         animationSpec = Motion.ColorShift,
                         label = "mixerSliderShadow"
                     )
+                    val panelShadowColor by animateColorAsState(
+                        targetValue = if (showBackground) {
+                            MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
+                        } else {
+                            Color.Transparent
+                        },
+                        animationSpec = Motion.ColorShift,
+                        label = "mixerPanelShadow"
+                    )
+                    val mixerCornerRadius = preferences.popupCornerRadius.dp
+                    val mixerBlocksRealBlur = showBackground &&
+                        preferences.popupBackground == PopupBackground.Translucent &&
+                        blurLandedState
 
                     // One animation for "a panel appeared", replayed when
                     // the popup morphs into the mixer because the key
@@ -421,41 +438,65 @@ class Service : AccessibilityService() {
                             }
                         ) {
                             if (expanded) {
-                                Surface(
-                                    // Painted whether or not the blur landed:
-                                    // the system grants it only sometimes, and
-                                    // a panel that leaves the background to it
-                                    // is invisible the rest of the time.
-                                    color = panelColor,
-                                    contentColor = MaterialTheme.colorScheme.onBackground,
-                                    shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
-                                ) {
-                                    Column(
-                                        // One inset all round: the sides used
-                                        // to be wider than the top and bottom.
-                                        modifier = Modifier.padding(16.dp)
+                                val mixerPanel: @Composable (Modifier) -> Unit = { marginModifier ->
+                                    Surface(
+                                        modifier = marginModifier.softShadow(
+                                            panelShadowColor,
+                                            RoundedCornerShape(mixerCornerRadius),
+                                            PANEL_SHADOW_ELEVATION_DP
+                                        ),
+                                        // Painted whether or not the blur landed:
+                                        // the system grants it only sometimes, and
+                                        // a panel that leaves the background to it
+                                        // is invisible the rest of the time.
+                                        color = panelColor,
+                                        contentColor = MaterialTheme.colorScheme.onBackground,
+                                        shape = RoundedCornerShape(mixerCornerRadius)
                                     ) {
-                                        AppVolumeList(
-                                            apps = manager.apps.values,
-                                            showAll = false,
-                                            shadowColor = sliderShadowColor,
-                                            onChange = this@Service.handler::startIdleTimer
+                                        Column(
+                                            // One inset all round: the sides used
+                                            // to be wider than the top and bottom.
+                                            modifier = Modifier.padding(16.dp)
                                         ) {
-                                            item("system_volume_panel") {
-                                                SystemVolumePanel(
-                                                    audioManager = manager.audioManager,
-                                                    notificationManagerProxy = manager.notificationManagerProxy,
-                                                    showCallVolumeAlways = false,
-                                                    applyVisibilityFilter = true,
-                                                    allowVisibilityConfig = false,
-                                                    isSliderVisible = manager::isSystemSliderVisible,
-                                                    onSliderVisibilityChange = manager::setSystemSliderVisible,
-                                                    shadowColor = sliderShadowColor,
-                                                    onChange = this@Service.handler::startIdleTimer
-                                                )
+                                            AppVolumeList(
+                                                apps = manager.apps.values,
+                                                showAll = false,
+                                                shadowColor = sliderShadowColor,
+                                                onChange = this@Service.handler::startIdleTimer
+                                            ) {
+                                                item("system_volume_panel") {
+                                                    SystemVolumePanel(
+                                                        audioManager = manager.audioManager,
+                                                        notificationManagerProxy = manager.notificationManagerProxy,
+                                                        showCallVolumeAlways = false,
+                                                        applyVisibilityFilter = true,
+                                                        allowVisibilityConfig = false,
+                                                        isSliderVisible = manager::isSystemSliderVisible,
+                                                        onSliderVisibilityChange = manager::setSystemSliderVisible,
+                                                        shadowColor = sliderShadowColor,
+                                                        onChange = this@Service.handler::startIdleTimer
+                                                    )
+                                                }
                                             }
                                         }
                                     }
+                                }
+
+                                // Only reserved when there's an actual
+                                // panel-level shadow to give room to --
+                                // with the background off, the panel
+                                // itself paints nothing and the shadow
+                                // already lives on each slider instead
+                                // (sliderShadowColor), which needs none of
+                                // this.
+                                if (showBackground) {
+                                    ShadowRoom(
+                                        cornerRadius = mixerCornerRadius,
+                                        blocksRealBlur = mixerBlocksRealBlur,
+                                        backingColor = MaterialTheme.colorScheme.background
+                                    ) { marginModifier -> mixerPanel(marginModifier) }
+                                } else {
+                                    mixerPanel(Modifier)
                                 }
                             } else {
                                 CollapsedVolumePopup(
@@ -582,6 +623,23 @@ class Service : AccessibilityService() {
                 val isLateralDisc = !expanded && preferences.popupStyle == PopupStyle.Disc &&
                     (horizontalGravity == Gravity.LEFT || horizontalGravity == Gravity.RIGHT)
 
+                // ShadowRoom (CollapsedVolumePopup.kt / this file's own
+                // expanded-mixer branch) wraps the panel in this much
+                // margin whenever it's actually present -- never for the
+                // disc, which has no such margin at all -- so an edge-
+                // hugging popup can let just that margin hang off the
+                // physical screen instead of being pulled back in with
+                // the whole window, the same way it did before that
+                // margin existed.
+                val hasShadowMargin = !isLateralDisc &&
+                    preferences.popupShowBackground &&
+                    (expanded || preferences.popupStyle != PopupStyle.Disc)
+                val shadowMarginPx = if (hasShadowMargin) {
+                    (SHADOW_ROOM_MARGIN_DP_VALUE * density).toInt()
+                } else {
+                    0
+                }
+
                 val clampedX = if (isLateralDisc) {
                     // Positive x always moves the window inward, off the
                     // edge it hugs, whichever side that is -- the same
@@ -594,13 +652,19 @@ class Service : AccessibilityService() {
                 } else {
                     when (horizontalGravity) {
                         Gravity.LEFT, Gravity.RIGHT ->
-                            layoutParams.x.coerceIn(0, (bounds.width() - target.width).coerceAtLeast(0))
+                            layoutParams.x.coerceIn(
+                                -shadowMarginPx,
+                                (bounds.width() - target.width + shadowMarginPx).coerceAtLeast(-shadowMarginPx)
+                            )
                         else -> layoutParams.x
                     }
                 }
                 val clampedY = when (verticalGravity) {
                     Gravity.TOP, Gravity.BOTTOM ->
-                        layoutParams.y.coerceIn(0, (bounds.height() - target.height).coerceAtLeast(0))
+                        layoutParams.y.coerceIn(
+                            -shadowMarginPx,
+                            (bounds.height() - target.height + shadowMarginPx).coerceAtLeast(-shadowMarginPx)
+                        )
                     else -> layoutParams.y
                 }
 
