@@ -777,5 +777,20 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   fill. It stays on only for the expanded mixer's own sliders (per-app
   and system volume).
 
+## 2026-09-07 — 1.0.21
+
+- Reverted the slider fill's rounded leading edge entirely -- 1.0.20
+  had already scoped it back to just the expanded mixer's own sliders
+  (per-app and system volume), but it's now gone from there too, back
+  to the original squared-off fill everywhere.
+- Fixed tapping outside the popup (collapsed or expanded) no longer
+  dismissing it: 1.0.19 wrapped the popup's ComposeView in a
+  FrameLayout for the disc ring-blur view, which made that FrameLayout
+  the actual window root, but the handler for an outside tap
+  (FLAG_WATCH_OUTSIDE_TOUCH's ACTION_OUTSIDE) was still only on the
+  ComposeView -- a child, which that event is never delivered to.
+  Moved the handler to the FrameLayout, restoring the original
+  tap-outside-to-dismiss behavior.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
