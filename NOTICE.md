@@ -817,5 +817,21 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   rather than being erased by the fill wherever the level already
   reaches.
 
+## 2026-09-07 — 1.0.24
+
+- The disc ring's outline was still a wash across the ring's whole
+  width even after 1.0.23's reorder, so with a custom outline color
+  set it visibly tinted the translucent blur revealed in between --
+  reported as "the volume bar takes on the outline's color" too, since
+  both previews (the large one and the device mockup) share the same
+  disc. Replaced with two thin (1.5dp) border strokes, one at the
+  ring's outer edge and one at its inner edge; the blur (or Solid's
+  tint) now shows clean in between, with the outline reading as an
+  actual border rather than a flat tint over the whole track.
+- The color picker dialog's Reset/Cancel/Apply buttons now sit
+  explicitly on one row (Reset and Cancel grouped on the left, Apply
+  on the right) instead of wrapping onto two lines once a longer hex
+  value pushed them past the dialog's default button row width.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
