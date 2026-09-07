@@ -792,5 +792,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   Moved the handler to the FrameLayout, restoring the original
   tap-outside-to-dismiss behavior.
 
+## 2026-09-07 — 1.0.22
+
+- Closed a hairline seam of unblurred wallpaper visible right at the
+  disc ring track's own edge in Translucent mode: Compose measures the
+  disc's box to a whole pixel before ever drawing the ring into it, but
+  the ring-blur view's own geometry was computed as raw, unrounded
+  floats -- occasionally a fraction of a pixel short of where the
+  ring's paint actually lands. The blur view's inner and outer radius
+  are now widened by 1.5dp past the ring's true edges, so it fully
+  backs the ring with a bit of margin to spare; the extra sliver is
+  either hidden under the ring's own opaque stroke or bleeds into the
+  much wider transparent backdrop-fade margin around it, invisible
+  either way.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
