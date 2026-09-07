@@ -394,7 +394,21 @@ class Service : AccessibilityService() {
                     val outerRingRadius = ringRadius + ringWidth / 2f
                     val innerRingRadius = ringRadius - ringWidth / 2f
 
-                    if (ringBlurred && blurredRadius == radius && blurredOuterRadius == outerRingRadius) {
+                    // A small overlap past the ring's own true edges, so a
+                    // sub-pixel rounding difference between this native
+                    // geometry and Compose's own layout (which measures the
+                    // disc's box to a whole pixel, unlike this raw float
+                    // math) never leaves a hairline gap of unblurred
+                    // wallpaper between the ring's paint and the blur behind
+                    // it. The ring's own opaque stroke fully covers the
+                    // extra sliver on both sides, and what's left over
+                    // bleeds only into VolumeDisc's own transparent
+                    // backdrop-fade margin, which is far wider than this.
+                    val ringBlurOverlapPx = 1.5f * density
+                    val blurOuterRadius = outerRingRadius + ringBlurOverlapPx
+                    val blurInnerRadius = (innerRingRadius - ringBlurOverlapPx).coerceAtLeast(0f)
+
+                    if (ringBlurred && blurredRadius == radius && blurredOuterRadius == blurOuterRadius) {
                         blurLandedState = true
                         return
                     }
@@ -404,7 +418,7 @@ class Service : AccessibilityService() {
                         windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated &&
                         Build.MANUFACTURER != "realme"
                     ) {
-                        val side = (outerRingRadius * 2f).roundToInt()
+                        val side = (blurOuterRadius * 2f).roundToInt()
                         ringView.layoutParams?.let { params ->
                             if (params.width != side || params.height != side) {
                                 params.width = side
@@ -412,15 +426,15 @@ class Service : AccessibilityService() {
                                 ringView.layoutParams = params
                             }
                         }
-                        ringView.setRingRadii(innerRingRadius, outerRingRadius)
+                        ringView.setRingRadii(blurInnerRadius, blurOuterRadius)
                         ringView.background =
                             Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
                                 call("setBlurRadius", radius)
-                                call("setCornerRadius", outerRingRadius)
+                                call("setCornerRadius", blurOuterRadius)
                             }.get()
                         ringBlurred = true
                         blurredRadius = radius
-                        blurredOuterRadius = outerRingRadius
+                        blurredOuterRadius = blurOuterRadius
                         blurLandedState = true
                     } else {
                         if (ringBlurred) {
