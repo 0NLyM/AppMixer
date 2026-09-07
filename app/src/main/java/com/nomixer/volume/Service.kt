@@ -189,6 +189,7 @@ class Service : AccessibilityService() {
                 animateAlpha(layoutParams.alpha, 0f, ANIMATION_DURATION) {
                     if (!viewVisible) {
                         Log.i(TAG, "remove view")
+                        view?.background = null
                         composeContentView?.background = null
                         discBlurView?.background = null
                         lifecycle?.currentState = Lifecycle.State.DESTROYED
@@ -350,7 +351,7 @@ class Service : AccessibilityService() {
 
                 if (!wanted) {
                     if (blurred) {
-                        background = null
+                        this@Service.view?.background = null
                         blurred = false
                         blurredRadius = -1
                         blurredCornerRadiusPx = -1f
@@ -372,11 +373,12 @@ class Service : AccessibilityService() {
                 val radius = prefs.popupBlurRadius
 
                 if (isCollapsedDisc) {
-                    // Any stray full-panel blur left on this view from a
-                    // previous bar or expanded state has to go: the disc's
-                    // own blur lives entirely on the ring view instead.
+                    // Any stray full-panel blur left on the window root
+                    // from a previous bar or expanded state has to go: the
+                    // disc's own blur lives entirely on the ring view
+                    // instead.
                     if (blurred) {
-                        background = null
+                        this@Service.view?.background = null
                         blurred = false
                         blurredRadius = -1
                         blurredCornerRadiusPx = -1f
@@ -475,7 +477,14 @@ class Service : AccessibilityService() {
                 }
 
                 @Suppress("SpellCheckingInspection") if (windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
-                    background =
+                    // On the window root (this@Service.view, the FrameLayout
+                    // createView returns), not this ComposeView -- a stray
+                    // regression from when the ComposeView itself used to be
+                    // that root: the drawable rendered fine either way, but
+                    // the real cross-window blur behind it only actually
+                    // landed when set on the true root, so setting it on a
+                    // child silently blurred nothing at all.
+                    this@Service.view?.background =
                         Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
                             call("setBlurRadius", radius)
                             call("setCornerRadius", cornerRadiusPx)
