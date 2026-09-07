@@ -244,15 +244,28 @@ fun VolumeDisc(
             // stays visible as a border all the way around -- including
             // over the filled arc -- rather than being painted over and
             // erased wherever the level fill already reaches.
-            drawArc(
-                color = outlineColor.copy(alpha = 0.35f),
-                startAngle = startAngle,
-                sweepAngle = fullSweep,
-                useCenter = false,
-                topLeft = arcTopLeft,
-                size = arcSize,
-                style = Stroke(width = ringWidth)
-            )
+            //
+            // A thin border right at the ring's own two edges, not a wash
+            // across its whole width like this used to be: that wash sat
+            // directly on top of whatever the ring's own track shows
+            // between those edges -- translucent blur included -- so it
+            // muddied the frosted look with a flat tint of its own rather
+            // than reading as a border. A line at each edge frames the ring
+            // without covering what's revealed in between.
+            val outlineBorderWidth = 1.5.dp.toPx()
+            val outerBorderRadius = ringRadius + ringWidth / 2f
+            val innerBorderRadius = ringRadius - ringWidth / 2f
+            for (borderRadius in listOf(outerBorderRadius, innerBorderRadius)) {
+                drawArc(
+                    color = outlineColor.copy(alpha = 0.7f),
+                    startAngle = startAngle,
+                    sweepAngle = fullSweep,
+                    useCenter = false,
+                    topLeft = Offset(center.x - borderRadius, center.y - borderRadius),
+                    size = Size(borderRadius * 2f, borderRadius * 2f),
+                    style = Stroke(width = outlineBorderWidth)
+                )
+            }
 
             if (showDots) {
                 // A knob's own marks, lit all the time -- the sense of

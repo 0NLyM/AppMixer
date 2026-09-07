@@ -339,19 +339,27 @@ fun ColorPickerDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(color) }) {
-                Text(stringResource(R.string.apply))
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (onReset != null) {
-                    TextButton(onClick = onReset) {
-                        Text(stringResource(R.string.reset))
+            // Both slots explicitly on one Row rather than left to
+            // AlertDialog's own default button layout, which wrapped Apply
+            // onto its own line above Reset/Cancel once the three no longer
+            // fit its flow row.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (onReset != null) {
+                        TextButton(onClick = onReset) {
+                            Text(stringResource(R.string.reset))
+                        }
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.cancel))
                     }
                 }
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.cancel))
+                Button(onClick = { onConfirm(color) }) {
+                    Text(stringResource(R.string.apply))
                 }
             }
         }
