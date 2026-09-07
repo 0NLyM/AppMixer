@@ -394,19 +394,17 @@ class Service : AccessibilityService() {
                     val outerRingRadius = ringRadius + ringWidth / 2f
                     val innerRingRadius = ringRadius - ringWidth / 2f
 
-                    // A small overlap past the ring's own true edges, so a
-                    // sub-pixel rounding difference between this native
-                    // geometry and Compose's own layout (which measures the
-                    // disc's box to a whole pixel, unlike this raw float
-                    // math) never leaves a hairline gap of unblurred
-                    // wallpaper between the ring's paint and the blur behind
-                    // it. The ring's own opaque stroke fully covers the
-                    // extra sliver on both sides, and what's left over
-                    // bleeds only into VolumeDisc's own transparent
-                    // backdrop-fade margin, which is far wider than this.
-                    val ringBlurOverlapPx = 1.5f * density
-                    val blurOuterRadius = outerRingRadius + ringBlurOverlapPx
-                    val blurInnerRadius = (innerRingRadius - ringBlurOverlapPx).coerceAtLeast(0f)
+                    // 1.0.22 padded these out by 1.5dp on each edge to
+                    // guard against a sub-pixel rounding gap, but nothing
+                    // in VolumeDisc's own Canvas paints over that extra
+                    // margin -- the ring's own stroke and the outline wash
+                    // both stop exactly at the ring's true edges too -- so
+                    // it just showed as its own new, worse artifact: a
+                    // visible ring of plain, untinted blur outside the
+                    // ring's own paint. Matching the true edges exactly
+                    // instead.
+                    val blurOuterRadius = outerRingRadius
+                    val blurInnerRadius = innerRingRadius
 
                     if (ringBlurred && blurredRadius == radius && blurredOuterRadius == blurOuterRadius) {
                         blurLandedState = true

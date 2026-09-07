@@ -228,15 +228,6 @@ fun VolumeDisc(
                 style = Stroke(width = 1.dp.toPx())
             )
 
-            drawArc(
-                color = outlineColor.copy(alpha = 0.35f),
-                startAngle = startAngle,
-                sweepAngle = fullSweep,
-                useCenter = false,
-                topLeft = arcTopLeft,
-                size = arcSize,
-                style = Stroke(width = ringWidth)
-            )
             if (fraction > 0f) {
                 drawArc(
                     color = fillColor,
@@ -248,6 +239,20 @@ fun VolumeDisc(
                     style = Stroke(width = ringWidth)
                 )
             }
+
+            // Drawn after the fill, not before, so the ring's own outline
+            // stays visible as a border all the way around -- including
+            // over the filled arc -- rather than being painted over and
+            // erased wherever the level fill already reaches.
+            drawArc(
+                color = outlineColor.copy(alpha = 0.35f),
+                startAngle = startAngle,
+                sweepAngle = fullSweep,
+                useCenter = false,
+                topLeft = arcTopLeft,
+                size = arcSize,
+                style = Stroke(width = ringWidth)
+            )
 
             if (showDots) {
                 // A knob's own marks, lit all the time -- the sense of
