@@ -658,7 +658,6 @@ private fun ExpandedMixerPreview(preferences: UiPreferences) {
                     value = fraction,
                     onValueChange = {},
                     enabled = false,
-                    roundedLeadingEdge = true,
                     modifier = Modifier.height(20.dp)
                 ) {
                     Box(

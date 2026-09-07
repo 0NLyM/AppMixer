@@ -57,7 +57,6 @@ fun AppVolumeSlider(
                     APP_SLIDER_SHADOW_ELEVATION_DP
                 ),
             value = app.volume,
-            roundedLeadingEdge = true,
             onValueChange = { value ->
                 app.volume = value
                 onChange?.invoke()

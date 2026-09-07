@@ -165,7 +165,6 @@ fun StreamVolumeSlider(
                 ),
             value = volume.toFloat(),
             valueRange = 0f..maxVolume,
-            roundedLeadingEdge = true,
             onValueChange = { value ->
                 val target = value.toInt()
                 if (volume == target) {

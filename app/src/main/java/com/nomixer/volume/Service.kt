@@ -489,18 +489,6 @@ class Service : AccessibilityService() {
                 this@Service.handler.startIdleTimer()
             }
 
-            @SuppressLint("ClickableViewAccessibility")
-            override fun onTouchEvent(event: MotionEvent): Boolean {
-                Log.i(TAG, "onTouchEvent ${event.actionMasked}")
-
-                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-                    this@Service.handler.hideView()
-                    return true
-                }
-
-                return super.onTouchEvent(event)
-            }
-
             @Composable
             override fun Content() {
                 val preferences = manager.uiPreferences
@@ -666,7 +654,22 @@ class Service : AccessibilityService() {
 
         composeContentView = composeView
 
-        return FrameLayout(this).apply {
+        // Now the actual window root -- FLAG_WATCH_OUTSIDE_TOUCH delivers
+        // ACTION_OUTSIDE straight to the root view's own onTouchEvent, never
+        // down into a child, so this has to live here rather than on the
+        // ComposeView (which is what it used to be set on, back when the
+        // ComposeView itself was the root the window was built from).
+        return object : FrameLayout(this) {
+            @SuppressLint("ClickableViewAccessibility")
+            override fun onTouchEvent(event: MotionEvent): Boolean {
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    this@Service.handler.hideView()
+                    return true
+                }
+
+                return super.onTouchEvent(event)
+            }
+        }.apply {
             setViewTreeLifecycleOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
             // Added first, so it paints behind the ComposeView -- the ring
