@@ -833,5 +833,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   on the right) instead of wrapping onto two lines once a longer hex
   value pushed them past the dialog's default button row width.
 
+## 2026-09-07 — 1.0.25
+
+- Setting the disc ring's outline color to 0% opacity -- the
+  documented way to switch a color off -- didn't actually hide it:
+  both of 1.0.24's edge border strokes forced their own fixed alpha
+  instead of reading the color's own. Now respects whatever opacity is
+  actually picked, transparent included.
+- Dropped the ring's inner-edge border: the disc face already has its
+  own outline stroke right around the switch/knob, and the ring's
+  inner border sat a separate 1dp further in, so the two never quite
+  lined up -- showing as a stray, slightly offset second line rather
+  than a clean frame. The ring keeps only its outer-edge border now;
+  the face's own outline still frames the inner edge as it always has.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
