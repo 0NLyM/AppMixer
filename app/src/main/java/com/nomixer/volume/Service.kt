@@ -834,6 +834,23 @@ class Service : AccessibilityService() {
         })
     }
 
+    /**
+     * The window's own root view -- the FrameLayout [createView] returns,
+     * added to [windowManager] directly, never [composeContentView] or
+     * [discBlurView] (its two children). Any effect that has to apply to
+     * the *window itself* rather than to one piece of its content --
+     * background blur chief among them -- has to be set here specifically.
+     *
+     * This exact mistake shipped once already: bar-style and expanded-mixer
+     * Translucent blur silently stopped landing (the drawable still
+     * rendered, just with nothing behind it actually blurred) the moment
+     * [createView] started wrapping the ComposeView in a FrameLayout for
+     * the disc's ring blur, because the blur assignment stayed on the
+     * ComposeView -- which had quietly stopped being this root the same
+     * moment. See [applyWindowBlur]'s own comment before ever setting
+     * `background` (blur or otherwise) on anything other than
+     * `this@Service.view`.
+     */
     private var view: View? = null
     private var viewVisible = false
 

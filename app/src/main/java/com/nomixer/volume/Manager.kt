@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.AudioPlaybackConfiguration
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,7 @@ import rikka.shizuku.ShizukuProvider
 class Manager(context: Context, dataStore: DataStore<Preferences>) {
     companion object {
         const val SHIZUKU_PACKAGE_NAME = "moe.shizuku.privileged.api"
+        private const val TAG = "NoMixer.Manager"
     }
 
     enum class ShizukuStatus {
@@ -38,14 +40,30 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     val shizukuStatus
         get() = _shizukuStatus
 
+    // Wrapping is a local, purely reflective change to the binder proxy --
+    // it doesn't touch Shizuku itself, only whether a later privileged call
+    // *would* route through it -- so it isn't expected to fail here. It's
+    // still guarded rather than left to crash the whole app at construction
+    // if some OEM/Android version's AudioManager/ActivityManager shape
+    // doesn't match what the reflection expects: the plain, unprivileged
+    // path everything already falls back to is a far better failure mode
+    // than not starting at all.
     val audioManager = context.getSystemService(AudioManager::class.java)!!.apply {
-        Reflect.onClass(AudioManager::class.java).call("getService").get<Any>()
-            .apply { ToggleableBinderProxy.wrap(this) }
+        try {
+            Reflect.onClass(AudioManager::class.java).call("getService").get<Any>()
+                .apply { ToggleableBinderProxy.wrap(this) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Can't wrap the audio service binder", e)
+        }
     }
 
     val activityManager = context.getSystemService(ActivityManager::class.java)!!.apply {
-        Reflect.onClass(ActivityManager::class.java).call("getService").get<Any>()
-            .apply { ToggleableBinderProxy.wrap(this) }
+        try {
+            Reflect.onClass(ActivityManager::class.java).call("getService").get<Any>()
+                .apply { ToggleableBinderProxy.wrap(this) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Can't wrap the activity service binder", e)
+        }
     }
     private val packageManager by lazy { PackageManagerProxy.get(context) }
     val notificationManagerProxy = NotificationManagerProxy(context)

@@ -27,9 +27,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +74,93 @@ import com.nomixer.volume.ui.theme.NoMixerTheme
 import org.joor.Reflect
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuRemoteProcess
+
+/**
+ * A standing indicator for whether Shizuku -- the elevated access almost
+ * everything privileged in this app (silent ringer mode included) actually
+ * routes through -- is currently connected, next to the rest of the top
+ * bar's actions rather than buried in a full-screen gate that only shows
+ * while the app is first setting up. Shizuku's own pairing can lapse later
+ * on its own (a reboot without its auto-start configured, a wireless
+ * debugging session that dropped, a revoked permission) without the app
+ * doing anything wrong, and until now there was nothing on screen to tell
+ * a user why, say, the collapsed popup's ringer switch had quietly stopped
+ * doing anything: tapping it looks identical whether Shizuku is fine or
+ * not, since a refused mode change just leaves the switch where it was.
+ * Tapping this repeats whatever step is actually blocking that same
+ * connection, without the user having to guess which one.
+ */
+@Composable
+private fun ShizukuStatusAction(status: Manager.ShizukuStatus) {
+    val context = LocalContext.current
+    val (icon, tint, description) = when (status) {
+        Manager.ShizukuStatus.Connected -> Triple(
+            Icons.Default.CheckCircle,
+            MaterialTheme.colorScheme.onBackground,
+            "Shizuku connected"
+        )
+
+        Manager.ShizukuStatus.PermissionDenied -> Triple(
+            Icons.Default.Warning,
+            MaterialTheme.colorScheme.error,
+            "Shizuku needs permission -- tap to grant"
+        )
+
+        Manager.ShizukuStatus.Disconnected -> Triple(
+            Icons.Default.Warning,
+            MaterialTheme.colorScheme.error,
+            "Shizuku not connected -- tap to open Shizuku"
+        )
+
+        Manager.ShizukuStatus.Uninstalled -> Triple(
+            Icons.Default.Warning,
+            MaterialTheme.colorScheme.error,
+            "Shizuku not installed -- tap to install"
+        )
+    }
+
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+            TooltipAnchorPosition.Below, 12.dp
+        ),
+        tooltip = { PlainTooltip { Text(description) } },
+        state = rememberTooltipState()
+    ) {
+        IconButton(onClick = {
+            when (status) {
+                Manager.ShizukuStatus.PermissionDenied -> Shizuku.requestPermission(0)
+
+                Manager.ShizukuStatus.Disconnected -> {
+                    val launchIntent =
+                        context.packageManager.getLaunchIntentForPackage(Manager.SHIZUKU_PACKAGE_NAME)
+                    if (launchIntent != null) {
+                        context.startActivity(launchIntent)
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "Open Shizuku and make sure it's running",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+
+                Manager.ShizukuStatus.Uninstalled -> {
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
+                        "https://play.google.com/store/apps/details?id=${Manager.SHIZUKU_PACKAGE_NAME}".toUri()
+                    )
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                }
+
+                Manager.ShizukuStatus.Connected ->
+                    Toast.makeText(context, "Shizuku is connected", Toast.LENGTH_SHORT).show()
+            }
+        }) {
+            Icon(icon, contentDescription = description, tint = tint)
+        }
+    }
+}
 
 @SuppressLint("PrivateApi", "SoonBlockedPrivateApi")
 class MainActivity : ComponentActivity() {
@@ -241,6 +330,8 @@ class MainActivity : ComponentActivity() {
                                 titleContentColor = MaterialTheme.colorScheme.onBackground
                             ),
                             actions = {
+                            ShizukuStatusAction(manager.shizukuStatus)
+
                             if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
                                 ToggleButton(
                                     checked = showAll,
