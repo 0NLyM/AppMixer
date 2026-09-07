@@ -245,25 +245,32 @@ fun VolumeDisc(
             // over the filled arc -- rather than being painted over and
             // erased wherever the level fill already reaches.
             //
-            // A thin border right at the ring's own two edges, not a wash
-            // across its whole width like this used to be: that wash sat
-            // directly on top of whatever the ring's own track shows
-            // between those edges -- translucent blur included -- so it
-            // muddied the frosted look with a flat tint of its own rather
-            // than reading as a border. A line at each edge frames the ring
-            // without covering what's revealed in between.
-            val outlineBorderWidth = 1.5.dp.toPx()
-            val outerBorderRadius = ringRadius + ringWidth / 2f
-            val innerBorderRadius = ringRadius - ringWidth / 2f
-            for (borderRadius in listOf(outerBorderRadius, innerBorderRadius)) {
+            // A thin border right at the ring's own outer edge only, not a
+            // wash across its whole width like this used to be: that wash
+            // sat directly on top of whatever the ring's own track shows in
+            // between -- translucent blur included -- so it muddied the
+            // frosted look with a flat tint of its own rather than reading
+            // as a border. The ring's *inner* edge already has its own
+            // border -- the disc face's own outline, drawn above at
+            // `radius - ringWidth` -- so a second one here, a whole
+            // separate stroke 1dp further in (this ring's own -1dp nudge),
+            // only ever showed as a stray, slightly misaligned second line
+            // right where the switch/label sits, never an intentional
+            // doubled border.
+            //
+            // Respects the color's own alpha rather than forcing one of
+            // its own, same as every other paint here: 0% has to mean
+            // fully off, not "off, except this line stays".
+            if (outlineColor.alpha > 0f) {
+                val outerBorderRadius = ringRadius + ringWidth / 2f
                 drawArc(
-                    color = outlineColor.copy(alpha = 0.7f),
+                    color = outlineColor,
                     startAngle = startAngle,
                     sweepAngle = fullSweep,
                     useCenter = false,
-                    topLeft = Offset(center.x - borderRadius, center.y - borderRadius),
-                    size = Size(borderRadius * 2f, borderRadius * 2f),
-                    style = Stroke(width = outlineBorderWidth)
+                    topLeft = Offset(center.x - outerBorderRadius, center.y - outerBorderRadius),
+                    size = Size(outerBorderRadius * 2f, outerBorderRadius * 2f),
+                    style = Stroke(width = 1.5.dp.toPx())
                 )
             }
 
