@@ -847,5 +847,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   than a clean frame. The ring keeps only its outer-edge border now;
   the face's own outline still frames the inner edge as it always has.
 
+## 2026-09-07 — 1.0.26
+
+- Fixed Translucent blur silently not landing on the Vertical Bar and
+  Horizontal Bar popup styles (and the expanded mixer): 1.0.19/1.0.20
+  wrapped the popup's own ComposeView in a FrameLayout to add the
+  disc's ring-blur view alongside it, which made that FrameLayout the
+  actual window root -- but the bar/mixer panel blur kept setting its
+  system blur drawable on the ComposeView itself, a plain child from
+  that point on. The drawable still existed and rendered, just with
+  nothing behind it actually blurred, since the real cross-window
+  blur-behind effect only lands when set on the window's true root.
+  Moved it there. The disc's own ring blur, already on its own
+  dedicated view, was never affected by this.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
