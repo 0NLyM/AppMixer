@@ -806,5 +806,16 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   much wider transparent backdrop-fade margin around it, invisible
   either way.
 
+## 2026-09-07 — 1.0.23
+
+- 1.0.22's 1.5dp padding on the disc ring-blur view, meant to close a
+  hairline seam, showed as its own worse artifact instead: a visible
+  gray ring, since nothing in the disc's own drawing paints that far
+  out over it. Reverted to matching the ring's true edges exactly.
+- The disc ring's own outline now draws after the level fill instead
+  of before, so it stays visible as a border over the filled arc too,
+  rather than being erased by the fill wherever the level already
+  reaches.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
