@@ -884,5 +884,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   visible and fixable from the app itself instead of only showing up
   as controls quietly not working.
 
+## 2026-09-08 — 1.0.28
+
+- Fixed the popup's panel going fully invisible (no blur, no fallback
+  color either) when battery saver was turned on: Android disables
+  real cross-window blur system-wide while battery saver is active --
+  expected, universal OS behavior no app can override -- but this app
+  kept believing a blur that had already landed was still working
+  even after the platform silently revoked it, since the check that
+  decides "was blur actually granted" was only re-evaluated when the
+  panel's own radius/style/scale changed, never on its own. With that
+  stuck at "landed", the app's own translucent fallback color (which
+  is meant to stand in exactly when real blur isn't granted) never
+  kicked in either, so the panel had nothing painting it at all. Now
+  re-checked on every apply, and a live
+  `WindowManager.addCrossWindowBlurEnabledListener` reacts immediately
+  if battery saver is toggled while the popup or expanded mixer is
+  already on screen, instead of only noticing on some unrelated later
+  change.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
