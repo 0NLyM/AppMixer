@@ -353,6 +353,18 @@ fun UiPreferences.paintedPanelAlpha(blurLanded: Boolean = true): Float =
         PopupBackground.Translucent -> if (blurLanded) 0f else TRANSLUCENT_FALLBACK_ALPHA
     }
 
+/**
+ * Whether the panel's own paint ([paintedPanelAlpha]) is standing in for a
+ * system blur that wasn't granted, as opposed to either Solid's own flat
+ * opacity or Translucent with the real blur actually landing (which paints
+ * nothing of its own). Callers use this to decide whether to dress that
+ * stand-in up with a frosted-glass texture ([frostedGlassBrush]) instead of
+ * a flat tint -- Solid's flat fill is deliberately left alone, since its
+ * opacity is a setting the user is directly controlling, not a fallback.
+ */
+fun UiPreferences.isFrostedFallback(blurLanded: Boolean): Boolean =
+    activeBackground() == PopupBackground.Translucent && !blurLanded
+
 /** Peak alpha of the popup's own shadow, at its brightest point. Deliberately light. */
 private const val POPUP_SHADOW_ALPHA = 0.35f
 

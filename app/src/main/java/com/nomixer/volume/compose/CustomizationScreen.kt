@@ -94,6 +94,7 @@ import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
 import com.nomixer.volume.data.activeShowShadow
 import com.nomixer.volume.data.activeShowValue
+import com.nomixer.volume.data.isFrostedFallback
 import com.nomixer.volume.data.withBackground
 import com.nomixer.volume.data.withBackgroundOpacity
 import com.nomixer.volume.data.withBlurRadius
@@ -601,6 +602,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     } else {
                         Color.Transparent
                     },
+                    trackBackingFrosted = showBackground && preferences.isFrostedFallback(blurLanded = false),
                     icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (showValue && !besideButton) previewValueText else null,
                     centerContent = if (showRingerButton) {

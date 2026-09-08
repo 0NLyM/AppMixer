@@ -88,6 +88,13 @@ fun VolumeDisc(
      * blur or the raw wallpaper showing straight through the track.
      */
     trackBackingColor: Color = Color.Transparent,
+    /**
+     * Paints [trackBackingColor] as a soft frosted-glass sheen instead of a
+     * flat fill -- the caller sets this when that color is standing in for
+     * a system blur the platform wouldn't grant, not when it's Solid's own
+     * flat opacity (see [com.nomixer.volume.data.isFrostedFallback]).
+     */
+    trackBackingFrosted: Boolean = false,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -178,15 +185,27 @@ fun VolumeDisc(
             // already occupies, and everything else (the shadow-fade
             // sliver, the margin beyond it) stays genuinely see-through.
             if (trackBackingColor.alpha > 0f) {
-                drawArc(
-                    color = trackBackingColor,
-                    startAngle = 0f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    topLeft = arcTopLeft,
-                    size = arcSize,
-                    style = Stroke(width = ringWidth)
-                )
+                if (trackBackingFrosted) {
+                    drawArc(
+                        brush = frostedGlassBrush(trackBackingColor),
+                        startAngle = 0f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = ringWidth)
+                    )
+                } else {
+                    drawArc(
+                        color = trackBackingColor,
+                        startAngle = 0f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = ringWidth)
+                    )
+                }
             }
 
             // Round shadow: nothing of its own through the disc's whole

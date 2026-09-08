@@ -33,6 +33,7 @@ import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -63,7 +64,9 @@ import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
+import com.nomixer.volume.compose.frostedGlassBrush
 import com.nomixer.volume.compose.softShadow
+import com.nomixer.volume.data.isFrostedFallback
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.system.ActivityTaskManagerProxy
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
@@ -611,6 +614,7 @@ class Service : AccessibilityService() {
                         animationSpec = Motion.ColorShift,
                         label = "mixerPanel"
                     )
+                    val panelFrosted = showBackground && preferences.isFrostedFallback(blurLandedState)
                     val sliderShadowColor by animateColorAsState(
                         targetValue = if (showBackground) {
                             Color.Transparent
@@ -658,14 +662,26 @@ class Service : AccessibilityService() {
                             }
                         ) {
                             if (expanded) {
+                                val mixerShape = RoundedCornerShape(preferences.popupCornerRadius.dp)
                                 Surface(
                                     // Painted whether or not the blur landed:
                                     // the system grants it only sometimes, and
                                     // a panel that leaves the background to it
-                                    // is invisible the rest of the time.
-                                    color = panelColor,
+                                    // is invisible the rest of the time. When
+                                    // it's standing in for a blur the platform
+                                    // wouldn't grant, dressed up as a frosted
+                                    // sheen via a background modifier instead
+                                    // of Surface's own flat `color` (which
+                                    // can't take a Brush) -- Surface itself
+                                    // stays transparent in that case.
+                                    modifier = if (panelFrosted) {
+                                        Modifier.background(frostedGlassBrush(panelColor), mixerShape)
+                                    } else {
+                                        Modifier
+                                    },
+                                    color = if (panelFrosted) Color.Transparent else panelColor,
                                     contentColor = MaterialTheme.colorScheme.onBackground,
-                                    shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+                                    shape = mixerShape
                                 ) {
                                     Column(
                                         // One inset all round: the sides used

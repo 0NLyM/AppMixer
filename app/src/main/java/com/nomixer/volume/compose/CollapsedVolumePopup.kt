@@ -2,6 +2,7 @@ package com.nomixer.volume.compose
 
 import android.media.AudioManager
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +53,7 @@ import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
 import com.nomixer.volume.data.activeShowValue
+import com.nomixer.volume.data.isFrostedFallback
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.Motion
@@ -290,6 +292,13 @@ fun CollapsedVolumePopup(
         label = "popupPanel"
     )
 
+    // Whether [panelColor] above is standing in for a system blur the
+    // platform wouldn't grant, in which case it's dressed up as a soft
+    // frosted-glass sheen instead of a flat tint (see [frostedGlassBrush]).
+    // Never true for Solid: that flat fill is the user's own opacity
+    // setting, not a fallback.
+    val panelFrosted = showBackground && preferences.isFrostedFallback(blurLanded)
+
     // The popup's own light shadow, painted right behind its main shape --
     // the disc's ring (inside VolumeDisc itself), the whole bar panel when
     // it has one, or the ringer button and slider individually once
@@ -337,13 +346,23 @@ fun CollapsedVolumePopup(
     val elementShadowColor = if (!isDisc && !showBackground) shadow else Color.Transparent
 
     Surface(
-        modifier = panelShadowModifier,
+        modifier = panelShadowModifier.then(
+            // Surface's own `color` only ever takes a flat Color, so the
+            // frosted sheen is painted as a background modifier underneath
+            // it instead, clipped to the same shape; Surface itself stays
+            // transparent in that case rather than double-painting.
+            if (!isDisc && panelFrosted) {
+                Modifier.background(frostedGlassBrush(panelColor), panelShape)
+            } else {
+                Modifier
+            }
+        ),
         // The disc's own panel never paints a background of its own -- its
         // margin and shadow-fade sliver always stay exactly as they look
         // with the background off; only the ring's own track (inside
         // VolumeDisc, below) ever picks up Solid's tint or Translucent's
         // blur reveal.
-        color = if (isDisc) Color.Transparent else panelColor,
+        color = if (isDisc || panelFrosted) Color.Transparent else panelColor,
         contentColor = MaterialTheme.colorScheme.onBackground,
         shape = panelShape
     ) {
@@ -533,6 +552,7 @@ fun CollapsedVolumePopup(
                         // system blur has landed, revealing it there and
                         // nowhere else.
                         trackBackingColor = panelColor,
+                        trackBackingFrosted = panelFrosted,
                         icon = if (showIcon) volumeIcon else null,
                         label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer
