@@ -861,5 +861,28 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   Moved it there. The disc's own ring blur, already on its own
   dedicated view, was never affected by this.
 
+## 2026-09-07 — 1.0.27
+
+- Fixed the ringer switch (Ring/Vibrate/Silent) not responding to taps
+  on some devices even though it correctly tracked the phone's ringer
+  state when changed elsewhere: the audio service's binder was only
+  ever wrapped once, at app start, to route silent-mode changes
+  through Shizuku's elevated access; if that one attempt failed for
+  any reason, every later tap silently fell back to the same
+  unprivileged call that had just failed, forever, with no retry and
+  no visible error. The wrap is now retried right before each
+  elevated ringer change instead of only once at startup, and a
+  failed change now logs Shizuku's live connection state so a repeat
+  is diagnosable. The equivalent binder-wrap calls in `Manager` were
+  also given the same failure handling they were missing (a reflection
+  failure there previously had no fallback at all).
+- Added a small Shizuku status icon to the main screen's top bar: a
+  checkmark when connected, a warning otherwise. Tapping it while
+  something's wrong re-does whatever step is actually blocking the
+  connection (requesting permission, opening Shizuku, or opening its
+  Play Store listing if it isn't installed), so a lapsed pairing is
+  visible and fixable from the app itself instead of only showing up
+  as controls quietly not working.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
