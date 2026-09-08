@@ -81,6 +81,7 @@ import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.Motion
 import org.joor.Reflect
 import java.util.Objects
+import java.util.function.Consumer
 import kotlin.math.roundToInt
 
 /**
@@ -331,6 +332,25 @@ class Service : AccessibilityService() {
             private var blurredOuterRadius = -1f
 
             /**
+             * Bumped whenever the platform's willingness to grant
+             * cross-window blur changes at runtime -- most commonly
+             * battery saver being toggled while this popup (especially
+             * the expanded mixer, which can stay up far longer than the
+             * collapsed popup's own idle timeout) is already on screen.
+             * Without this, a blur that had already landed just quietly
+             * stops rendering the moment battery saver turns on: the
+             * drawable is still installed, but the system stops actually
+             * blurring behind it, and nothing else here would ever
+             * re-run [applyWindowBlur] to notice -- it only fires again
+             * when one of its own LaunchedEffect keys changes, none of
+             * which battery saver touches. Read from Compose purely to
+             * be a LaunchedEffect key; the value itself is meaningless.
+             */
+            private var blurCapabilityGeneration by mutableStateOf(0)
+
+            private val blurEnabledListener = Consumer<Boolean> { blurCapabilityGeneration++ }
+
+            /**
              * The blur *is* the panel in translucent mode, so the composable
              * draws no fill of its own; in solid mode there's no blur and the
              * composable's panel is the only background.
@@ -408,16 +428,25 @@ class Service : AccessibilityService() {
                     val blurOuterRadius = outerRingRadius
                     val blurInnerRadius = innerRingRadius
 
-                    if (ringBlurred && blurredRadius == radius && blurredOuterRadius == blurOuterRadius) {
+                    val ringView = this@Service.discBlurView
+                    // Recomputed on every call rather than trusted from
+                    // [ringBlurred] alone: the platform is free to revoke
+                    // blur at runtime (battery saver turning on being the
+                    // common case) without this view doing anything, so a
+                    // stale "already blurred" flag would keep reporting a
+                    // blur that has actually quietly stopped rendering.
+                    @Suppress("SpellCheckingInspection") val blurCapable = ringView != null &&
+                        windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated &&
+                        Build.MANUFACTURER != "realme"
+
+                    if (blurCapable && ringBlurred && blurredRadius == radius &&
+                        blurredOuterRadius == blurOuterRadius
+                    ) {
                         blurLandedState = true
                         return
                     }
 
-                    val ringView = this@Service.discBlurView
-                    @Suppress("SpellCheckingInspection") if (ringView != null &&
-                        windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated &&
-                        Build.MANUFACTURER != "realme"
-                    ) {
+                    if (ringView != null && blurCapable) {
                         val side = (blurOuterRadius * 2f).roundToInt()
                         ringView.layoutParams?.let { params ->
                             if (params.width != side || params.height != side) {
@@ -469,14 +498,23 @@ class Service : AccessibilityService() {
                 // a style switch resizes the view underneath the same
                 // drawable, which needs a fresh one even when the radius
                 // and corner radius happen to match.
-                if (blurred && blurredRadius == radius && blurredCornerRadiusPx == cornerRadiusPx &&
+
+                // Recomputed on every call rather than trusted from
+                // [blurred] alone -- see the disc-ring branch above for why
+                // a stale "already blurred" flag can't be trusted once the
+                // platform is free to revoke blur at runtime.
+                @Suppress("SpellCheckingInspection") val blurCapable =
+                    windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated &&
+                        Build.MANUFACTURER != "realme"
+
+                if (blurCapable && blurred && blurredRadius == radius && blurredCornerRadiusPx == cornerRadiusPx &&
                     blurredStyle == prefs.popupStyle && blurredExpanded == expanded
                 ) {
                     blurLandedState = true
                     return
                 }
 
-                @Suppress("SpellCheckingInspection") if (windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
+                if (blurCapable) {
                     // On the window root (this@Service.view, the FrameLayout
                     // createView returns), not this ComposeView -- a stray
                     // regression from when the ComposeView itself used to be
@@ -505,9 +543,16 @@ class Service : AccessibilityService() {
 
                 Log.i(TAG, "onAttachedToWindow manufacturer: ${Build.MANUFACTURER}")
 
+                windowManager.addCrossWindowBlurEnabledListener(mainExecutor, blurEnabledListener)
+
                 applyWindowBlur(manager.uiPreferences.wantsRealWindowBlur(expanded = false))
 
                 this@Service.handler.startIdleTimer()
+            }
+
+            override fun onDetachedFromWindow() {
+                windowManager.removeCrossWindowBlurEnabledListener(blurEnabledListener)
+                super.onDetachedFromWindow()
             }
 
             @Composable
@@ -529,7 +574,12 @@ class Service : AccessibilityService() {
                     // Scale is in here too: a collapsed disc's own blur
                     // lives on a separate ring view sized directly off it
                     // (see applyWindowBlur), which nothing else here would
-                    // otherwise catch a resize of.
+                    // otherwise catch a resize of. blurCapabilityGeneration
+                    // re-runs this the moment the platform grants or
+                    // revokes blur at runtime (battery saver toggling being
+                    // the common case), so a panel that's already showing
+                    // doesn't keep assuming a blur that just silently
+                    // stopped rendering.
                     LaunchedEffect(
                         expanded,
                         preferences.popupBackground,
@@ -538,7 +588,8 @@ class Service : AccessibilityService() {
                         preferences.popupBlurRadius,
                         preferences.discPopupBlurRadius,
                         preferences.popupScale,
-                        preferences.discPopupScale
+                        preferences.discPopupScale,
+                        blurCapabilityGeneration
                     ) {
                         applyWindowBlur(preferences.wantsRealWindowBlur(expanded), expanded = expanded)
                     }
