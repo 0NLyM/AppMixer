@@ -903,5 +903,21 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   already on screen, instead of only noticing on some unrelated later
   change.
 
+## 2026-09-08 — 1.0.29
+
+- The translucent panel's fallback tint -- painted whenever the
+  platform won't grant real system blur, battery saver being the
+  common case -- was a flat, evenly-colored fill, nothing like the
+  frosted-glass look it's standing in for. A real per-pixel blur of
+  whatever's behind the window isn't something an app can fake cheaply
+  (that's exactly the capability battery saver revokes, and faking it
+  via screen capture would cost more than the real thing, defeating
+  the point), but the fallback tint itself can still look less flat.
+  It's now painted as a soft diagonal gradient sheen (a new
+  `frostedGlassBrush()` helper) instead of a solid color, across the
+  disc's ring, the bar styles' panel, and the expanded mixer. Solid
+  mode's own flat opacity is untouched, since that's a setting the
+  user is directly controlling, not a fallback.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
