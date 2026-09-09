@@ -33,6 +33,7 @@ import com.nomixer.volume.data.DISC_INSET
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
+import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -109,7 +110,23 @@ fun VolumeDisc(
      * default) leaves it exactly centered, as if the whole disc were on
      * screen.
      */
-    centerContentOffsetX: Dp = 0.dp
+    centerContentOffsetX: Dp = 0.dp,
+    /**
+     * Horizontal distance from the disc's own true center to the point
+     * where the physical screen edge cuts across its ring (positive is
+     * toward increasing x, i.e. right) -- null when the disc isn't cut at
+     * all, in which case the ring behaves exactly as it always has: the
+     * whole 0..1 range painted across the complete 360° circle.
+     *
+     * When the offset actually falls inside the ring's own radius, the
+     * value arc, its outline, and its tick marks instead map their whole
+     * range onto just the arc still visible past that cut -- 0 anchored at
+     * one cut point, 1 at the other -- so every level in the range stays
+     * readable no matter how much of the disc is hanging off the edge of
+     * the screen. The caller (see CollapsedVolumePopup) works this out
+     * from the same window-edge math that places the popup itself.
+     */
+    ringCutOffsetX: Dp? = null
 ) {
     val range = valueRange.endInclusive - valueRange.start
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -179,6 +196,44 @@ fun VolumeDisc(
             val arcTopLeft = Offset(center.x - ringRadius, center.y - ringRadius)
             val arcSize = Size(ringRadius * 2f, ringRadius * 2f)
 
+            // Angles are measured clockwise from 3 o'clock. By default the
+            // value arc, its outline, and its ticks fill from the top,
+            // going clockwise, all the way around.
+            val startAngle = -90f
+            val fullSweep = 360f
+
+            // When the disc is laterally cut by the physical screen edge,
+            // remap that whole range onto just the arc still visible past
+            // the cut instead of the full circle -- 0 at the lower cut
+            // point, 1 at the upper one -- so every level stays readable no
+            // matter how much of the ring is hanging off the edge of the
+            // screen. A vertical line at ringCutOffsetX from center
+            // intersects the ring's own circle at angles ±phi either side
+            // of 3 o'clock, where cos(phi) = offset / ringRadius; which of
+            // the two arcs it bounds is the visible one depends on which
+            // side of center the cut falls on.
+            val cutOffsetPx = ringCutOffsetX?.toPx()
+            val ringIsClipped = cutOffsetPx != null && abs(cutOffsetPx) < ringRadius
+            val (visibleStartAngle, visibleSweepAngle) = if (ringIsClipped) {
+                val phi = Math.toDegrees(
+                    acos((cutOffsetPx!! / ringRadius).toDouble())
+                ).toFloat()
+                if (cutOffsetPx <= 0f) {
+                    // Cut left of center: the visible arc is the
+                    // right-hand side, through 3 o'clock -- the short
+                    // way around from the lower cut point.
+                    phi to -(2f * phi)
+                } else {
+                    // Cut right of center: the visible arc is the
+                    // left-hand side, through 9 o'clock -- the long way
+                    // around from the same lower cut point, so the
+                    // opposite rotational sense from the case above.
+                    phi to (360f - 2f * phi)
+                }
+            } else {
+                startAngle to fullSweep
+            }
+
             // Backing confined to the ring's own track, never anything
             // wider -- so Solid's tint and Translucent's blur reveal can
             // only ever show up inside the same annulus the white track
@@ -234,11 +289,6 @@ fun VolumeDisc(
                 )
             }
 
-            // Angles are measured clockwise from 3 o'clock. Fills from the
-            // top, going clockwise, all the way around.
-            val startAngle = -90f
-            val fullSweep = 360f
-
             drawCircle(color = trackColor, radius = radius - ringWidth, center = center)
             drawCircle(
                 color = outlineColor,
@@ -250,8 +300,8 @@ fun VolumeDisc(
             if (fraction > 0f) {
                 drawArc(
                     color = fillColor,
-                    startAngle = startAngle,
-                    sweepAngle = fullSweep * fraction,
+                    startAngle = visibleStartAngle,
+                    sweepAngle = visibleSweepAngle * fraction,
                     useCenter = false,
                     topLeft = arcTopLeft,
                     size = arcSize,
@@ -284,8 +334,8 @@ fun VolumeDisc(
                 val outerBorderRadius = ringRadius + ringWidth / 2f
                 drawArc(
                     color = outlineColor,
-                    startAngle = startAngle,
-                    sweepAngle = fullSweep,
+                    startAngle = visibleStartAngle,
+                    sweepAngle = visibleSweepAngle,
                     useCenter = false,
                     topLeft = Offset(center.x - outerBorderRadius, center.y - outerBorderRadius),
                     size = Size(outerBorderRadius * 2f, outerBorderRadius * 2f),
@@ -307,7 +357,14 @@ fun VolumeDisc(
                 val tickOrbit = ringRadius - ringWidth * 0.95f
                 val tickLength = radius * 0.05f
                 val tickThickness = radius * 0.028f
-                val ringRotation = fraction * 360f
+                // A spinning knob only reads correctly when its own zero
+                // point is free to land anywhere -- once the ring is cut
+                // and 0/1 are pinned to fixed points on screen, the ticks
+                // instead sit at fixed, evenly redistributed positions
+                // across the same visible arc as the fill, same as it.
+                val ringRotation = if (ringIsClipped) 0f else fraction * 360f
+                val tickStartAngle = if (ringIsClipped) visibleStartAngle else startAngle
+                val tickSweep = if (ringIsClipped) visibleSweepAngle else fullSweep
                 // The shared outer boundary every tick's own outer end sits
                 // on, worked out from the base (non-landmark) length -- so a
                 // landmark tick's extra length grows inward, toward the
@@ -334,7 +391,7 @@ fun VolumeDisc(
                     val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
 
                     val angle =
-                        startAngle + (fullSweep / TICK_COUNT) * index + ringRotation
+                        tickStartAngle + (tickSweep / TICK_COUNT) * index + ringRotation
                     val radians = Math.toRadians(angle.toDouble())
                     val tickCenterRadius = tickOuterRadius - length / 2f
                     val tickCenter = Offset(
@@ -358,7 +415,8 @@ fun VolumeDisc(
                 // Nothing else marks the current level with the ring off,
                 // so fall back to a single marker at the fill's leading
                 // edge, still swelling while the arc is still travelling.
-                val markerRadians = Math.toRadians((startAngle + fullSweep * fraction).toDouble())
+                val markerRadians =
+                    Math.toRadians((visibleStartAngle + visibleSweepAngle * fraction).toDouble())
                 drawCircle(
                     color = accentColor,
                     radius = ringWidth * (0.34f + chase * 0.16f),

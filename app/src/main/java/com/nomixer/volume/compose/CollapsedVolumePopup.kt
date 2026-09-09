@@ -241,27 +241,59 @@ fun CollapsedVolumePopup(
         PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart,
         PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd
     )
-    val centerContentOffsetX = if (discIsLateral) {
-        val discOutwardSign = when (preferences.popupAnchor) {
-            PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
-            else -> -1
-        }
+    // Shared by both centerContentOffsetX and ringCutOffsetX below -- both
+    // need the same window-edge math, just applied to a different point
+    // (the switch/label vs. the ring's own track).
+    val discOutwardSign = when (preferences.popupAnchor) {
+        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
+        else -> -1
+    }
+    val discOverhang = if (discIsLateral) {
         val revealFraction =
             (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
         val windowHalfWidth = discPanelCornerRadius
         val edgeGap = DISC_EDGE_GAP_DP.dp
-        val overhang =
-            (windowHalfWidth - (windowHalfWidth + edgeGap) * revealFraction).coerceAtLeast(0.dp)
+        (windowHalfWidth - (windowHalfWidth + edgeGap) * revealFraction).coerceAtLeast(0.dp)
+    } else {
+        0.dp
+    }
+    val centerContentOffsetX = if (discIsLateral) {
+        val windowHalfWidth = discPanelCornerRadius
+        val edgeGap = DISC_EDGE_GAP_DP.dp
         // The ringer button is the widest thing that can sit in the hole,
         // so its own half-width is the clearance to protect -- plus a
         // small minimum gap so it never rides right up against the cut
         // line either.
         val contentHalfWidth = (buttonSize * 0.8f) / 2
-        val maxLocalCenter = windowHalfWidth - overhang - edgeGap - contentHalfWidth
+        val maxLocalCenter = windowHalfWidth - discOverhang - edgeGap - contentHalfWidth
         val localCenter = if (maxLocalCenter < 0.dp) maxLocalCenter else 0.dp
         localCenter * discOutwardSign
     } else {
         0.dp
+    }
+
+    // Horizontal distance from the disc's own true center to the point
+    // where the physical screen edge actually cuts across its ring, in the
+    // disc's own local coordinate space (positive = right of center) --
+    // null once the disc is fully back on screen (or not laterally
+    // anchored at all), in which case VolumeDisc draws its ring exactly as
+    // it always has: the full 0..1 range across the complete circle.
+    //
+    // discOverhang is measured from the *window's* own edge inward; the
+    // disc itself sits inset from that edge by DISC_PANEL_MARGIN_DP, and is
+    // never more than half hidden (see clampToScreenOnceLaidOut), so this
+    // clamps to the disc's own radius rather than its full window-relative
+    // range.
+    val ringCutOffsetX = if (discIsLateral) {
+        val discRadius = discDiameter / 2
+        val discEdgeCut = (discOverhang - DISC_PANEL_MARGIN_DP.dp).coerceIn(0.dp, discRadius)
+        // At discEdgeCut == discRadius (dx == 0) the cut runs right through
+        // the disc's own center; VolumeDisc itself falls back to the full
+        // circle once the offset is wider than its own ring radius, so
+        // there's no need to special-case that boundary here too.
+        (discRadius - discEdgeCut) * discOutwardSign
+    } else {
+        null
     }
 
     // A dedicated switch, not just Solid at 0% or Translucent with nothing
@@ -587,6 +619,7 @@ fun CollapsedVolumePopup(
                             null
                         },
                         centerContentOffsetX = centerContentOffsetX,
+                        ringCutOffsetX = ringCutOffsetX,
                         onValueChange = { value -> setVolume(value.roundToInt()) }
                     )
                 }
