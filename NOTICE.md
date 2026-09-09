@@ -919,5 +919,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   mode's own flat opacity is untouched, since that's a setting the
   user is directly controlling, not a fallback.
 
+## 2026-09-09 — 1.0.30
+
+- When the disc style is anchored to a side (Start/End) with a low
+  horizontal offset, part of it deliberately sits off the physical
+  screen -- but the outer volume ring (the 0-16 scale) kept mapping
+  its whole range onto a full 360° circle regardless, so only
+  whatever arbitrary slice of that circle happened to still be on
+  screen was actually readable. The ring now works out exactly where
+  the screen's own edge crosses it and redistributes the full 0-16
+  scale across only that visible arc -- 0 anchored to the lower cut
+  point, 16 to the upper one -- so the whole scale stays readable no
+  matter how much of the disc is hanging off screen. A disc that's
+  fully on screen is unaffected.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
