@@ -367,6 +367,38 @@ class Service : AccessibilityService() {
              * exactly the ring's own annulus, leaving that view's own
              * outline to clip the reveal into a ring.
              */
+            /**
+             * Tears the ring-shaped blur view back down to nothing: no
+             * background, no outline radii, and -- unlike the two flags and
+             * the drawable -- its own [FrameLayout.LayoutParams] size too.
+             * That size is otherwise only ever touched by the "set it up"
+             * path below, which only runs while a *collapsed disc* is both
+             * showing and actually blurring; every other path (blur turned
+             * off, style switched away from the disc, expanded into the
+             * mixer) used to leave it exactly as wide/tall as the last
+             * disc it fit, sitting invisible but still full-sized inside
+             * the same FrameLayout as whatever's showing now. A leftover
+             * child's explicit size still counts toward that FrameLayout's
+             * own WRAP_CONTENT measurement even with nothing painted on
+             * it, so the window the ring view no longer belongs to could
+             * end up briefly sized (and positioned) around a disc that
+             * isn't there anymore -- one contributor to the expanded
+             * mixer's window still looking momentarily cut during its own
+             * appear animation.
+             */
+            fun clearRingBlur(ringView: DiscRingBlurView?) {
+                ringView ?: return
+                ringView.background = null
+                ringView.setRingRadii(0f, 0f)
+                ringView.layoutParams?.let { params ->
+                    if (params.width != 0 || params.height != 0) {
+                        params.width = 0
+                        params.height = 0
+                        ringView.layoutParams = params
+                    }
+                }
+            }
+
             fun applyWindowBlur(wanted: Boolean, expanded: Boolean = false) {
                 val prefs = manager.uiPreferences
                 val isCollapsedDisc = !expanded && prefs.popupStyle == PopupStyle.Disc
@@ -380,10 +412,7 @@ class Service : AccessibilityService() {
                         blurredStyle = null
                     }
                     if (ringBlurred) {
-                        this@Service.discBlurView?.let {
-                            it.background = null
-                            it.setRingRadii(0f, 0f)
-                        }
+                        clearRingBlur(this@Service.discBlurView)
                         ringBlurred = false
                         blurredOuterRadius = -1f
                     }
@@ -480,10 +509,7 @@ class Service : AccessibilityService() {
                 }
 
                 if (ringBlurred) {
-                    this@Service.discBlurView?.let {
-                        it.background = null
-                        it.setRingRadii(0f, 0f)
-                    }
+                    clearRingBlur(this@Service.discBlurView)
                     ringBlurred = false
                     blurredOuterRadius = -1f
                 }
@@ -742,8 +768,25 @@ class Service : AccessibilityService() {
                                             this@Service.layoutParams.alpha = 0f
                                             this@Service.windowManager.updateViewLayout(it, this@Service.layoutParams)
                                             this@Service.clampToScreenOnceLaidOut(it, expanded = true) {
-                                                this@Service.layoutParams.alpha = 1f
-                                                this@Service.windowManager.updateViewLayout(it, this@Service.layoutParams)
+                                                // One extra main-thread hop
+                                                // past the correction itself,
+                                                // in case the mixer's content
+                                                // (a lazy app list among it)
+                                                // needs a second layout pass
+                                                // to fully settle -- a plain
+                                                // post, not another layout
+                                                // listener, so this always
+                                                // actually fires and reveals
+                                                // the window rather than
+                                                // risking one that silently
+                                                // never does.
+                                                it.post {
+                                                    this@Service.layoutParams.alpha = 1f
+                                                    this@Service.windowManager.updateViewLayout(
+                                                        it,
+                                                        this@Service.layoutParams
+                                                    )
+                                                }
                                             }
                                         }
                                         this@Service.handler.startIdleTimer()

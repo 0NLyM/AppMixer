@@ -220,14 +220,21 @@ fun VolumeDisc(
                 ).toFloat()
                 if (cutOffsetPx <= 0f) {
                     // Cut left of center: the visible arc is the
-                    // right-hand side, through 3 o'clock -- the short
-                    // way around from the lower cut point.
-                    phi to -(2f * phi)
+                    // right-hand side, through 3 o'clock. Starting at the
+                    // *upper* cut point and sweeping clockwise (a
+                    // positive angle) down to the lower one, same
+                    // direction the tick ring always spins in below --
+                    // starting at the lower point instead, the only way
+                    // to still land on the upper one is a negative,
+                    // counter-clockwise sweep, which used to visibly spin
+                    // the wrong way against the ticks.
+                    -phi to (2f * phi)
                 } else {
                     // Cut right of center: the visible arc is the
                     // left-hand side, through 9 o'clock -- the long way
-                    // around from the same lower cut point, so the
-                    // opposite rotational sense from the case above.
+                    // around, clockwise, from the lower cut point to the
+                    // upper one. Already the same direction as the ticks
+                    // (the sweep here is positive too), so nothing to flip.
                     phi to (360f - 2f * phi)
                 }
             } else {
