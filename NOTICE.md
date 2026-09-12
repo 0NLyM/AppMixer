@@ -950,5 +950,18 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   on, expanding any collapsed style opens the mixer centered on
   screen instead of anchored wherever the collapsed popup was.
 
+## 2026-09-12 — 1.0.32
+
+- The volume-key path made a Shizuku-proxied binder call
+  (`activityTaskManager.getForegroundTask()`) on every single volume
+  key press, before the popup could even start appearing -- needed
+  only to check whether the current foreground app is on the
+  "disable volume buttons" list, a rare case, but paid on every
+  press regardless. Replaced with a plain `rootInActiveWindow` lookup
+  already available to this app's own accessibility service
+  connection, cutting a full out-of-process IPC hop from the app's
+  single most frequent interaction. Same ignore-list behavior, just
+  without the extra round trip.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
