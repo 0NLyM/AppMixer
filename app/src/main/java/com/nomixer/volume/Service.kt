@@ -726,8 +726,26 @@ class Service : AccessibilityService() {
                                         // for its own, narrower window and
                                         // would otherwise carry over stale,
                                         // pushing the wider mixer off-screen.
+                                        //
+                                        // That correction can't land until
+                                        // the mixer's own first layout pass,
+                                        // one or more frames after this
+                                        // click -- so the window is hidden
+                                        // right away instead of staying
+                                        // visible in the meantime, which
+                                        // used to show the mixer's content
+                                        // sitting at the collapsed disc's
+                                        // own (much narrower) position,
+                                        // cut in half by the screen edge,
+                                        // for a frame or two before jumping
+                                        // to where it actually belongs.
                                         this@Service.view?.let {
-                                            this@Service.clampToScreenOnceLaidOut(it, expanded = true)
+                                            this@Service.layoutParams.alpha = 0f
+                                            this@Service.windowManager.updateViewLayout(it, this@Service.layoutParams)
+                                            this@Service.clampToScreenOnceLaidOut(it, expanded = true) {
+                                                this@Service.layoutParams.alpha = 1f
+                                                this@Service.windowManager.updateViewLayout(it, this@Service.layoutParams)
+                                            }
                                         }
                                         this@Service.handler.startIdleTimer()
                                     },
@@ -852,8 +870,14 @@ class Service : AccessibilityService() {
      * the window sits half off-screen, and by the top of the offset range
      * it's fully back on screen with a small gap left to the edge, rather
      * than sliding further in from there the way a bar would.
+     *
+     * [onPositioned], when given, runs right after the correction lands (or
+     * immediately, if none was needed) -- never if the view was swapped out
+     * or torn down before its first layout ever fired. The expand
+     * transition uses it to reveal the window only once it's actually
+     * sitting in its final spot; see the call in `onExpand` below for why.
      */
-    private fun clampToScreenOnceLaidOut(target: View, expanded: Boolean) {
+    private fun clampToScreenOnceLaidOut(target: View, expanded: Boolean, onPositioned: (() -> Unit)? = null) {
         target.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 target.viewTreeObserver.removeOnGlobalLayoutListener(this)
@@ -862,6 +886,21 @@ class Service : AccessibilityService() {
                 }
 
                 val preferences = manager.uiPreferences
+
+                // The expanded mixer can skip all the clamp math below
+                // entirely: centering doesn't depend on the mixer's own
+                // measured size the way clamping does, so gravity alone
+                // (resolved by the platform against whatever size the
+                // window turns out to be) already lands it dead center.
+                if (expanded && preferences.expandedMixerCentered) {
+                    layoutParams.gravity = Gravity.CENTER
+                    layoutParams.x = 0
+                    layoutParams.y = 0
+                    windowManager.updateViewLayout(target, layoutParams)
+                    onPositioned?.invoke()
+                    return
+                }
+
                 val density = resources.displayMetrics.density
                 val bounds = windowManager.currentWindowMetrics.bounds
                 val horizontalGravity = layoutParams.gravity and Gravity.HORIZONTAL_GRAVITY_MASK
@@ -897,6 +936,7 @@ class Service : AccessibilityService() {
                     layoutParams.y = clampedY
                     windowManager.updateViewLayout(target, layoutParams)
                 }
+                onPositioned?.invoke()
             }
         })
     }

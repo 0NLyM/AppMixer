@@ -867,6 +867,22 @@ fun CustomizationScreen(
                 }
             )
 
+            // One shared switch regardless of the collapsed style above --
+            // it's about where the *expanded* mixer lands, not anything
+            // about the collapsed look it grows out of.
+            Text(
+                text = stringResource(R.string.expanded_mixer_centered_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            ToggleSetting(
+                label = stringResource(R.string.expanded_mixer_centered),
+                checked = preferences.expandedMixerCentered,
+                onCheckedChange = { checked ->
+                    onUpdate { it.copy(expandedMixerCentered = checked) }
+                }
+            )
+
             SectionHeader(stringResource(R.string.popup_appearance))
             Text(
                 text = stringResource(R.string.popup_appearance_description),

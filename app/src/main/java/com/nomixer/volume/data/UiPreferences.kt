@@ -205,7 +205,16 @@ data class UiPreferences(
      * Puts the volume value beside the ringer switch, in the disc's hollow
      * middle, instead of below it.
      */
-    val discValueBesideButton: Boolean = false
+    val discValueBesideButton: Boolean = false,
+    /**
+     * Where the expanded mixer opens: centered on screen (`true`) instead of
+     * anchored wherever the collapsed popup was (`false`, the default) --
+     * one shared switch for every collapsed style, not a per-style setting
+     * like the rest of this class, since it's about where the *expanded*
+     * panel lands rather than anything about the collapsed look it grew
+     * out of.
+     */
+    val expandedMixerCentered: Boolean = false
 )
 
 /**

@@ -58,6 +58,8 @@
     <string name="popup_position">Position</string>
     <string name="offset_horizontal">Horizontal offset</string>
     <string name="offset_vertical">Vertical offset</string>
+    <string name="expanded_mixer_centered">Center expanded mixer</string>
+    <string name="expanded_mixer_centered_description">When you expand the popup into the full mixer, open it centered on screen instead of anchored where the collapsed popup was.</string>
 
     <string name="popup_appearance">Size &amp; shape</string>
     <string name="popup_appearance_description">How big the popup is, and how rounded its panel, slider tracks and buttons are.</string>

@@ -357,14 +357,15 @@ fun VolumeDisc(
                 val tickOrbit = ringRadius - ringWidth * 0.95f
                 val tickLength = radius * 0.05f
                 val tickThickness = radius * 0.028f
-                // A spinning knob only reads correctly when its own zero
-                // point is free to land anywhere -- once the ring is cut
-                // and 0/1 are pinned to fixed points on screen, the ticks
-                // instead sit at fixed, evenly redistributed positions
-                // across the same visible arc as the fill, same as it.
-                val ringRotation = if (ringIsClipped) 0f else fraction * 360f
-                val tickStartAngle = if (ringIsClipped) visibleStartAngle else startAngle
-                val tickSweep = if (ringIsClipped) visibleSweepAngle else fullSweep
+                // The ticks keep spinning as a whole, evenly spaced around
+                // the full circle same as always -- only the fill and its
+                // outline remap onto the visible arc when the ring is cut.
+                // Redistributing the ticks themselves onto that same arc
+                // sounded consistent on paper, but it froze the knob's own
+                // spin (there's nothing left to rotate once every tick's
+                // position is pinned to the visible arc), which read as the
+                // disc suddenly going dead the moment it's cut.
+                val ringRotation = fraction * 360f
                 // The shared outer boundary every tick's own outer end sits
                 // on, worked out from the base (non-landmark) length -- so a
                 // landmark tick's extra length grows inward, toward the
@@ -391,7 +392,7 @@ fun VolumeDisc(
                     val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
 
                     val angle =
-                        tickStartAngle + (tickSweep / TICK_COUNT) * index + ringRotation
+                        startAngle + (fullSweep / TICK_COUNT) * index + ringRotation
                     val radians = Math.toRadians(angle.toDouble())
                     val tickCenterRadius = tickOuterRadius - length / 2f
                     val tickCenter = Offset(
