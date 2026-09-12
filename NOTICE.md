@@ -933,5 +933,22 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   matter how much of the disc is hanging off screen. A disc that's
   fully on screen is unaffected.
 
+## 2026-09-12 — 1.0.31
+
+- 1.0.30's disc ring fix went too far and froze the tick ring's own spin
+  animation whenever the disc was laterally cut -- reverted: the ticks
+  keep spinning exactly as before, evenly around the full circle; only
+  the fill arc and its outline remap onto the arc still visible past
+  the cut.
+- Expanding the popup into the full mixer used to visibly jump: for a
+  frame or two it showed the mixer's content sitting at the collapsed
+  disc's own (narrower, laterally-cut) position, cut in half by the
+  screen edge, before snapping to where it actually belongs. The
+  window now stays hidden until its corrected position has actually
+  landed, so the mixer only ever appears already in the right spot.
+- Added a "Center expanded mixer" switch (Position section): with it
+  on, expanding any collapsed style opens the mixer centered on
+  screen instead of anchored wherever the collapsed popup was.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
