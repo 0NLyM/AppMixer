@@ -10,6 +10,10 @@ on:
         description: "Mark as pre-release"
         type: boolean
         default: false
+      notes:
+        description: "What changed in this release (becomes the release body). Leave blank to fall back to the generic install note."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -46,14 +50,25 @@ jobs:
           apk=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
           cp "$apk" "out/nomixer-${{ github.event.inputs.tag }}.apk"
 
+      - name: Compose release notes
+        env:
+          NOTES: ${{ github.event.inputs.notes }}
+        run: |
+          if [ -n "$NOTES" ]; then
+            printf '%s\n' "$NOTES" > release_notes.md
+          else
+            {
+              echo "NoMixer build, signed with the project's release key so it can be installed over previous signed releases as a normal update."
+              echo
+              echo "Requires Android 13+ and [Shizuku](https://shizuku.rikka.app/)."
+            } > release_notes.md
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
           name: "NoMixer ${{ github.event.inputs.tag }}"
-          body: |
-            NoMixer build, signed with the project's release key so it can be installed over previous signed releases as a normal update.
-
-            Requires Android 13+ and [Shizuku](https://shizuku.rikka.app/).
+          body_path: release_notes.md
           prerelease: ${{ inputs.prerelease }}
           files: out/nomixer-${{ github.event.inputs.tag }}.apk

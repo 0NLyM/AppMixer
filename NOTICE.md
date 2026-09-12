@@ -963,5 +963,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   single most frequent interaction. Same ignore-list behavior, just
   without the extra round trip.
 
+## 2026-09-12 — 1.0.33
+
+- Fixed the disc's outer ring (fill and outline) spinning in the
+  opposite direction from the tick knob inside it whenever the disc
+  is laterally clipped -- one of the two clip sides had the sweep
+  direction backwards. Both still anchor exactly to the two
+  screen-edge cut points; only the rotational sense was corrected to
+  match the ticks.
+- Two more fixes for the expanded mixer still looking briefly cut
+  during its own appear animation: the disc's own ring-shaped blur
+  view was leaving its old size behind after switching styles or
+  expanding, which could distort the shared window's measurement --
+  now reset on every teardown path; and the window's reveal after
+  repositioning now waits one extra frame in case the app list needs
+  a second layout pass to fully settle.
+- `release.yml` now takes the actual changelog as a `notes` input and
+  publishes it as the GitHub release body, instead of the same fixed
+  install blurb on every release.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
