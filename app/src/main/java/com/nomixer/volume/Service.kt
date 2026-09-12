@@ -68,7 +68,6 @@ import com.nomixer.volume.compose.frostedGlassBrush
 import com.nomixer.volume.compose.softShadow
 import com.nomixer.volume.data.isFrostedFallback
 import com.nomixer.volume.data.shadowAlpha
-import com.nomixer.volume.system.ActivityTaskManagerProxy
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_INSET
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
@@ -1098,8 +1097,6 @@ class Service : AccessibilityService() {
         unregisterReceiver(broadcastReceiver)
     }
 
-    val activityTaskManager by lazy { ActivityTaskManagerProxy(this) }
-
     override fun onKeyEvent(event: KeyEvent): Boolean {
         Log.i(
             TAG,
@@ -1117,12 +1114,19 @@ class Service : AccessibilityService() {
             return false
         }
 
-        // Check foreground task ignorance list
-        val task = activityTaskManager.getForegroundTask()
-        Log.i(TAG, "onKeyEvent foreground task: $task")
+        // Check foreground task ignorance list -- read straight off this
+        // accessibility service's own connection (rootInActiveWindow),
+        // never through Shizuku's separate proxy process the way this used
+        // to via ActivityTaskManagerProxy. That extra IPC hop ran on every
+        // single key event, before showView() ever got a chance to start
+        // the popup's own appear animation, which is exactly the kind of
+        // per-press latency this app shouldn't be adding to a hardware
+        // button that already feels instant on stock Android.
+        val foregroundPackage = rootInActiveWindow?.packageName?.toString()
+        Log.i(TAG, "onKeyEvent foreground package: $foregroundPackage")
 
-        if (task != null) {
-            val app = manager.apps[task.app]
+        if (foregroundPackage != null) {
+            val app = manager.apps[foregroundPackage]
             if (app != null && app.disableVolumeButtons) {
                 return false
             }
