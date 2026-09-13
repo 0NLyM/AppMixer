@@ -982,5 +982,37 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   publishes it as the GitHub release body, instead of the same fixed
   install blurb on every release.
 
+## 2026-09-13 — 1.0.35
+
+- Fixed the volume disc rotating the wrong way: it now always turns
+  counter-clockwise to raise the volume when anchored to the left
+  edge or centered, and only reverses to clockwise when clipped
+  against the right edge. Also fixed the longest tick mark no longer
+  tracking the actual volume level -- it now recomputes its position
+  from the live fill edge every frame instead of from a rotation
+  value that only coincidentally matched it at 0%/100%.
+- Replaced the app's dependence on the system's real cross-window
+  blur (`WindowManager.isCrossWindowBlurEnabled`) with a single,
+  always-on "glassmorphism" scrim (`GlassScrim.kt`) for the
+  Translucent background mode. Real blur is unconditionally disabled
+  by Android under battery saver with no public or Shizuku-accessible
+  override (confirmed against AOSP's `BlurController` source), which
+  made the old code depend on a system capability that silently
+  stopped working exactly when the user had just asked the OS to
+  save power -- and was the root cause of a long history of blur
+  regressions across many earlier releases. The new scrim is a
+  diagonal gradient tint plus a light AGSL noise/grain texture and a
+  thin border, rendered the same way on every device and every power
+  state, with no branch for "blur available" vs "blur unavailable."
+- Added an optional adaptive tint for the glass scrim (off by
+  default): when enabled, it periodically samples the real screen
+  behind the popup via the accessibility service's own screenshot
+  capability (`android:canTakeScreenshot`, no `MediaProjection`, no
+  extra consent dialog), reduces it immediately to a single average
+  color, and blends that into the scrim's tint so it leans toward the
+  color of whatever is on screen. This has a real, if small, periodic
+  cost, so it ships as an explicit switch with its own sampling-
+  interval slider rather than being always on.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
