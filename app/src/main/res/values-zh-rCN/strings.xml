@@ -67,7 +67,11 @@
     <string name="slider_corner">滑块圆角半径</string>
     <string name="button_corner">按钮圆角半径</string>
     <string name="popup_opacity">背景不透明度</string>
-    <string name="popup_blur">模糊</string>
+    <string name="glass_scrim_opacity">玻璃透明度</string>
+    <string name="glass_scrim_adaptive_sampling">根据屏幕自适应色调</string>
+    <string name="glass_scrim_adaptive_sampling_description">定期采样弹窗背后的真实屏幕内容（立即缩减为单一平均颜色，不做保存），用于调整玻璃效果的色调。使用的是本无障碍服务自身的截屏能力，不会弹出额外权限请求——但这仍是一项真实存在的周期性开销，因此默认关闭。</string>
+    <string name="glass_scrim_tint_strength">色调强度</string>
+    <string name="glass_scrim_sample_interval">采样间隔</string>
     <string name="show_value">显示音量值</string>
     <string name="show_icon">显示图标</string>
     <string name="bar_center_content">滑块中央内容</string>
