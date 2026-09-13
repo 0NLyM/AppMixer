@@ -221,24 +221,25 @@ fun VolumeDisc(
                 if (cutOffsetPx <= 0f) {
                     // Cut left of center: the visible arc is the
                     // right-hand side, through 3 o'clock. Starting at the
-                    // *upper* cut point and sweeping clockwise (a
-                    // positive angle) down to the lower one, same
-                    // direction the tick ring always spins in below --
-                    // starting at the lower point instead, the only way
-                    // to still land on the upper one is a negative,
-                    // counter-clockwise sweep, which used to visibly spin
-                    // the wrong way against the ticks.
-                    -phi to (2f * phi)
+                    // lower cut point and sweeping counter-clockwise (a
+                    // negative angle) up to the upper one -- the same
+                    // direction the disc turns by default (see the
+                    // non-clipped case below).
+                    phi to -(2f * phi)
                 } else {
                     // Cut right of center: the visible arc is the
                     // left-hand side, through 9 o'clock -- the long way
-                    // around, clockwise, from the lower cut point to the
-                    // upper one. Already the same direction as the ticks
-                    // (the sweep here is positive too), so nothing to flip.
+                    // around, from the same lower cut point to the upper
+                    // one, but clockwise this time (a positive angle):
+                    // this side deliberately turns the *opposite* way
+                    // from the default, so the visible arc always sweeps
+                    // away from whichever edge is doing the cutting.
                     phi to (360f - 2f * phi)
                 }
             } else {
-                startAngle to fullSweep
+                // Counter-clockwise by default: a negative sweep, same
+                // convention as the tick ring's own rotation below.
+                startAngle to -fullSweep
             }
 
             // Backing confined to the ring's own track, never anything
@@ -351,28 +352,27 @@ fun VolumeDisc(
             }
 
             if (showDots) {
-                // A knob's own marks, lit all the time -- the sense of
-                // "where the level is" comes from the whole ring turning
-                // together by up to one full rotation across the range,
-                // rather than marks switching color as the fill passes
-                // them. An evenly spaced ring of otherwise identical marks
-                // would look the same at any rotation without something to
-                // track, so the three ticks nearest the ring's own zero
-                // point are drawn larger, stepping down from the center one
-                // -- that's the landmark that makes the turn readable, and
-                // it's also where the current level sits.
+                // A knob's own marks, at fixed positions evenly spaced
+                // around the full circle -- the sense of "where the level
+                // is" comes from which one of them is currently the
+                // landmark, drawn larger and stepping down from the center
+                // one, rather than the whole ring spinning to carry a
+                // fixed mark around to wherever the level happens to be
+                // (that only ever agreed with the actual fill edge at the
+                // very top and bottom of the range, wandering independently
+                // of it everywhere in between).
                 val tickOrbit = ringRadius - ringWidth * 0.95f
                 val tickLength = radius * 0.05f
                 val tickThickness = radius * 0.028f
-                // The ticks keep spinning as a whole, evenly spaced around
-                // the full circle same as always -- only the fill and its
-                // outline remap onto the visible arc when the ring is cut.
-                // Redistributing the ticks themselves onto that same arc
-                // sounded consistent on paper, but it froze the knob's own
-                // spin (there's nothing left to rotate once every tick's
-                // position is pinned to the visible arc), which read as the
-                // disc suddenly going dead the moment it's cut.
-                val ringRotation = fraction * 360f
+                // The landmark is whichever fixed tick slot sits nearest
+                // the fill's own current edge angle -- the same angle its
+                // arc is actually drawn to above -- so it always tracks the
+                // real level instead of a rotation counter that only
+                // resets to agree with it at the range's own two ends.
+                val edgeAngle = visibleStartAngle + visibleSweepAngle * fraction
+                val edgeSteps = (edgeAngle - startAngle) / (fullSweep / TICK_COUNT)
+                val landmarkIndex =
+                    (((Math.round(edgeSteps) % TICK_COUNT) + TICK_COUNT) % TICK_COUNT)
                 // The shared outer boundary every tick's own outer end sits
                 // on, worked out from the base (non-landmark) length -- so a
                 // landmark tick's extra length grows inward, toward the
@@ -381,7 +381,8 @@ fun VolumeDisc(
                 val tickOuterRadius = tickOrbit + tickLength / 2f
 
                 for (index in 0 until TICK_COUNT) {
-                    val distanceFromLandmark = min(index, TICK_COUNT - index)
+                    val rawDistance = abs(index - landmarkIndex)
+                    val distanceFromLandmark = min(rawDistance, TICK_COUNT - rawDistance)
                     // The middle adjacent step sits exactly halfway between
                     // the landmark and a normal tick, so the size actually
                     // reads as a taper rather than two arbitrary sizes.
@@ -398,8 +399,7 @@ fun VolumeDisc(
                     val thickness = tickThickness
                     val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
 
-                    val angle =
-                        startAngle + (fullSweep / TICK_COUNT) * index + ringRotation
+                    val angle = startAngle + (fullSweep / TICK_COUNT) * index
                     val radians = Math.toRadians(angle.toDouble())
                     val tickCenterRadius = tickOuterRadius - length / 2f
                     val tickCenter = Offset(
