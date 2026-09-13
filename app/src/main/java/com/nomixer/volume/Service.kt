@@ -75,6 +75,8 @@ import com.nomixer.volume.data.activeBackground
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
+import com.nomixer.volume.ui.theme.NoMixerTheme
+import com.nomixer.volume.ui.theme.Motion
 import java.util.Objects
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
