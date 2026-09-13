@@ -2,7 +2,6 @@ package com.nomixer.volume.compose
 
 import android.media.AudioManager
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -47,13 +46,14 @@ import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.activeBackground
 import com.nomixer.volume.data.activeButtonCornerRadius
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
 import com.nomixer.volume.data.activeShowValue
-import com.nomixer.volume.data.isFrostedFallback
+import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.Motion
@@ -161,10 +161,13 @@ fun CollapsedVolumePopup(
     audioManager: AudioManager,
     preferences: UiPreferences,
     /**
-     * Whether the real overlay window actually got the system blur behind
-     * the panel -- every style's panel now, disc included.
+     * Adaptive tint sampled from the real screen behind the popup, when
+     * [com.nomixer.volume.data.UiPreferences.glassScrimAdaptiveSampling] is
+     * on (see [com.nomixer.volume.Service]) -- null while it's off, or
+     * before the first sample lands, in which case the glass scrim is just
+     * its own static gradient.
      */
-    blurLanded: Boolean = false,
+    adaptiveTint: Color? = null,
     onExpand: () -> Unit,
     onInteract: () -> Unit
 ) {
@@ -317,19 +320,17 @@ fun CollapsedVolumePopup(
             Color.Transparent
         } else {
             MaterialTheme.colorScheme.background.copy(
-                alpha = preferences.paintedPanelAlpha(blurLanded)
+                alpha = preferences.paintedPanelAlpha()
             )
         },
         animationSpec = Motion.ColorShift,
         label = "popupPanel"
     )
 
-    // Whether [panelColor] above is standing in for a system blur the
-    // platform wouldn't grant, in which case it's dressed up as a soft
-    // frosted-glass sheen instead of a flat tint (see [frostedGlassBrush]).
-    // Never true for Solid: that flat fill is the user's own opacity
-    // setting, not a fallback.
-    val panelFrosted = showBackground && preferences.isFrostedFallback(blurLanded)
+    // Whether [panelColor] above gets the full glass-scrim treatment
+    // (gradient + grain, see [glassScrim]) instead of a flat tint. Never
+    // true for Solid: that flat fill is the user's own opacity setting.
+    val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
 
     // The popup's own light shadow, painted right behind its main shape --
     // the disc's ring (inside VolumeDisc itself), the whole bar panel when
@@ -380,11 +381,16 @@ fun CollapsedVolumePopup(
     Surface(
         modifier = panelShadowModifier.then(
             // Surface's own `color` only ever takes a flat Color, so the
-            // frosted sheen is painted as a background modifier underneath
-            // it instead, clipped to the same shape; Surface itself stays
+            // glass scrim is painted as a background modifier underneath it
+            // instead, clipped to the same shape; Surface itself stays
             // transparent in that case rather than double-painting.
-            if (!isDisc && panelFrosted) {
-                Modifier.background(frostedGlassBrush(panelColor), panelShape)
+            if (!isDisc && panelGlass) {
+                Modifier.glassScrim(
+                    shape = panelShape,
+                    baseColor = panelColor,
+                    adaptiveTint = adaptiveTint,
+                    tintStrength = preferences.glassScrimTintStrength
+                )
             } else {
                 Modifier
             }
@@ -393,8 +399,8 @@ fun CollapsedVolumePopup(
         // margin and shadow-fade sliver always stay exactly as they look
         // with the background off; only the ring's own track (inside
         // VolumeDisc, below) ever picks up Solid's tint or Translucent's
-        // blur reveal.
-        color = if (isDisc || panelFrosted) Color.Transparent else panelColor,
+        // glass scrim.
+        color = if (isDisc || panelGlass) Color.Transparent else panelColor,
         contentColor = MaterialTheme.colorScheme.onBackground,
         shape = panelShape
     ) {
@@ -579,12 +585,13 @@ fun CollapsedVolumePopup(
                         backdropColor = if (showBackground) shadow else Color.Transparent,
                         // The same value the bars paint across their whole
                         // panel, here confined by VolumeDisc itself to the
-                        // ring's own track -- Solid's opacity, Translucent's
-                        // dim fallback, or fully transparent once the real
-                        // system blur has landed, revealing it there and
+                        // ring's own track -- Solid's opacity or
+                        // Translucent's glass scrim, painted there and
                         // nowhere else.
                         trackBackingColor = panelColor,
-                        trackBackingFrosted = panelFrosted,
+                        trackBackingGlass = panelGlass,
+                        trackBackingAdaptiveTint = adaptiveTint,
+                        trackBackingTintStrength = preferences.glassScrimTintStrength,
                         icon = if (showIcon) volumeIcon else null,
                         label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer

@@ -3,6 +3,8 @@ package com.nomixer.volume
 import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.ScreenshotResult
+import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.animation.Animator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
@@ -10,30 +12,26 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Outline
-import android.graphics.Path
+import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.media.AudioManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewOutlineProvider
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.animation.AccelerateDecelerateInterpolator
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -64,27 +62,23 @@ import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
-import com.nomixer.volume.compose.frostedGlassBrush
+import com.nomixer.volume.compose.glassScrim
 import com.nomixer.volume.compose.softShadow
-import com.nomixer.volume.data.isFrostedFallback
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
-import com.nomixer.volume.data.DISC_INSET
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
-import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
+import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupStyle
+import com.nomixer.volume.data.activeBackground
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
-import com.nomixer.volume.data.wantsRealWindowBlur
-import com.nomixer.volume.ui.theme.NoMixerTheme
-import com.nomixer.volume.ui.theme.Motion
-import org.joor.Reflect
 import java.util.Objects
-import java.util.function.Consumer
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * The point an anchored popup should grow from: the edge it hugs, so it
@@ -103,56 +97,6 @@ private fun PopupAnchor.transformOrigin(): TransformOrigin {
         else -> 0.5f
     }
     return TransformOrigin(x, y)
-}
-
-/**
- * A plain native view holding nothing but the system's cross-window blur
- * drawable, clipped by its own outline to exactly the annulus VolumeDisc's
- * ring track occupies. The blur drawable itself can only ever be a rounded
- * rect (see [Service.applyWindowBlur]) -- shaping the *reveal* into a ring
- * instead takes clipping at the view layer, which an [Outline] can do with
- * an arbitrary path. Sized to a square spanning exactly the ring's own
- * outer edge and left otherwise square/invisible until [setRingRadii] gives
- * it real geometry, this sits as a sibling behind the popup's own
- * ComposeView (see [Service.createView]) so the disc's Compose content --
- * ring stroke, ticks, icon, button -- draws in front of it undisturbed.
- */
-private class DiscRingBlurView(context: Context) : View(context) {
-    private var innerRadiusPx = 0f
-    private var outerRadiusPx = 0f
-
-    init {
-        clipToOutline = true
-        outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) {
-                if (outerRadiusPx <= 0f) {
-                    outline.setEmpty()
-                    return
-                }
-
-                val cx = view.width / 2f
-                val cy = view.height / 2f
-                val path = Path().apply {
-                    fillType = Path.FillType.EVEN_ODD
-                    addCircle(cx, cy, outerRadiusPx, Path.Direction.CW)
-                    if (innerRadiusPx > 0f) {
-                        addCircle(cx, cy, innerRadiusPx, Path.Direction.CW)
-                    }
-                }
-                outline.setPath(path)
-            }
-        }
-    }
-
-    /** Both in px, in this view's own local coordinates. */
-    fun setRingRadii(innerRadius: Float, outerRadius: Float) {
-        if (innerRadius == innerRadiusPx && outerRadius == outerRadiusPx) {
-            return
-        }
-        innerRadiusPx = innerRadius
-        outerRadiusPx = outerRadius
-        invalidateOutline()
-    }
 }
 
 @SuppressLint("AccessibilityPolicy")
@@ -192,14 +136,9 @@ class Service : AccessibilityService() {
                 animateAlpha(layoutParams.alpha, 0f, ANIMATION_DURATION) {
                     if (!viewVisible) {
                         Log.i(TAG, "remove view")
-                        view?.background = null
-                        composeContentView?.background = null
-                        discBlurView?.background = null
                         lifecycle?.currentState = Lifecycle.State.DESTROYED
                         windowManager.removeView(view)
                         view = null
-                        composeContentView = null
-                        discBlurView = null
                     }
                 }
                 viewVisible = false
@@ -244,27 +183,74 @@ class Service : AccessibilityService() {
     private var lifecycle: LifecycleRegistry? = null
 
     /**
-     * The ring-shaped blur backing for a collapsed disc's own track -- a
-     * sibling of the ComposeView returned by [createView], never the
-     * ComposeView itself, so its outline clip never touches the disc's own
-     * icon/button/ticks. Null whenever there's no popup window up at all.
+     * Sampled from the real screen behind the overlay, reduced immediately
+     * to a single average color and never stored otherwise -- feeds the
+     * glass scrim's optional adaptive tint (see
+     * [com.nomixer.volume.data.UiPreferences.glassScrimAdaptiveSampling]).
+     * Null while sampling is off, or before the first sample has landed.
      */
-    private var discBlurView: DiscRingBlurView? = null
+    private var adaptiveTintState by mutableStateOf<Color?>(null)
 
-    /** The ComposeView itself, i.e. [createView]'s own return value's inner child -- see [discBlurView]. */
-    private var composeContentView: View? = null
+    /**
+     * Captures the current screen via this accessibility service's own
+     * screenshot capability (`android:canTakeScreenshot` in
+     * accessibility_service_config.xml -- no MediaProjection, no extra
+     * user-facing permission dialog), downsamples it to an 8x8 grid, and
+     * returns the average color. Never keeps the captured bitmap around
+     * past this call: the hardware buffer, its software copy, and the
+     * downsampled grid are all recycled before returning. Returns null on
+     * any failure (capability missing, rate-limited, no display) rather
+     * than throwing -- a stale or missing tint just leaves the scrim's own
+     * static gradient showing, never a crash.
+     */
+    private suspend fun sampleScreenTint(): Color? = suspendCancellableCoroutine { cont ->
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    val color = try {
+                        val hardwareBitmap = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
+                        result.hardwareBuffer.close()
+                        val software = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+                        hardwareBitmap?.recycle()
+                        if (software == null) {
+                            null
+                        } else {
+                            val tiny = Bitmap.createScaledBitmap(software, 8, 8, true)
+                            software.recycle()
+                            var r = 0L
+                            var g = 0L
+                            var b = 0L
+                            for (y in 0 until tiny.height) {
+                                for (x in 0 until tiny.width) {
+                                    val px = tiny.getPixel(x, y)
+                                    r += android.graphics.Color.red(px)
+                                    g += android.graphics.Color.green(px)
+                                    b += android.graphics.Color.blue(px)
+                                }
+                            }
+                            val count = (tiny.width * tiny.height).coerceAtLeast(1)
+                            tiny.recycle()
+                            Color(r / count / 255f, g / count / 255f, b / count / 255f, 1f)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Screen tint sample failed to process", e)
+                        null
+                    }
+                    if (cont.isActive) cont.resumeWith(Result.success(color))
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    Log.i(TAG, "Screen tint sample failed, error code $errorCode")
+                    if (cont.isActive) cont.resumeWith(Result.success(null))
+                }
+            })
+        } catch (e: Exception) {
+            Log.w(TAG, "Can't request screen tint sample", e)
+            if (cont.isActive) cont.resumeWith(Result.success(null))
+        }
+    }
 
     private fun createView(): View {
-        val ringView = DiscRingBlurView(this)
-        discBlurView = ringView
-
-        // Built here, outside the ComposeView itself, so it can be set on
-        // the FrameLayout createView returns too -- that FrameLayout is the
-        // actual window root once added, and AbstractComposeView's own
-        // recomposer setup looks the owner up starting from *that* root
-        // rather than climbing back down into a child, so setting it only
-        // on the ComposeView (as when the ComposeView itself used to be the
-        // window root) left the lookup from the root finding nothing.
         val owner = object : SavedStateRegistryOwner {
             private val lifecycleRegistry = LifecycleRegistry(this)
 
@@ -290,297 +276,18 @@ class Service : AccessibilityService() {
                 setViewTreeSavedStateRegistryOwner(owner)
             }
 
-            /**
-             * Whether the blur drawable is currently installed, so it isn't
-             * rebuilt on every recomposition. The composables no longer read
-             * it: they paint their panel either way, because the platform
-             * grants the blur only sometimes and a panel that counts on it is
-             * invisible the rest of the time.
-             */
-            private var blurred = false
-
-            /**
-             * Same fact as [blurred], but readable from Compose -- the
-             * translucent panel's own painted scrim boosts its opacity
-             * when the system didn't actually grant the blur, so a
-             * translucent popup still reads as an intentional panel
-             * instead of barely-there.
-             */
-            private var blurLandedState by mutableStateOf(false)
-
-            /** Radius the live blur drawable was built with, in pixels. */
-            private var blurredRadius = -1
-
-            /** Corner radius the live blur drawable was built with, in pixels. */
-            private var blurredCornerRadiusPx = -1f
-
-            /**
-             * Collapsed style and expanded/collapsed state the live blur
-             * drawable was built for. The drawable is set once as the
-             * view's `background`, covering whatever bounds the view has
-             * *at that moment* -- switching from one collapsed style to
-             * another (vertical bar to horizontal bar, say) resizes the
-             * view without necessarily changing the radius or corner
-             * radius, so nothing else here would have caught the resize
-             * and rebuilt it.
-             */
-            private var blurredStyle: PopupStyle? = null
-            private var blurredExpanded = false
-
-            /** Same idea as [blurred], for the separate ring-shaped [discBlurView] instead. */
-            private var ringBlurred = false
-
-            /** Outer radius (px) the ring blur drawable was built with -- see [blurredRadius]. */
-            private var blurredOuterRadius = -1f
-
-            /**
-             * Bumped whenever the platform's willingness to grant
-             * cross-window blur changes at runtime -- most commonly
-             * battery saver being toggled while this popup (especially
-             * the expanded mixer, which can stay up far longer than the
-             * collapsed popup's own idle timeout) is already on screen.
-             * Without this, a blur that had already landed just quietly
-             * stops rendering the moment battery saver turns on: the
-             * drawable is still installed, but the system stops actually
-             * blurring behind it, and nothing else here would ever
-             * re-run [applyWindowBlur] to notice -- it only fires again
-             * when one of its own LaunchedEffect keys changes, none of
-             * which battery saver touches. Read from Compose purely to
-             * be a LaunchedEffect key; the value itself is meaningless.
-             */
-            private var blurCapabilityGeneration by mutableStateOf(0)
-
-            private val blurEnabledListener = Consumer<Boolean> { blurCapabilityGeneration++ }
-
-            /**
-             * The blur *is* the panel in translucent mode, so the composable
-             * draws no fill of its own; in solid mode there's no blur and the
-             * composable's panel is the only background.
-             *
-             * Bars and the expanded mixer get one object, at the configured
-             * corner radius matching whatever shape the Compose panel itself
-             * is using underneath, set directly as this view's own
-             * background. A collapsed disc never touches this view's own
-             * background at all -- that would blur its margin and
-             * shadow-fade sliver right along with the ring -- and instead
-             * sizes and shapes [discBlurView], a separate sibling view, to
-             * exactly the ring's own annulus, leaving that view's own
-             * outline to clip the reveal into a ring.
-             */
-            /**
-             * Tears the ring-shaped blur view back down to nothing: no
-             * background, no outline radii, and -- unlike the two flags and
-             * the drawable -- its own [FrameLayout.LayoutParams] size too.
-             * That size is otherwise only ever touched by the "set it up"
-             * path below, which only runs while a *collapsed disc* is both
-             * showing and actually blurring; every other path (blur turned
-             * off, style switched away from the disc, expanded into the
-             * mixer) used to leave it exactly as wide/tall as the last
-             * disc it fit, sitting invisible but still full-sized inside
-             * the same FrameLayout as whatever's showing now. A leftover
-             * child's explicit size still counts toward that FrameLayout's
-             * own WRAP_CONTENT measurement even with nothing painted on
-             * it, so the window the ring view no longer belongs to could
-             * end up briefly sized (and positioned) around a disc that
-             * isn't there anymore -- one contributor to the expanded
-             * mixer's window still looking momentarily cut during its own
-             * appear animation.
-             */
-            fun clearRingBlur(ringView: DiscRingBlurView?) {
-                ringView ?: return
-                ringView.background = null
-                ringView.setRingRadii(0f, 0f)
-                ringView.layoutParams?.let { params ->
-                    if (params.width != 0 || params.height != 0) {
-                        params.width = 0
-                        params.height = 0
-                        ringView.layoutParams = params
-                    }
-                }
-            }
-
-            fun applyWindowBlur(wanted: Boolean, expanded: Boolean = false) {
-                val prefs = manager.uiPreferences
-                val isCollapsedDisc = !expanded && prefs.popupStyle == PopupStyle.Disc
-
-                if (!wanted) {
-                    if (blurred) {
-                        this@Service.view?.background = null
-                        blurred = false
-                        blurredRadius = -1
-                        blurredCornerRadiusPx = -1f
-                        blurredStyle = null
-                    }
-                    if (ringBlurred) {
-                        clearRingBlur(this@Service.discBlurView)
-                        ringBlurred = false
-                        blurredOuterRadius = -1f
-                    }
-                    blurLandedState = false
-                    return
+            // This ComposeView is the window's own root now (see the return
+            // value below) -- FLAG_WATCH_OUTSIDE_TOUCH delivers
+            // ACTION_OUTSIDE straight to the root view's own onTouchEvent,
+            // never down into a child, so this has to live here.
+            @SuppressLint("ClickableViewAccessibility")
+            override fun onTouchEvent(event: MotionEvent): Boolean {
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    this@Service.handler.hideView()
+                    return true
                 }
 
-                val density = resources.displayMetrics.density
-                val radius = prefs.popupBlurRadius
-
-                if (isCollapsedDisc) {
-                    // Any stray full-panel blur left on the window root
-                    // from a previous bar or expanded state has to go: the
-                    // disc's own blur lives entirely on the ring view
-                    // instead.
-                    if (blurred) {
-                        this@Service.view?.background = null
-                        blurred = false
-                        blurredRadius = -1
-                        blurredCornerRadiusPx = -1f
-                        blurredStyle = null
-                    }
-
-                    // Same geometry VolumeDisc's own Canvas works out for
-                    // the ring track, in px instead of Dp -- see DISC_INSET
-                    // and DISC_RING_WIDTH_FRACTION's own doc comments for
-                    // why the two have to agree exactly.
-                    val diameterPx = 220f * prefs.activeScale() * density
-                    val outerRadius = (diameterPx / 2f) * DISC_INSET
-                    val ringWidth = outerRadius * DISC_RING_WIDTH_FRACTION
-                    val ringRadius = outerRadius - ringWidth / 2f - density
-                    val outerRingRadius = ringRadius + ringWidth / 2f
-                    val innerRingRadius = ringRadius - ringWidth / 2f
-
-                    // 1.0.22 padded these out by 1.5dp on each edge to
-                    // guard against a sub-pixel rounding gap, but nothing
-                    // in VolumeDisc's own Canvas paints over that extra
-                    // margin -- the ring's own stroke and the outline wash
-                    // both stop exactly at the ring's true edges too -- so
-                    // it just showed as its own new, worse artifact: a
-                    // visible ring of plain, untinted blur outside the
-                    // ring's own paint. Matching the true edges exactly
-                    // instead.
-                    val blurOuterRadius = outerRingRadius
-                    val blurInnerRadius = innerRingRadius
-
-                    val ringView = this@Service.discBlurView
-                    // Recomputed on every call rather than trusted from
-                    // [ringBlurred] alone: the platform is free to revoke
-                    // blur at runtime (battery saver turning on being the
-                    // common case) without this view doing anything, so a
-                    // stale "already blurred" flag would keep reporting a
-                    // blur that has actually quietly stopped rendering.
-                    @Suppress("SpellCheckingInspection") val blurCapable = ringView != null &&
-                        windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated &&
-                        Build.MANUFACTURER != "realme"
-
-                    if (blurCapable && ringBlurred && blurredRadius == radius &&
-                        blurredOuterRadius == blurOuterRadius
-                    ) {
-                        blurLandedState = true
-                        return
-                    }
-
-                    if (ringView != null && blurCapable) {
-                        val side = (blurOuterRadius * 2f).roundToInt()
-                        ringView.layoutParams?.let { params ->
-                            if (params.width != side || params.height != side) {
-                                params.width = side
-                                params.height = side
-                                ringView.layoutParams = params
-                            }
-                        }
-                        ringView.setRingRadii(blurInnerRadius, blurOuterRadius)
-                        ringView.background =
-                            Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
-                                call("setBlurRadius", radius)
-                                call("setCornerRadius", blurOuterRadius)
-                            }.get()
-                        ringBlurred = true
-                        blurredRadius = radius
-                        blurredOuterRadius = blurOuterRadius
-                        blurLandedState = true
-                    } else {
-                        if (ringBlurred) {
-                            ringView?.background = null
-                            ringView?.setRingRadii(0f, 0f)
-                            ringBlurred = false
-                            blurredOuterRadius = -1f
-                        }
-                        blurLandedState = false
-                    }
-                    return
-                }
-
-                if (ringBlurred) {
-                    clearRingBlur(this@Service.discBlurView)
-                    ringBlurred = false
-                    blurredOuterRadius = -1f
-                }
-
-                // The expanded mixer is always a plain rounded rectangle,
-                // whatever the collapsed style underneath it is, and uses
-                // popupCornerRadius directly for its own Surface.
-                val cornerRadiusPx = prefs.popupCornerRadius * density
-
-                // A live drawable is kept unless the radius, the corner
-                // radius, or the collapsed style/expanded state changed:
-                // the slider has to be felt while it's being dragged (so
-                // radius alone can't force a rebuild on every frame), but
-                // a style switch resizes the view underneath the same
-                // drawable, which needs a fresh one even when the radius
-                // and corner radius happen to match.
-
-                // Recomputed on every call rather than trusted from
-                // [blurred] alone -- see the disc-ring branch above for why
-                // a stale "already blurred" flag can't be trusted once the
-                // platform is free to revoke blur at runtime.
-                @Suppress("SpellCheckingInspection") val blurCapable =
-                    windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated &&
-                        Build.MANUFACTURER != "realme"
-
-                if (blurCapable && blurred && blurredRadius == radius && blurredCornerRadiusPx == cornerRadiusPx &&
-                    blurredStyle == prefs.popupStyle && blurredExpanded == expanded
-                ) {
-                    blurLandedState = true
-                    return
-                }
-
-                if (blurCapable) {
-                    // On the window root (this@Service.view, the FrameLayout
-                    // createView returns), not this ComposeView -- a stray
-                    // regression from when the ComposeView itself used to be
-                    // that root: the drawable rendered fine either way, but
-                    // the real cross-window blur behind it only actually
-                    // landed when set on the true root, so setting it on a
-                    // child silently blurred nothing at all.
-                    this@Service.view?.background =
-                        Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
-                            call("setBlurRadius", radius)
-                            call("setCornerRadius", cornerRadiusPx)
-                        }.get()
-                    blurred = true
-                    blurredRadius = radius
-                    blurredCornerRadiusPx = cornerRadiusPx
-                    blurredStyle = prefs.popupStyle
-                    blurredExpanded = expanded
-                    blurLandedState = true
-                } else {
-                    blurLandedState = false
-                }
-            }
-
-            override fun onAttachedToWindow() {
-                super.onAttachedToWindow()
-
-                Log.i(TAG, "onAttachedToWindow manufacturer: ${Build.MANUFACTURER}")
-
-                windowManager.addCrossWindowBlurEnabledListener(mainExecutor, blurEnabledListener)
-
-                applyWindowBlur(manager.uiPreferences.wantsRealWindowBlur(expanded = false))
-
-                this@Service.handler.startIdleTimer()
-            }
-
-            override fun onDetachedFromWindow() {
-                windowManager.removeCrossWindowBlurEnabledListener(blurEnabledListener)
-                super.onDetachedFromWindow()
+                return super.onTouchEvent(event)
             }
 
             @Composable
@@ -596,30 +303,25 @@ class Service : AccessibilityService() {
                     // this particular window stays up.
                     var expanded by remember { mutableStateOf(false) }
 
-                    // Expanding always switches to the mixer's own rounded
-                    // rectangle, so the blur drawable's corner radius has to
-                    // be rebuilt for it regardless of the collapsed style.
-                    // Scale is in here too: a collapsed disc's own blur
-                    // lives on a separate ring view sized directly off it
-                    // (see applyWindowBlur), which nothing else here would
-                    // otherwise catch a resize of. blurCapabilityGeneration
-                    // re-runs this the moment the platform grants or
-                    // revokes blur at runtime (battery saver toggling being
-                    // the common case), so a panel that's already showing
-                    // doesn't keep assuming a blur that just silently
-                    // stopped rendering.
-                    LaunchedEffect(
-                        expanded,
-                        preferences.popupBackground,
-                        preferences.discPopupBackground,
-                        preferences.popupStyle,
-                        preferences.popupBlurRadius,
-                        preferences.discPopupBlurRadius,
-                        preferences.popupScale,
-                        preferences.discPopupScale,
-                        blurCapabilityGeneration
-                    ) {
-                        applyWindowBlur(preferences.wantsRealWindowBlur(expanded), expanded = expanded)
+                    // Adaptive glass tint: sampled periodically from the
+                    // real screen behind the overlay, only while a
+                    // Translucent panel is actually showing and the user
+                    // has opted into sampling (see
+                    // UiPreferences.glassScrimAdaptiveSampling) -- off by
+                    // default, since it's a real per-app-open accessibility
+                    // capability and a small periodic cost, not assumed.
+                    val wantsAdaptiveSampling = preferences.glassScrimAdaptiveSampling &&
+                        preferences.activeShowBackground() &&
+                        preferences.activeBackground() == PopupBackground.Translucent
+                    LaunchedEffect(wantsAdaptiveSampling) {
+                        if (!wantsAdaptiveSampling) {
+                            adaptiveTintState = null
+                            return@LaunchedEffect
+                        }
+                        while (true) {
+                            adaptiveTintState = this@Service.sampleScreenTint()
+                            delay(manager.uiPreferences.glassScrimSampleIntervalMs.toLong().coerceAtLeast(200L))
+                        }
                     }
 
                     // Animated, so switching translucent/solid or nudging the
@@ -633,13 +335,13 @@ class Service : AccessibilityService() {
                             Color.Transparent
                         } else {
                             MaterialTheme.colorScheme.background.copy(
-                                alpha = preferences.paintedPanelAlpha(blurLandedState)
+                                alpha = preferences.paintedPanelAlpha()
                             )
                         },
                         animationSpec = Motion.ColorShift,
                         label = "mixerPanel"
                     )
-                    val panelFrosted = showBackground && preferences.isFrostedFallback(blurLandedState)
+                    val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
                     val sliderShadowColor by animateColorAsState(
                         targetValue = if (showBackground) {
                             Color.Transparent
@@ -689,22 +391,24 @@ class Service : AccessibilityService() {
                             if (expanded) {
                                 val mixerShape = RoundedCornerShape(preferences.popupCornerRadius.dp)
                                 Surface(
-                                    // Painted whether or not the blur landed:
-                                    // the system grants it only sometimes, and
-                                    // a panel that leaves the background to it
-                                    // is invisible the rest of the time. When
-                                    // it's standing in for a blur the platform
-                                    // wouldn't grant, dressed up as a frosted
-                                    // sheen via a background modifier instead
-                                    // of Surface's own flat `color` (which
-                                    // can't take a Brush) -- Surface itself
-                                    // stays transparent in that case.
-                                    modifier = if (panelFrosted) {
-                                        Modifier.background(frostedGlassBrush(panelColor), mixerShape)
+                                    // In Translucent mode this gets the full
+                                    // glass-scrim treatment (gradient + grain,
+                                    // see glassScrim) via a background
+                                    // modifier instead of Surface's own flat
+                                    // `color` (which can't take a Brush) --
+                                    // Surface itself stays transparent in
+                                    // that case.
+                                    modifier = if (panelGlass) {
+                                        Modifier.glassScrim(
+                                            shape = mixerShape,
+                                            baseColor = panelColor,
+                                            adaptiveTint = adaptiveTintState,
+                                            tintStrength = preferences.glassScrimTintStrength
+                                        )
                                     } else {
                                         Modifier
                                     },
-                                    color = if (panelFrosted) Color.Transparent else panelColor,
+                                    color = if (panelGlass) Color.Transparent else panelColor,
                                     contentColor = MaterialTheme.colorScheme.onBackground,
                                     shape = mixerShape
                                 ) {
@@ -739,7 +443,7 @@ class Service : AccessibilityService() {
                                 CollapsedVolumePopup(
                                     audioManager = manager.audioManager,
                                     preferences = preferences,
-                                    blurLanded = blurLandedState,
+                                    adaptiveTint = adaptiveTintState,
                                     onExpand = {
                                         expanded = true
                                         // The window is about to resize for
@@ -800,40 +504,11 @@ class Service : AccessibilityService() {
             }
         }
 
-        composeContentView = composeView
-
-        // Now the actual window root -- FLAG_WATCH_OUTSIDE_TOUCH delivers
-        // ACTION_OUTSIDE straight to the root view's own onTouchEvent, never
-        // down into a child, so this has to live here rather than on the
-        // ComposeView (which is what it used to be set on, back when the
-        // ComposeView itself was the root the window was built from).
-        return object : FrameLayout(this) {
-            @SuppressLint("ClickableViewAccessibility")
-            override fun onTouchEvent(event: MotionEvent): Boolean {
-                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-                    this@Service.handler.hideView()
-                    return true
-                }
-
-                return super.onTouchEvent(event)
-            }
-        }.apply {
-            setViewTreeLifecycleOwner(owner)
-            setViewTreeSavedStateRegistryOwner(owner)
-            // Added first, so it paints behind the ComposeView -- the ring
-            // blur (when there's one to show at all; empty-outlined and
-            // invisible otherwise) has to sit under the disc's own Compose
-            // content, never over it.
-            addView(ringView, FrameLayout.LayoutParams(0, 0, Gravity.CENTER))
-            addView(
-                composeView,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER
-                )
-            )
-        }
+        // The ComposeView is the window's own root directly -- no native
+        // blur to shape into a disc-ring reveal any more (see NOTICE.md),
+        // so there's no separate sibling view left to wrap it in a
+        // FrameLayout for.
+        return composeView
     }
 
     private val layoutParams by lazy {
@@ -983,23 +658,7 @@ class Service : AccessibilityService() {
         })
     }
 
-    /**
-     * The window's own root view -- the FrameLayout [createView] returns,
-     * added to [windowManager] directly, never [composeContentView] or
-     * [discBlurView] (its two children). Any effect that has to apply to
-     * the *window itself* rather than to one piece of its content --
-     * background blur chief among them -- has to be set here specifically.
-     *
-     * This exact mistake shipped once already: bar-style and expanded-mixer
-     * Translucent blur silently stopped landing (the drawable still
-     * rendered, just with nothing behind it actually blurred) the moment
-     * [createView] started wrapping the ComposeView in a FrameLayout for
-     * the disc's ring blur, because the blur assignment stayed on the
-     * ComposeView -- which had quietly stopped being this root the same
-     * moment. See [applyWindowBlur]'s own comment before ever setting
-     * `background` (blur or otherwise) on anything other than
-     * `this@Service.view`.
-     */
+    /** The overlay window's own root view -- [createView]'s return value, added to [windowManager] directly. */
     private var view: View? = null
     private var viewVisible = false
 

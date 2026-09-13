@@ -68,7 +68,11 @@
     <string name="slider_corner">Slider corner radius</string>
     <string name="button_corner">Button corner radius</string>
     <string name="popup_opacity">Background opacity</string>
-    <string name="popup_blur">Blur</string>
+    <string name="glass_scrim_opacity">Glass opacity</string>
+    <string name="glass_scrim_adaptive_sampling">Adapt tint to screen</string>
+    <string name="glass_scrim_adaptive_sampling_description">Periodically samples the real screen behind the popup (reduced instantly to a single average color, never stored) to tint the glass scrim. Uses this accessibility service\'s own screenshot capability, no extra permission prompt -- but it is a real, if small, periodic cost, so it\'s off by default.</string>
+    <string name="glass_scrim_tint_strength">Tint strength</string>
+    <string name="glass_scrim_sample_interval">Sample interval</string>
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
     <string name="bar_center_content">Slider center</string>

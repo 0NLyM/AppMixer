@@ -11,19 +11,20 @@ const val SLIDER_CORNER_RADIUS_MAX = 40
 /** Top of the button corner-radius slider's range, as a percent (0 = square, 50 = pill). */
 const val BUTTON_CORNER_RADIUS_MAX = 50
 
-/** Top of the blur-radius slider's range, in pixels. */
-const val POPUP_BLUR_RADIUS_MAX = 300
-
 /**
- * Bottom of the blur-radius and background-opacity sliders' ranges, instead
- * of 0. Both used to reach 0, which behaved as a de facto "no panel" state,
- * but a real, separate [UiPreferences.popupShowBackground] switch does that
- * job now -- letting these sliders reach 0 too would just be the same state
- * reachable two ways, one of them still leaving [usesWindowBlur] wanting a
- * blur no panel exists to show it on.
+ * Bottom of the background-opacity slider's range, instead of 0 -- reaching
+ * 0 would be a de facto "no panel" state, but a real, separate
+ * [UiPreferences.popupShowBackground] switch does that job now.
  */
-const val POPUP_BLUR_RADIUS_MIN = 1
 const val POPUP_BACKGROUND_OPACITY_MIN = 0.01f
+
+/** Bottom and top of the glass scrim's own tuning sliders (see [UiPreferences.glassScrimBaseAlpha] and friends). */
+const val GLASS_SCRIM_ALPHA_MIN = 0.05f
+const val GLASS_SCRIM_ALPHA_MAX = 0.9f
+const val GLASS_SCRIM_TINT_STRENGTH_MIN = 0f
+const val GLASS_SCRIM_TINT_STRENGTH_MAX = 1f
+const val GLASS_SCRIM_SAMPLE_INTERVAL_MIN_MS = 300
+const val GLASS_SCRIM_SAMPLE_INTERVAL_MAX_MS = 2000
 
 /** Top of the disc tick corner-radius slider's range, as a percent. */
 const val DISC_TICK_CORNER_MAX = 50
@@ -79,7 +80,7 @@ enum class ThemeMode {
 
 /** How the popup's single background panel is drawn. */
 enum class PopupBackground {
-    /** Frosted: the system blur shows through, no solid fill on top. */
+    /** A lightweight always-on glass scrim -- see [glassScrimBaseAlpha] and friends. */
     Translucent,
 
     /** One opaque panel in the theme's background color. */
@@ -139,8 +140,8 @@ data class UiPreferences(
     val discPopupBackground: PopupBackground = PopupBackground.Translucent,
     /**
      * Whether a bar-style popup paints a background panel at all. Off takes
-     * [popupBackground] and its opacity/blur slider out of the picture
-     * entirely, rather than the same result being separately reachable by
+     * [popupBackground] and its opacity slider out of the picture entirely,
+     * rather than the same result being separately reachable by
      * dragging one of those sliders to a corner -- and moves
      * [popupShowShadow]'s shadow off the (now absent) panel and onto the
      * ringer button and slider themselves instead. See
@@ -151,8 +152,9 @@ data class UiPreferences(
     val discPopupShowBackground: Boolean = true,
     /**
      * Panel opacity, 0f - 1f, in Solid mode, for the bar styles. Translucent
-     * is the system blur instead, sized by [popupBlurRadius]. See
-     * [discPopupBackgroundOpacity] for the disc's own independent value --
+     * uses the glass scrim's own [UiPreferences.glassScrimBaseAlpha]
+     * instead. See [discPopupBackgroundOpacity] for the disc's own
+     * independent value --
      * neither one touches the disc's own ring/track colors, which stay
      * whatever the palette says, nor the separate painted shadow
      * [popupShowShadow] toggles.
@@ -160,16 +162,6 @@ data class UiPreferences(
     val popupBackgroundOpacity: Float = 0.85f,
     /** Same as [popupBackgroundOpacity], but the disc's own independent value. */
     val discPopupBackgroundOpacity: Float = 0.85f,
-    /**
-     * Radius of the system blur behind a translucent bar panel, in pixels.
-     * Its own setting rather than a second meaning for the opacity above:
-     * one says how frosted the glass is, the other how opaque the paint is,
-     * and they belong to different background modes. See
-     * [discPopupBlurRadius] for the disc's own independent value.
-     */
-    val popupBlurRadius: Int = 200,
-    /** Same as [popupBlurRadius], but the disc's own independent value. */
-    val discPopupBlurRadius: Int = 200,
     val popupShowValue: Boolean = true,
     /** Same as [popupShowValue], but the disc's own independent switch. */
     val discPopupShowValue: Boolean = true,
@@ -214,7 +206,33 @@ data class UiPreferences(
      * panel lands rather than anything about the collapsed look it grew
      * out of.
      */
-    val expandedMixerCentered: Boolean = false
+    val expandedMixerCentered: Boolean = false,
+    /**
+     * Base opacity (before any adaptive tint) of Translucent mode's glass
+     * scrim -- one shared value for every style, not a per-style setting,
+     * since it's tuning the *effect* rather than anything about a
+     * particular collapsed look. See [GLASS_SCRIM_ALPHA_MIN]/`_MAX`.
+     */
+    val glassScrimBaseAlpha: Float = 0.42f,
+    /**
+     * How strongly the adaptive screen tint (when
+     * [glassScrimAdaptiveSampling] is on) blends into the scrim's own base
+     * color, 0 (ignored) to 1 (fully replaces it). Meaningless while
+     * sampling is off.
+     */
+    val glassScrimTintStrength: Float = 0.5f,
+    /**
+     * Whether the scrim periodically samples the real screen behind it
+     * (via this accessibility service's own screenshot capability, reduced
+     * immediately to a single average color and never stored) to adapt its
+     * tint to whatever's actually showing through. Off by default: a real,
+     * if small, periodic cost and a broader accessibility capability,
+     * opt-in rather than assumed. With it off the scrim is still a full
+     * glass effect -- just not reactive to the exact content behind it.
+     */
+    val glassScrimAdaptiveSampling: Boolean = false,
+    /** Milliseconds between adaptive-tint samples, when [glassScrimAdaptiveSampling] is on. */
+    val glassScrimSampleIntervalMs: Int = 700
 )
 
 /**
@@ -264,12 +282,6 @@ fun UiPreferences.withBackgroundOpacity(value: Float): UiPreferences =
         copy(popupBackgroundOpacity = value)
     }
 
-fun UiPreferences.activeBlurRadius(): Int =
-    if (popupStyle == PopupStyle.Disc) discPopupBlurRadius else popupBlurRadius
-
-fun UiPreferences.withBlurRadius(value: Int): UiPreferences =
-    if (popupStyle == PopupStyle.Disc) copy(discPopupBlurRadius = value) else copy(popupBlurRadius = value)
-
 fun UiPreferences.activeShowValue(): Boolean =
     if (popupStyle == PopupStyle.Disc) discPopupShowValue else popupShowValue
 
@@ -299,80 +311,22 @@ fun UiPreferences.withShowShadow(value: Boolean): UiPreferences =
     if (popupStyle == PopupStyle.Disc) copy(discPopupShowShadow = value) else copy(popupShowShadow = value)
 
 /**
- * True when the overlay window should paint the system blur behind the
- * popup's panel -- collapsed or expanded, whatever style the collapsed one
- * is. The disc has its own panel to ask for it behind, the same as a bar's,
- * so nothing here depends on which shape that panel happens to be. Never
- * true with the active "show background" switch off: there's no panel left
- * for the blur to sit behind.
- */
-fun UiPreferences.usesWindowBlur(): Boolean =
-    activeShowBackground() && activeBackground() == PopupBackground.Translucent
-
-/**
- * Whether the *real* overlay should actually request the platform's
- * background-blur drawable, as opposed to just wanting a translucent look
- * ([usesWindowBlur]).
- *
- * The drawable itself is always a plain rounded rect -- there's no way to
- * shape it as a ring directly -- so a collapsed disc doesn't set it as the
- * background of its own panel-sized view (that would blur the margin and
- * shadow-fade sliver right along with the ring's own track). Instead it
- * lives on a separate native view, sized and positioned to exactly the
- * ring's own annulus and clipped to that shape by its own outline, sitting
- * behind the disc's Compose content (see Service.kt's blur handling). The
- * expanded mixer, and every bar style, stay on the simple single-view path:
- * always a plain rounded rect regardless of the collapsed style, so there's
- * no such leak to confine in the first place.
- */
-fun UiPreferences.wantsRealWindowBlur(expanded: Boolean): Boolean = usesWindowBlur()
-
-/**
- * Fallback alpha for a translucent panel when the platform didn't actually
- * grant the system blur -- a fixed value, independent of
- * [UiPreferences.popupBackgroundOpacity], which belongs to Solid alone. A
- * shared value used to let Solid's own opacity leak into Translucent (e.g.
- * Solid at 100% left a 40%-opaque veil sitting on top of the blur after
- * switching to Translucent), which is exactly the two modes being not
- * separate. This is that separation: Solid's opacity never reaches
- * Translucent, and Translucent draws nothing of its own once the blur lands.
- */
-private const val TRANSLUCENT_FALLBACK_ALPHA = 0.55f
-
-/**
  * Alpha of the panel the popup paints for itself.
  *
  * Solid: exactly [UiPreferences.popupBackgroundOpacity], the only mode that
  * slider affects.
  *
- * Translucent: the system blur *is* the panel, so nothing is painted once it
- * lands ([blurLanded]). The blur is granted only sometimes -- it depends on
- * the device, on hardware acceleration and on whether the platform currently
- * feels like allowing cross-window blur -- so a fixed fallback scrim
- * ([TRANSLUCENT_FALLBACK_ALPHA]) stands in when it doesn't, instead of
- * leaving the panel invisible. [blurLanded] is only known by the real
- * overlay, which finds out at attach time whether the platform actually
- * granted the blur; a caller that can't say either way (a settings preview
- * with no real window behind it) defaults to `true`, so the preview shows
- * blur landing rather than the fallback.
+ * Translucent: [glassScrimBaseAlpha] -- the glass scrim's own base opacity,
+ * painted the same way on every device and power state (see
+ * [com.nomixer.volume.compose.glassScrim]). Unlike the old system-blur
+ * fallback this used to be, there's no capability check here at all: the
+ * scrim never depends on whether the platform feels like granting blur.
  */
-fun UiPreferences.paintedPanelAlpha(blurLanded: Boolean = true): Float =
+fun UiPreferences.paintedPanelAlpha(): Float =
     when (activeBackground()) {
         PopupBackground.Solid -> activeBackgroundOpacity()
-        PopupBackground.Translucent -> if (blurLanded) 0f else TRANSLUCENT_FALLBACK_ALPHA
+        PopupBackground.Translucent -> glassScrimBaseAlpha
     }
-
-/**
- * Whether the panel's own paint ([paintedPanelAlpha]) is standing in for a
- * system blur that wasn't granted, as opposed to either Solid's own flat
- * opacity or Translucent with the real blur actually landing (which paints
- * nothing of its own). Callers use this to decide whether to dress that
- * stand-in up with a frosted-glass texture ([frostedGlassBrush]) instead of
- * a flat tint -- Solid's flat fill is deliberately left alone, since its
- * opacity is a setting the user is directly controlling, not a fallback.
- */
-fun UiPreferences.isFrostedFallback(blurLanded: Boolean): Boolean =
-    activeBackground() == PopupBackground.Translucent && !blurLanded
 
 /** Peak alpha of the popup's own shadow, at its brightest point. Deliberately light. */
 private const val POPUP_SHADOW_ALPHA = 0.35f

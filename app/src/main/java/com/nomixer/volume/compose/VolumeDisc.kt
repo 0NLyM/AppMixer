@@ -90,12 +90,15 @@ fun VolumeDisc(
      */
     trackBackingColor: Color = Color.Transparent,
     /**
-     * Paints [trackBackingColor] as a soft frosted-glass sheen instead of a
-     * flat fill -- the caller sets this when that color is standing in for
-     * a system blur the platform wouldn't grant, not when it's Solid's own
-     * flat opacity (see [com.nomixer.volume.data.isFrostedFallback]).
+     * Paints [trackBackingColor] as the full glass-scrim effect (gradient +
+     * grain, see [glassScrim]) instead of a flat fill -- the caller sets
+     * this for Translucent mode, never for Solid's own flat opacity.
      */
-    trackBackingFrosted: Boolean = false,
+    trackBackingGlass: Boolean = false,
+    /** Adaptive screen tint to blend into the glass scrim; see [glassScrimBrush]. Ignored unless [trackBackingGlass]. */
+    trackBackingAdaptiveTint: Color? = null,
+    /** How strongly [trackBackingAdaptiveTint] blends in, 0..1. Ignored unless [trackBackingGlass]. */
+    trackBackingTintStrength: Float = 0f,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -248,14 +251,16 @@ fun VolumeDisc(
             // already occupies, and everything else (the shadow-fade
             // sliver, the margin beyond it) stays genuinely see-through.
             if (trackBackingColor.alpha > 0f) {
-                if (trackBackingFrosted) {
-                    drawArc(
-                        brush = frostedGlassBrush(trackBackingColor),
+                if (trackBackingGlass) {
+                    drawGlassArc(
+                        baseColor = trackBackingColor,
+                        adaptiveTint = trackBackingAdaptiveTint,
+                        tintStrength = trackBackingTintStrength,
+                        canvasSize = size,
                         startAngle = 0f,
                         sweepAngle = 360f,
-                        useCenter = false,
                         topLeft = arcTopLeft,
-                        size = arcSize,
+                        arcSize = arcSize,
                         style = Stroke(width = ringWidth)
                     )
                 } else {

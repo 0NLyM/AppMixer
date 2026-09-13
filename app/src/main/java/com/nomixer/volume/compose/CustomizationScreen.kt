@@ -73,9 +73,13 @@ import com.nomixer.volume.ui.theme.PopupColors
 import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
+import com.nomixer.volume.data.GLASS_SCRIM_ALPHA_MAX
+import com.nomixer.volume.data.GLASS_SCRIM_ALPHA_MIN
+import com.nomixer.volume.data.GLASS_SCRIM_SAMPLE_INTERVAL_MAX_MS
+import com.nomixer.volume.data.GLASS_SCRIM_SAMPLE_INTERVAL_MIN_MS
+import com.nomixer.volume.data.GLASS_SCRIM_TINT_STRENGTH_MAX
+import com.nomixer.volume.data.GLASS_SCRIM_TINT_STRENGTH_MIN
 import com.nomixer.volume.data.POPUP_BACKGROUND_OPACITY_MIN
-import com.nomixer.volume.data.POPUP_BLUR_RADIUS_MAX
-import com.nomixer.volume.data.POPUP_BLUR_RADIUS_MIN
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupBackground
@@ -86,7 +90,6 @@ import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
 import com.nomixer.volume.data.activeBackground
 import com.nomixer.volume.data.activeBackgroundOpacity
-import com.nomixer.volume.data.activeBlurRadius
 import com.nomixer.volume.data.activeButtonCornerRadius
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
@@ -94,10 +97,8 @@ import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
 import com.nomixer.volume.data.activeShowShadow
 import com.nomixer.volume.data.activeShowValue
-import com.nomixer.volume.data.isFrostedFallback
 import com.nomixer.volume.data.withBackground
 import com.nomixer.volume.data.withBackgroundOpacity
-import com.nomixer.volume.data.withBlurRadius
 import com.nomixer.volume.data.withButtonCornerRadius
 import com.nomixer.volume.data.withScale
 import com.nomixer.volume.data.withShowBackground
@@ -585,11 +586,9 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     centerContentOffsetX = centerContentOffsetX,
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
-                    // Mirrors CollapsedVolumePopup's own gating: with no real
-                    // window behind this preview there's no blur to land, so
-                    // Translucent always previews as the dim fallback -- but
-                    // background off must still read as fully transparent,
-                    // same as the real popup.
+                    // Mirrors CollapsedVolumePopup's own gating -- background
+                    // off must read as fully transparent, same as the real
+                    // popup.
                     backdropColor = if (showBackground) {
                         MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
                     } else {
@@ -597,12 +596,12 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     },
                     trackBackingColor = if (showBackground) {
                         MaterialTheme.colorScheme.background.copy(
-                            alpha = preferences.paintedPanelAlpha(blurLanded = false)
+                            alpha = preferences.paintedPanelAlpha()
                         )
                     } else {
                         Color.Transparent
                     },
-                    trackBackingFrosted = showBackground && preferences.isFrostedFallback(blurLanded = false),
+                    trackBackingGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent,
                     icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (showValue && !besideButton) previewValueText else null,
                     centerContent = if (showRingerButton) {
@@ -1003,19 +1002,62 @@ fun CustomizationScreen(
                             }
                         )
                     } else {
-                        // Translucent is the blur, so what there is to adjust
-                        // is how frosted it is -- a different quantity from
-                        // the solid panel's opacity, and it gets its own
-                        // slider.
-                        SliderSetting(
-                            label = stringResource(R.string.popup_blur),
-                            valueLabel = "${preferences.activeBlurRadius()} px",
-                            value = preferences.activeBlurRadius().toFloat(),
-                            valueRange = POPUP_BLUR_RADIUS_MIN.toFloat()..POPUP_BLUR_RADIUS_MAX.toFloat(),
-                            onValueChange = { value ->
-                                onUpdate { it.withBlurRadius(value.roundToInt()) }
+                        // Translucent is the glass scrim -- one shared set of
+                        // knobs for every style, since they tune the effect
+                        // itself rather than anything about a particular
+                        // collapsed look.
+                        Column {
+                            SliderSetting(
+                                label = stringResource(R.string.glass_scrim_opacity),
+                                valueLabel = "${(preferences.glassScrimBaseAlpha * 100).roundToInt()}%",
+                                value = preferences.glassScrimBaseAlpha,
+                                valueRange = GLASS_SCRIM_ALPHA_MIN..GLASS_SCRIM_ALPHA_MAX,
+                                onValueChange = { value ->
+                                    onUpdate { it.copy(glassScrimBaseAlpha = value) }
+                                }
+                            )
+                            ToggleSetting(
+                                label = stringResource(R.string.glass_scrim_adaptive_sampling),
+                                checked = preferences.glassScrimAdaptiveSampling,
+                                onCheckedChange = { checked ->
+                                    onUpdate { it.copy(glassScrimAdaptiveSampling = checked) }
+                                }
+                            )
+                            Text(
+                                text = stringResource(R.string.glass_scrim_adaptive_sampling_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            AnimatedVisibility(
+                                visible = preferences.glassScrimAdaptiveSampling,
+                                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                                    fadeIn(tween(Motion.MorphMillis)),
+                                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                                    fadeOut(tween(160))
+                            ) {
+                                Column {
+                                    SliderSetting(
+                                        label = stringResource(R.string.glass_scrim_tint_strength),
+                                        valueLabel = "${(preferences.glassScrimTintStrength * 100).roundToInt()}%",
+                                        value = preferences.glassScrimTintStrength,
+                                        valueRange = GLASS_SCRIM_TINT_STRENGTH_MIN..GLASS_SCRIM_TINT_STRENGTH_MAX,
+                                        onValueChange = { value ->
+                                            onUpdate { it.copy(glassScrimTintStrength = value) }
+                                        }
+                                    )
+                                    SliderSetting(
+                                        label = stringResource(R.string.glass_scrim_sample_interval),
+                                        valueLabel = "${preferences.glassScrimSampleIntervalMs} ms",
+                                        value = preferences.glassScrimSampleIntervalMs.toFloat(),
+                                        valueRange = GLASS_SCRIM_SAMPLE_INTERVAL_MIN_MS.toFloat()..
+                                            GLASS_SCRIM_SAMPLE_INTERVAL_MAX_MS.toFloat(),
+                                        onValueChange = { value ->
+                                            onUpdate { it.copy(glassScrimSampleIntervalMs = value.roundToInt()) }
+                                        }
+                                    )
+                                }
                             }
-                        )
+                        }
                     }
                 }
               }
@@ -1208,8 +1250,11 @@ fun CustomizationScreen(
                             discPopupBackground = defaults.discPopupBackground,
                             popupBackgroundOpacity = defaults.popupBackgroundOpacity,
                             discPopupBackgroundOpacity = defaults.discPopupBackgroundOpacity,
-                            popupBlurRadius = defaults.popupBlurRadius,
-                            discPopupBlurRadius = defaults.discPopupBlurRadius,
+                            glassScrimBaseAlpha = defaults.glassScrimBaseAlpha,
+                            glassScrimTintStrength = defaults.glassScrimTintStrength,
+                            glassScrimAdaptiveSampling = defaults.glassScrimAdaptiveSampling,
+                            glassScrimSampleIntervalMs = defaults.glassScrimSampleIntervalMs,
+                            expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,
                             discPopupShowValue = defaults.discPopupShowValue,
                             popupShowIcon = defaults.popupShowIcon,
