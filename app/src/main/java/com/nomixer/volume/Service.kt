@@ -235,16 +235,22 @@ class Service : AccessibilityService() {
             return
         }
 
-        // A capability only granted when the service is bound: adding it to
-        // accessibility_service_config.xml doesn't reach a service the
-        // system is already running, so an app update alone can leave this
-        // off until the user toggles the service. Worth saying out loud --
-        // silently doing nothing is exactly what this looked like.
+        // Not gated on serviceInfo?.capabilities here any more: that
+        // pre-check turned out to be guesswork about exactly when Android
+        // re-grants a capability added to accessibility_service_config.xml,
+        // and the guess (toggling some service switch) was wrong for at
+        // least one real device/launcher combination that doesn't expose
+        // the switch it assumed. Asking the platform directly instead, via
+        // the actual takeScreenshot() call below, and surfacing whatever it
+        // says -- success or its own specific error code -- is ground
+        // truth instead of a second-hand guess about how to react to it.
         val capabilities = serviceInfo?.capabilities ?: 0
-        if (capabilities and AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT == 0) {
-            warnGlassCapture("turn NoMixer's accessibility service off and back on to grant it")
-            return
-        }
+        Log.i(
+            TAG,
+            "Requesting glass backdrop capture; reported capabilities = " +
+                "0x${capabilities.toString(16)} (canTakeScreenshot bit " +
+                "${if (capabilities and AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT != 0) "set" else "not set"})"
+        )
 
         val blurStrength = preferences.glassBlurStrength
         try {
@@ -257,7 +263,7 @@ class Service : AccessibilityService() {
                         null
                     }
                     if (backdrop == null) {
-                        warnGlassCapture("the screen capture came back unreadable")
+                        warnGlassCapture("captured OK but came back unreadable")
                         return
                     }
                     Log.i(
@@ -266,11 +272,31 @@ class Service : AccessibilityService() {
                             " at ${backdrop.scale} of screen"
                     )
                     glassBackdropState = backdrop
+                    // Temporary, loud on purpose: the capability check this
+                    // replaced was guessing at what the failure meant, so
+                    // for now success gets exactly as much visibility as
+                    // failure does, until this is confirmed solid across
+                    // more devices.
+                    warnGlassCapture(
+                        "captured OK: ${backdrop.image.width}x${backdrop.image.height}",
+                        isError = false
+                    )
                 }
 
                 override fun onFailure(errorCode: Int) {
-                    Log.i(TAG, "Screen capture for the glass backdrop failed, error code $errorCode")
-                    warnGlassCapture("the system refused the screen capture (error $errorCode)")
+                    // Names per AccessibilityService's own TakeScreenshotCallback
+                    // docs -- shown alongside the raw number since the exact
+                    // failure reason is the one piece of ground truth neither
+                    // of us has had yet.
+                    val meaning = when (errorCode) {
+                        0 -> "internal error"
+                        1 -> "no accessibility access -- capability not granted"
+                        2 -> "called again too soon (rate limited)"
+                        3 -> "invalid display"
+                        else -> "unknown"
+                    }
+                    Log.i(TAG, "Screen capture for the glass backdrop failed, error code $errorCode ($meaning)")
+                    warnGlassCapture("system error $errorCode -- $meaning")
                 }
             })
         } catch (e: Exception) {
@@ -282,18 +308,21 @@ class Service : AccessibilityService() {
     private var lastGlassWarningAtMs = 0L
 
     /**
-     * Says why the glass has nothing of the screen in it, rather than
-     * leaving the option looking like it does nothing at all. Rate-limited,
-     * and only ever reached with the option actually switched on.
+     * Reports exactly what happened with the glass backdrop capture --
+     * success included, for now (see the call site in [captureGlassBackdrop]):
+     * a guess about what a failure meant already turned out wrong once, so
+     * this round surfaces the platform's own ground truth instead, in both
+     * directions. Rate-limited, and only ever reached with the option
+     * actually switched on.
      */
-    private fun warnGlassCapture(reason: String) {
+    private fun warnGlassCapture(reason: String, isError: Boolean = true) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastGlassWarningAtMs < GLASS_WARNING_COOLDOWN_MS) {
             return
         }
         lastGlassWarningAtMs = now
-        Toast.makeText(this, "NoMixer can't read the screen for the glass: $reason", Toast.LENGTH_LONG)
-            .show()
+        val prefix = if (isError) "NoMixer glass capture failed: " else "NoMixer glass: "
+        Toast.makeText(this, "$prefix$reason", Toast.LENGTH_LONG).show()
     }
 
     /**
