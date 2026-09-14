@@ -24,6 +24,15 @@ const val GLASS_SCRIM_ALPHA_MAX = 0.9f
 const val GLASS_BLUR_MIN = 0f
 const val GLASS_BLUR_MAX = 1f
 
+/**
+ * [UiPreferences.glassBlurStrength]'s own 0..1 range, scaled up to an
+ * actual blur radius in dp for the glass panels' real (RenderEffect) blur
+ * -- a light touch at the low end (the grain alone already reads as frost
+ * once it's blurred at all) up to a proper soft frost at the top, without
+ * ever going so far it smears the panel's edges into its surroundings.
+ */
+const val GLASS_BLUR_RADIUS_MAX_DP = 18f
+
 /** Top of the disc tick corner-radius slider's range, as a percent. */
 const val DISC_TICK_CORNER_MAX = 50
 
@@ -235,10 +244,16 @@ data class UiPreferences(
      */
     val glassCaptureBackdrop: Boolean = true,
     /**
-     * How hard that still is scaled down before being drawn back up to panel
-     * size, 0 (barely, so the backdrop reads almost sharp) to 1 (right down,
-     * a heavy frost). The downscale *is* the blur. Meaningless while
-     * [glassCaptureBackdrop] is off.
+     * How strongly the glass panel is frosted, 0 (crisp) to 1 (a heavy
+     * soft frost) -- two things at once, so the one slider always reads as
+     * "how blurry": how hard the captured backdrop still (if any) is
+     * scaled down before being drawn back up to panel size (the downscale
+     * *is* that part of the blur, and it's meaningless on its own while
+     * [glassCaptureBackdrop] is off or the capture didn't land), and the
+     * radius of a real [android.graphics.RenderEffect] blur run over the
+     * whole glass layer -- tint and grain included -- which softens the
+     * panel into a proper frost whether or not a backdrop is behind it at
+     * all. See [GLASS_BLUR_RADIUS_MAX_DP] for that second part's own range.
      */
     val glassBlurStrength: Float = 0.6f
 )
@@ -326,7 +341,7 @@ fun UiPreferences.withShowShadow(value: Boolean): UiPreferences =
  *
  * Translucent: [glassScrimBaseAlpha] -- the glass scrim's own base opacity,
  * painted the same way on every device and power state (see
- * [com.nomixer.volume.compose.glassScrim]). Unlike the old system-blur
+ * [com.nomixer.volume.compose.GlassBackground]). Unlike the old system-blur
  * fallback this used to be, there's no capability check here at all: the
  * scrim never depends on whether the platform feels like granting blur.
  */

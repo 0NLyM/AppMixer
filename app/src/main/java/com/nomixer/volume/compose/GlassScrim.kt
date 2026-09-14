@@ -3,7 +3,7 @@ package com.nomixer.volume.compose
 import android.graphics.RuntimeShader
 import android.util.Log
 import android.view.View
-import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -23,8 +24,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalView
@@ -54,15 +58,21 @@ import kotlin.math.roundToInt
  * Painted in order, behind the panel's own content:
  * 1. The blurred backdrop, lined up so it shows exactly the part of the
  *    screen the panel is sitting on top of -- the actual glass. Absent (no
- *    capture yet, or the user switched it off) the rest still stands on its
- *    own as a tinted scrim, just not one that refracts anything.
+ *    capture yet, or the user switched it off, or the platform simply
+ *    refuses it -- see NOTICE.md) the rest still stands on its own as a
+ *    tinted scrim, just not one that refracts anything.
  * 2. A diagonal gradient of the panel's own base color, brighter at one
  *    corner and dimmer at the other, frosting the backdrop and giving the
  *    sheet an uneven sheen instead of a flat wash.
  * 3. A subtle AGSL grain, the way real frosted glass never tints perfectly
  *    evenly -- a couple of ops per pixel, sampling nothing.
- * 4. A thin, low-opacity light border along the shape's own edge, the way
- *    light catches the rim of real glass.
+ * 4. Everything above, optionally run through a real blur
+ *    ([GlassBackground]'s own `blurRadius`) -- frosting it further whether
+ *    or not a real backdrop landed, since blurring the grain alone already
+ *    reads as glass.
+ * 5. A soft diagonal light along the shape's own edge ([glassEdgeLightBrush]),
+ *    brighter at one corner, the way light actually catches the rim of real
+ *    glass instead of a single flat border color.
  */
 class GlassBackdrop(
     /** The screen still, already scaled down -- that downscale is the blur. */
@@ -89,6 +99,20 @@ fun glassScrimBrush(baseColor: Color): Brush = Brush.linearGradient(
         0f to baseColor.copy(alpha = (baseColor.alpha * 1.7f).coerceAtMost(1f)),
         0.5f to baseColor,
         1f to baseColor.copy(alpha = baseColor.alpha * 0.5f)
+    )
+)
+
+/**
+ * A soft diagonal highlight for the glass edge, brightest at the corner a
+ * light source would actually catch and fading to almost nothing at the
+ * opposite one -- real depth instead of the flat, uniform rim a single
+ * border color reads as.
+ */
+fun glassEdgeLightBrush(strength: Float = 1f): Brush = Brush.linearGradient(
+    colorStops = arrayOf(
+        0f to Color.White.copy(alpha = 0.35f * strength),
+        0.4f to Color.White.copy(alpha = 0.10f * strength),
+        1f to Color.White.copy(alpha = 0.02f * strength)
     )
 )
 
@@ -185,56 +209,84 @@ internal fun DrawScope.drawGlassBackdrop(backdrop: GlassBackdrop, screenOrigin: 
 }
 
 /**
- * Drop-in glass background for a Compose panel: paints the blurred backdrop,
- * the tint gradient and the grain behind whatever this is chained onto,
- * clipped to [shape], then a light rim right at its edge.
+ * The glass panel's background alone -- backdrop, tint and grain, optionally
+ * blurred -- as a plain empty [Box] meant to sit *behind* a panel's real
+ * content in the same [Box] stack (see CollapsedVolumePopup.kt and
+ * Service.kt's own call sites), rather than as a [Modifier] chained onto
+ * that content the way this used to work.
+ *
+ * That change is what [blurRadius] actually required: a real blur
+ * ([androidx.compose.ui.graphics.GraphicsLayerScope.renderEffect]) blurs
+ * everything a node draws -- content included -- so blurring only the glass
+ * itself means the glass has to be a genuinely separate node from the
+ * panel's icons, sliders and text, not additional paint calls layered into
+ * the same one via `drawWithContent`.
+ *
+ * Pair with [glassEdgeLightBrush] via [Modifier.border] for the rim light,
+ * drawn as its own sibling *above* both this and the real content so it
+ * isn't blurred either.
  */
 @Composable
-fun Modifier.glassScrim(
+fun GlassBackground(
     shape: Shape,
     baseColor: Color,
+    modifier: Modifier = Modifier,
     backdrop: GlassBackdrop? = null,
-    borderColor: Color = Color.White.copy(alpha = 0.16f),
-    borderWidth: Dp = 1.dp
-): Modifier {
+    blurRadius: Dp = 0.dp
+) {
     val view = LocalView.current
     var panelInWindow by remember { mutableStateOf(Offset.Zero) }
 
-    return this
-        .onGloballyPositioned { panelInWindow = it.positionInWindow() }
-        .clip(shape)
-        .drawWithCache {
-            val tint = glassScrimBrush(baseColor)
-            onDrawWithContent {
-                // Each layer wrapped separately: a bad backdrop frame or a
-                // broken noise shader (see glassNoiseBrush) must never take
-                // the plain tint fill down with it -- that shared fate is
-                // exactly what made the whole panel invisible instead of
-                // just plainer than intended.
-                try {
-                    if (backdrop != null) {
-                        drawGlassBackdrop(backdrop, view.screenOrigin(panelInWindow))
+    Box(
+        modifier
+            .onGloballyPositioned { panelInWindow = it.positionInWindow() }
+            .clip(shape)
+            .then(
+                if (blurRadius > 0.dp) {
+                    Modifier.graphicsLayer {
+                        renderEffect = BlurEffect(
+                            blurRadius.toPx(), blurRadius.toPx(), TileMode.Decal
+                        )
                     }
-                } catch (e: Throwable) {
-                    Log.w("GlassScrim", "Glass backdrop draw failed", e)
+                } else {
+                    Modifier
                 }
-                drawRect(tint)
-                try {
-                    glassNoiseBrush(size)?.let { drawRect(it) }
-                } catch (e: Throwable) {
-                    Log.w("GlassScrim", "Glass noise draw failed", e)
+            )
+            .drawWithCache {
+                val tint = glassScrimBrush(baseColor)
+                onDrawBehind {
+                    // Each layer wrapped separately: a bad backdrop frame or
+                    // a broken noise shader (see glassNoiseBrush) must never
+                    // take the plain tint fill down with it -- that shared
+                    // fate is exactly what made the whole panel invisible
+                    // instead of just plainer than intended.
+                    try {
+                        if (backdrop != null) {
+                            drawGlassBackdrop(backdrop, view.screenOrigin(panelInWindow))
+                        }
+                    } catch (e: Throwable) {
+                        Log.w("GlassScrim", "Glass backdrop draw failed", e)
+                    }
+                    drawRect(tint)
+                    try {
+                        glassNoiseBrush(size)?.let { drawRect(it) }
+                    } catch (e: Throwable) {
+                        Log.w("GlassScrim", "Glass noise draw failed", e)
+                    }
                 }
-                drawContent()
             }
-        }
-        .border(borderWidth, borderColor, shape)
+    )
 }
 
 /**
- * The same three layers as [glassScrim], but confined to a ring -- for
- * [VolumeDisc]'s own track, painted straight into its Canvas rather than
- * through a Compose layout node. [screenOrigin] is that Canvas' own top-left
- * on the physical screen.
+ * The same backdrop, tint, grain and edge light as [GlassBackground], but
+ * confined to a ring -- for [VolumeDisc]'s own track, painted straight into
+ * its Canvas rather than through a Compose layout node. No adjustable blur
+ * here, unlike [GlassBackground]: a real blur needs a genuinely separate
+ * graphics layer (see that function's own doc comment), and the ring is
+ * drawn as one call among several sharing VolumeDisc's single Canvas, not a
+ * node of its own. [screenOrigin] is that Canvas' own top-left on the
+ * physical screen.
  */
 fun DrawScope.drawGlassRing(
     baseColor: Color,
@@ -269,8 +321,8 @@ fun DrawScope.drawGlassRing(
     }
 
     clipPath(ring) {
-        // Same isolation as glassScrim: the plain tint must show even if
-        // the backdrop or the noise shader fails.
+        // Same isolation as GlassBackground: the plain tint must show even
+        // if the backdrop or the noise shader fails.
         try {
             if (backdrop != null) {
                 drawGlassBackdrop(backdrop, screenOrigin)
@@ -284,5 +336,9 @@ fun DrawScope.drawGlassRing(
         } catch (e: Throwable) {
             Log.w("GlassScrim", "Glass ring noise draw failed", e)
         }
+        // Same edge light as the flat panels (glassEdgeLightBrush): stroking
+        // the same two-circle path used for the clip above catches both the
+        // ring's outer and inner rim in one call.
+        drawPath(ring, brush = glassEdgeLightBrush(), style = Stroke(width = 1.5.dp.toPx()))
     }
 }

@@ -2,6 +2,7 @@ package com.nomixer.volume.compose
 
 import android.media.AudioManager
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
+import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupCenterContent
@@ -328,9 +330,10 @@ fun CollapsedVolumePopup(
         label = "popupPanel"
     )
 
-    // Whether [panelColor] above gets the full glass-scrim treatment
-    // (gradient + grain, see [glassScrim]) instead of a flat tint. Never
-    // true for Solid: that flat fill is the user's own opacity setting.
+    // Whether [panelColor] above gets the full glass treatment (gradient,
+    // grain, blur and edge light -- see [GlassBackground]) instead of a flat
+    // tint. Never true for Solid: that flat fill is the user's own opacity
+    // setting.
     val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
 
     // The popup's own light shadow, painted right behind its main shape --
@@ -379,31 +382,32 @@ fun CollapsedVolumePopup(
     }
     val elementShadowColor = if (!isDisc && !showBackground) shadow else Color.Transparent
 
-    Surface(
-        modifier = panelShadowModifier.then(
-            // Surface's own `color` only ever takes a flat Color, so the
-            // glass scrim is painted as a background modifier underneath it
-            // instead, clipped to the same shape; Surface itself stays
-            // transparent in that case rather than double-painting.
-            if (!isDisc && panelGlass) {
-                Modifier.glassScrim(
-                    shape = panelShape,
-                    baseColor = panelColor,
-                    backdrop = glassBackdrop
-                )
-            } else {
-                Modifier
-            }
-        ),
-        // The disc's own panel never paints a background of its own -- its
-        // margin and shadow-fade sliver always stay exactly as they look
-        // with the background off; only the ring's own track (inside
-        // VolumeDisc, below) ever picks up Solid's tint or Translucent's
-        // glass scrim.
-        color = if (isDisc || panelGlass) Color.Transparent else panelColor,
-        contentColor = MaterialTheme.colorScheme.onBackground,
-        shape = panelShape
-    ) {
+    // A real blur needs a genuinely separate graphics layer from whatever
+    // it isn't supposed to blur (see GlassBackground's own doc comment), so
+    // -- unlike the old flat-color scrim, which was just another Modifier
+    // chained onto Surface -- the glass background and its edge light are
+    // now painted as Surface's own siblings in this Box, behind and above
+    // it respectively, instead of through Surface's `modifier`.
+    Box(modifier = panelShadowModifier) {
+        if (!isDisc && panelGlass) {
+            GlassBackground(
+                shape = panelShape,
+                baseColor = panelColor,
+                backdrop = glassBackdrop,
+                blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+        Surface(
+            // The disc's own panel never paints a background of its own --
+            // its margin and shadow-fade sliver always stay exactly as they
+            // look with the background off; only the ring's own track
+            // (inside VolumeDisc, below) ever picks up Solid's tint or
+            // Translucent's glass scrim.
+            color = if (isDisc || panelGlass) Color.Transparent else panelColor,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            shape = panelShape
+        ) {
         when (preferences.popupStyle) {
             PopupStyle.HorizontalBar -> Row(
                 modifier = Modifier.padding(panelPadding),
@@ -632,6 +636,14 @@ fun CollapsedVolumePopup(
                     )
                 }
             }
+        }
+        }
+        if (!isDisc && panelGlass) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .border(1.dp, glassEdgeLightBrush(), panelShape)
+            )
         }
     }
 }

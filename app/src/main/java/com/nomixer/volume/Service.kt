@@ -33,6 +33,7 @@ import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -64,13 +65,15 @@ import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.GlassBackdrop
+import com.nomixer.volume.compose.GlassBackground
 import com.nomixer.volume.compose.VolumeChangeObserver
-import com.nomixer.volume.compose.glassScrim
+import com.nomixer.volume.compose.glassEdgeLightBrush
 import com.nomixer.volume.compose.softShadow
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.DiagnosticLog
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
+import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupBackground
@@ -499,52 +502,62 @@ class Service : AccessibilityService() {
                         ) {
                             if (expanded) {
                                 val mixerShape = RoundedCornerShape(preferences.popupCornerRadius.dp)
-                                Surface(
-                                    // In Translucent mode this gets the full
-                                    // glass-scrim treatment (gradient + grain,
-                                    // see glassScrim) via a background
-                                    // modifier instead of Surface's own flat
-                                    // `color` (which can't take a Brush) --
-                                    // Surface itself stays transparent in
-                                    // that case.
-                                    modifier = if (panelGlass) {
-                                        Modifier.glassScrim(
+                                // A real blur needs a genuinely separate
+                                // graphics layer from whatever it isn't
+                                // supposed to blur (see GlassBackground's own
+                                // doc comment), so the glass background and
+                                // its edge light are painted as Surface's own
+                                // siblings in this Box rather than through a
+                                // Modifier chained onto Surface itself.
+                                Box {
+                                    if (panelGlass) {
+                                        GlassBackground(
                                             shape = mixerShape,
                                             baseColor = panelColor,
-                                            backdrop = glassBackdropState
+                                            backdrop = glassBackdropState,
+                                            blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
+                                            modifier = Modifier.matchParentSize()
                                         )
-                                    } else {
-                                        Modifier
-                                    },
-                                    color = if (panelGlass) Color.Transparent else panelColor,
-                                    contentColor = MaterialTheme.colorScheme.onBackground,
-                                    shape = mixerShape
-                                ) {
-                                    Column(
-                                        // One inset all round: the sides used
-                                        // to be wider than the top and bottom.
-                                        modifier = Modifier.padding(16.dp)
+                                    }
+                                    Surface(
+                                        color = if (panelGlass) Color.Transparent else panelColor,
+                                        contentColor = MaterialTheme.colorScheme.onBackground,
+                                        shape = mixerShape
                                     ) {
-                                        AppVolumeList(
-                                            apps = manager.apps.values,
-                                            showAll = false,
-                                            shadowColor = sliderShadowColor,
-                                            onChange = this@Service.handler::startIdleTimer
+                                        Column(
+                                            // One inset all round: the sides
+                                            // used to be wider than the top
+                                            // and bottom.
+                                            modifier = Modifier.padding(16.dp)
                                         ) {
-                                            item("system_volume_panel") {
-                                                SystemVolumePanel(
-                                                    audioManager = manager.audioManager,
-                                                    notificationManagerProxy = manager.notificationManagerProxy,
-                                                    showCallVolumeAlways = false,
-                                                    applyVisibilityFilter = true,
-                                                    allowVisibilityConfig = false,
-                                                    isSliderVisible = manager::isSystemSliderVisible,
-                                                    onSliderVisibilityChange = manager::setSystemSliderVisible,
-                                                    shadowColor = sliderShadowColor,
-                                                    onChange = this@Service.handler::startIdleTimer
-                                                )
+                                            AppVolumeList(
+                                                apps = manager.apps.values,
+                                                showAll = false,
+                                                shadowColor = sliderShadowColor,
+                                                onChange = this@Service.handler::startIdleTimer
+                                            ) {
+                                                item("system_volume_panel") {
+                                                    SystemVolumePanel(
+                                                        audioManager = manager.audioManager,
+                                                        notificationManagerProxy = manager.notificationManagerProxy,
+                                                        showCallVolumeAlways = false,
+                                                        applyVisibilityFilter = true,
+                                                        allowVisibilityConfig = false,
+                                                        isSliderVisible = manager::isSystemSliderVisible,
+                                                        onSliderVisibilityChange = manager::setSystemSliderVisible,
+                                                        shadowColor = sliderShadowColor,
+                                                        onChange = this@Service.handler::startIdleTimer
+                                                    )
+                                                }
                                             }
                                         }
+                                    }
+                                    if (panelGlass) {
+                                        Box(
+                                            Modifier
+                                                .matchParentSize()
+                                                .border(1.dp, glassEdgeLightBrush(), mixerShape)
+                                        )
                                     }
                                 }
                             } else {
