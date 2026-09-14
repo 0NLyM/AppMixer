@@ -1014,5 +1014,33 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   cost, so it ships as an explicit switch with its own sampling-
   interval slider rather than being always on.
 
+## 2026-09-14 — 1.0.36
+
+- Fixed the disc anchored to the right edge, at a zero horizontal offset,
+  drawing its whole value arc on the half that isn't on screen. The cut's
+  distance from the disc's center is signed by which side it falls on, and
+  at offset zero the cut runs exactly through the center -- a zero with no
+  sign left to read, which the previous side-from-sign inference read as
+  "cut on the left" regardless of the actual anchor. VolumeDisc is now told
+  which side is hidden instead of inferring it, so this boundary case can't
+  land on the wrong half.
+- The tick ring is turning again. 1.0.35 had pinned every tick to a fixed
+  slot and lengthened whichever three sat nearest the level, which stopped
+  reading as a knob. Both the ring's spacing and how far it turns now come
+  off the visible arc rather than the full circle, so a laterally-cut disc
+  keeps its ticks spread across the part still on screen and coordinated
+  with the fill and the knob at every level; on an uncut disc this is
+  identical to the previous full-circle rotation.
+- The glass background now actually refracts the screen behind it, instead
+  of a fixed gradient tint that looked the same in every situation. A still
+  of the screen is captured (through the accessibility service's own
+  screenshot capability) the instant before the popup appears -- so it
+  never captures itself -- and scaled down, which is the blur itself, then
+  drawn back up behind each glass panel lined up with the exact part of the
+  screen it's covering. One capture per appearance rather than periodic
+  polling, so it costs far less than the sampling toggle it replaces --
+  it's on by default now, with a blur-amount slider in place of the old
+  sample-interval one.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
