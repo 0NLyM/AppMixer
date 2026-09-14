@@ -278,13 +278,19 @@ class Service : AccessibilityService() {
         val halvings = (GLASS_BLUR_MIN_HALVINGS +
             blurStrength.coerceIn(0f, 1f) * (GLASS_BLUR_MAX_HALVINGS - GLASS_BLUR_MIN_HALVINGS))
             .roundToInt()
-        var scaled = fullSize
+        // Explicitly typed, and each new bitmap forced non-null: a captured
+        // var reassigned inside a closure doesn't keep a smart cast, which
+        // read every later use of it below as Bitmap.createScaledBitmap's
+        // own nullable return type.
+        var scaled: Bitmap = fullSize
         repeat(halvings) {
-            val next = Bitmap.createScaledBitmap(
-                scaled,
-                (scaled.width / 2).coerceAtLeast(1),
-                (scaled.height / 2).coerceAtLeast(1),
-                true
+            val next = checkNotNull(
+                Bitmap.createScaledBitmap(
+                    scaled,
+                    (scaled.width / 2).coerceAtLeast(1),
+                    (scaled.height / 2).coerceAtLeast(1),
+                    true
+                )
             )
             scaled.recycle()
             scaled = next
