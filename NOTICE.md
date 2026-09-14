@@ -1136,5 +1136,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   button in the main screen's top bar, with one-tap copy-to-clipboard for
   sharing the whole thing.
 
+## 2026-09-14 — 1.0.43
+
+- Moving away from chasing real screen refraction, which some devices'
+  platform policy silently refuses no matter what (as the last several
+  releases established), the glass panel now gets a real per-layer blur
+  (Android's own RenderEffect/GraphicsLayer blur, not just the old
+  backdrop-only downscale) applied to its tint and grain, so it reads as
+  frosted glass whether or not a real captured backdrop is behind it --
+  the existing Blur slider now drives this directly.
+- The panel's border is also now a diagonal light gradient instead of a
+  flat semi-transparent line, brighter at the corner a light source would
+  actually catch, giving the rim real depth; applied to both the
+  bar-style/expanded-mixer panels and the disc's own ring.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
