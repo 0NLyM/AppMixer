@@ -227,11 +227,20 @@ class Service : AccessibilityService() {
      */
     private fun captureGlassBackdrop() {
         val preferences = manager.uiPreferences
-        val wantsGlass = preferences.glassCaptureBackdrop &&
-            preferences.activeShowBackground() &&
-            preferences.activeBackground() == PopupBackground.Translucent
-        if (!wantsGlass) {
+        val captureEnabled = preferences.glassCaptureBackdrop
+        val showBackground = preferences.activeShowBackground()
+        val isTranslucent = preferences.activeBackground() == PopupBackground.Translucent
+        if (!captureEnabled || !showBackground || !isTranslucent) {
             glassBackdropState = null
+            // The one branch of this whole path that used to return with
+            // nothing shown at all -- reported once so "no toast ever
+            // appears" stops being ambiguous between "not even trying" and
+            // "tried and the platform said nothing back".
+            warnGlassCapture(
+                "not requesting a capture (refract=$captureEnabled, " +
+                    "showBackground=$showBackground, translucent=$isTranslucent)",
+                isError = false
+            )
             return
         }
 
