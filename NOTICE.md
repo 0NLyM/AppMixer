@@ -1122,5 +1122,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   trimmed message, the error code, the captured image's dimensions, or
   which setting is off) instead of English framing text around it.
 
+## 2026-09-14 — 1.0.42
+
+- Repeated attempts to fit the glass backdrop capture's diagnostics into a
+  Toast kept failing because the device being used to test on truncates
+  Toast text to two lines, and the one genuinely useful detail (an
+  exception's class name, a full error message) kept landing wherever
+  that cutoff happened to fall -- a Toast was never going to reliably
+  carry a message whose length isn't known in advance. Added a small
+  in-app diagnostic log instead: every glass-capture outcome (why a
+  capture wasn't even attempted, the platform's exact success or failure
+  result, any exception) is now recorded in full and viewable from a new
+  button in the main screen's top bar, with one-tap copy-to-clipboard for
+  sharing the whole thing.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
