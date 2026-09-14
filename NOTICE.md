@@ -1187,5 +1187,15 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   opacity has its own dedicated slider, the same way Translucent's glass
   and Solid's fill each have theirs.
 
+## 2026-09-14 — 1.0.46
+
+- Added a "Glass tint" color picker under Translucent's own controls: the
+  glass scrim's tint hue can now be set independently of the theme's
+  background color, while the existing Glass opacity slider keeps
+  controlling how strong that tint reads. Left unset (the default), the
+  glass keeps tinting from the theme background exactly as before. Solid's
+  flat fill and Atmosphere's grain are untouched -- both still always read
+  the theme's background color directly.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

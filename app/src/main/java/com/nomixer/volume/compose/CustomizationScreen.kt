@@ -596,9 +596,16 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                         Color.Transparent
                     },
                     trackBackingColor = if (showBackground) {
-                        MaterialTheme.colorScheme.background.copy(
-                            alpha = preferences.paintedPanelAlpha()
-                        )
+                        // Mirrors CollapsedVolumePopup's own panelColor: a
+                        // custom glassTintColor only ever replaces the
+                        // Translucent tint's hue, never Solid's or
+                        // Atmosphere's.
+                        val baseHue = if (preferences.activeBackground() == PopupBackground.Translucent) {
+                            preferences.glassTintColor?.let { Color(it) } ?: MaterialTheme.colorScheme.background
+                        } else {
+                            MaterialTheme.colorScheme.background
+                        }
+                        baseHue.copy(alpha = preferences.paintedPanelAlpha())
                     } else {
                         Color.Transparent
                     },
@@ -1020,6 +1027,21 @@ fun CustomizationScreen(
                                         onUpdate { it.copy(glassScrimBaseAlpha = value) }
                                     }
                                 )
+                                ColorSettingRow(
+                                    label = stringResource(R.string.glass_tint_color),
+                                    color = preferences.glassTintColor?.let { Color(it) } ?: base.background,
+                                    isCustom = preferences.glassTintColor != null,
+                                    // Full alpha always -- the Glass opacity
+                                    // slider above is what actually controls
+                                    // how opaque the tint reads, so a picked
+                                    // color's own alpha would otherwise be a
+                                    // second, silently-overridden opacity
+                                    // shown right next to that slider.
+                                    onColorChange = { color ->
+                                        onUpdate { it.copy(glassTintColor = color.copy(alpha = 1f).toArgb()) }
+                                    },
+                                    onReset = { onUpdate { it.copy(glassTintColor = null) } }
+                                )
                                 ToggleSetting(
                                     label = stringResource(R.string.glass_capture_backdrop),
                                     checked = preferences.glassCaptureBackdrop,
@@ -1272,6 +1294,7 @@ fun CustomizationScreen(
                             glassScrimBaseAlpha = defaults.glassScrimBaseAlpha,
                             glassCaptureBackdrop = defaults.glassCaptureBackdrop,
                             glassBlurStrength = defaults.glassBlurStrength,
+                            glassTintColor = defaults.glassTintColor,
                             atmosphereBaseAlpha = defaults.atmosphereBaseAlpha,
                             expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,

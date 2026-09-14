@@ -71,6 +71,7 @@
     <string name="glass_capture_backdrop">折射屏幕内容</string>
     <string name="glass_capture_backdrop_description">在弹窗出现前的一瞬间截取屏幕静帧并将其模糊后置于玻璃之下，让面板真正折射出它所覆盖的画面。使用的是本无障碍服务自身的截屏能力——不会弹出额外权限请求，弹窗显示期间不会再截取，关闭后也不会保留。关闭此项时，玻璃只是一层纯色半透明面板。</string>
     <string name="glass_blur_strength">模糊程度</string>
+    <string name="glass_tint_color">玻璃色调</string>
     <string name="atmosphere_opacity">颗粒不透明度</string>
     <string name="atmosphere_description">一阵取自面板自身底色的彩色颗粒，先短暂闪烁，然后定格为滑块背后的固定纹理。</string>
     <string name="show_value">显示音量值</string>

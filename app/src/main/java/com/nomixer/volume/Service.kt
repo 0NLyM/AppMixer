@@ -444,19 +444,28 @@ class Service : AccessibilityService() {
                     // there's no panel at all, and the shadow below moves
                     // onto each slider individually instead.
                     val showBackground = preferences.activeShowBackground()
+                    val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
+                    val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
                     val panelColor by animateColorAsState(
                         targetValue = if (!showBackground) {
                             Color.Transparent
                         } else {
-                            MaterialTheme.colorScheme.background.copy(
-                                alpha = preferences.paintedPanelAlpha()
-                            )
+                            // Translucent's own tint hue can be overridden
+                            // independently of the theme's background color
+                            // (see UiPreferences.glassTintColor); Solid and
+                            // Atmosphere both always read the theme color
+                            // directly -- same as CollapsedVolumePopup's own
+                            // panelColor.
+                            val baseHue = if (panelGlass) {
+                                preferences.glassTintColor?.let { Color(it) } ?: MaterialTheme.colorScheme.background
+                            } else {
+                                MaterialTheme.colorScheme.background
+                            }
+                            baseHue.copy(alpha = preferences.paintedPanelAlpha())
                         },
                         animationSpec = Motion.ColorShift,
                         label = "mixerPanel"
                     )
-                    val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
-                    val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
                     val sliderShadowColor by animateColorAsState(
                         targetValue = if (showBackground) {
                             Color.Transparent

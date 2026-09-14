@@ -256,6 +256,15 @@ data class UiPreferences(
      */
     val glassCaptureBackdrop: Boolean = true,
     /**
+     * Tint hue for Translucent mode's glass scrim -- `null` uses the theme's
+     * own background color, same as it always has. Set, this replaces just
+     * the color the glass is tinted; [glassScrimBaseAlpha] still owns how
+     * opaque that tint is, so a picked color's own alpha is discarded. Never
+     * touches Solid's flat fill or Atmosphere's grain, both of which keep
+     * reading the theme's background color directly.
+     */
+    val glassTintColor: Int? = null,
+    /**
      * How strongly the glass panel is frosted, 0 (crisp) to 1 (a heavy
      * soft frost) -- two things at once, so the one slider always reads as
      * "how blurry": how hard the captured backdrop still (if any) is

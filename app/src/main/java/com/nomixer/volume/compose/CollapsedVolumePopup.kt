@@ -315,6 +315,12 @@ fun CollapsedVolumePopup(
     // button and slider themselves instead (below).
     val showBackground = preferences.activeShowBackground()
 
+    // Whether [panelColor] below gets the full glass treatment (gradient,
+    // grain, blur and edge light -- see [GlassBackground]) instead of a flat
+    // tint. Never true for Solid: that flat fill is the user's own opacity
+    // setting.
+    val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
+
     // One background value for every style now, bars and disc alike: the
     // bars paint it across their whole panel, while the disc instead uses
     // it only as the backing directly underneath its own ring track (see
@@ -327,19 +333,19 @@ fun CollapsedVolumePopup(
         targetValue = if (!showBackground) {
             Color.Transparent
         } else {
-            MaterialTheme.colorScheme.background.copy(
-                alpha = preferences.paintedPanelAlpha()
-            )
+            // Translucent's own tint hue can be overridden independently of
+            // the theme's background color (see UiPreferences.glassTintColor);
+            // Solid and Atmosphere both always read the theme color directly.
+            val baseHue = if (panelGlass) {
+                preferences.glassTintColor?.let { Color(it) } ?: MaterialTheme.colorScheme.background
+            } else {
+                MaterialTheme.colorScheme.background
+            }
+            baseHue.copy(alpha = preferences.paintedPanelAlpha())
         },
         animationSpec = Motion.ColorShift,
         label = "popupPanel"
     )
-
-    // Whether [panelColor] above gets the full glass treatment (gradient,
-    // grain, blur and edge light -- see [GlassBackground]) instead of a flat
-    // tint. Never true for Solid: that flat fill is the user's own opacity
-    // setting.
-    val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
     val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
 
     // The popup's own light shadow, painted right behind its main shape --
