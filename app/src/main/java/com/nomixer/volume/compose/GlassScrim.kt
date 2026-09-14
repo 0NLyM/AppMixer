@@ -1,6 +1,7 @@
 package com.nomixer.volume.compose
 
 import android.graphics.RuntimeShader
+import android.util.Log
 import android.view.View
 import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
@@ -97,22 +98,39 @@ fun glassScrimBrush(baseColor: Color): Brush = Brush.linearGradient(
 // Single-window app, only ever touched from the UI thread.
 private var noiseBrushSize: Size? = null
 private var noiseBrush: Brush? = null
+private var noiseBrushBroken = false
 
-/** The AGSL grain/sheen layer, sized to [size] -- draw it right on top of [glassScrimBrush]'s own fill. */
-fun glassNoiseBrush(size: Size): Brush {
+/**
+ * The AGSL grain/sheen layer, sized to [size] -- draw it right on top of
+ * [glassScrimBrush]'s own fill. Null if [RuntimeShader] can't be built on
+ * this device (a bad driver, an AGSL feature it doesn't actually support
+ * despite the API level) -- a caller must treat that as "skip the grain",
+ * never let it take the base tint down with it, which a construction
+ * failure reaching all the way up into a shared draw call used to do.
+ */
+fun glassNoiseBrush(size: Size): Brush? {
+    if (noiseBrushBroken) {
+        return null
+    }
     val cached = noiseBrush
     if (cached != null && noiseBrushSize == size) {
         return cached
     }
 
-    val brush = ShaderBrush(
-        RuntimeShader(NOISE_SHADER_SRC).apply {
-            setFloatUniform("resolution", size.width, size.height)
-        }
-    )
-    noiseBrushSize = size
-    noiseBrush = brush
-    return brush
+    return try {
+        val brush = ShaderBrush(
+            RuntimeShader(NOISE_SHADER_SRC).apply {
+                setFloatUniform("resolution", size.width, size.height)
+            }
+        )
+        noiseBrushSize = size
+        noiseBrush = brush
+        brush
+    } catch (e: Throwable) {
+        Log.w("GlassScrim", "Glass noise shader unavailable on this device, dropping the grain layer", e)
+        noiseBrushBroken = true
+        null
+    }
 }
 
 // Reused rather than allocated per draw, same reasoning (and same single
@@ -187,13 +205,25 @@ fun Modifier.glassScrim(
         .clip(shape)
         .drawWithCache {
             val tint = glassScrimBrush(baseColor)
-            val noise = glassNoiseBrush(size)
             onDrawWithContent {
-                if (backdrop != null) {
-                    drawGlassBackdrop(backdrop, view.screenOrigin(panelInWindow))
+                // Each layer wrapped separately: a bad backdrop frame or a
+                // broken noise shader (see glassNoiseBrush) must never take
+                // the plain tint fill down with it -- that shared fate is
+                // exactly what made the whole panel invisible instead of
+                // just plainer than intended.
+                try {
+                    if (backdrop != null) {
+                        drawGlassBackdrop(backdrop, view.screenOrigin(panelInWindow))
+                    }
+                } catch (e: Throwable) {
+                    Log.w("GlassScrim", "Glass backdrop draw failed", e)
                 }
                 drawRect(tint)
-                drawRect(noise)
+                try {
+                    glassNoiseBrush(size)?.let { drawRect(it) }
+                } catch (e: Throwable) {
+                    Log.w("GlassScrim", "Glass noise draw failed", e)
+                }
                 drawContent()
             }
         }
@@ -239,10 +269,20 @@ fun DrawScope.drawGlassRing(
     }
 
     clipPath(ring) {
-        if (backdrop != null) {
-            drawGlassBackdrop(backdrop, screenOrigin)
+        // Same isolation as glassScrim: the plain tint must show even if
+        // the backdrop or the noise shader fails.
+        try {
+            if (backdrop != null) {
+                drawGlassBackdrop(backdrop, screenOrigin)
+            }
+        } catch (e: Throwable) {
+            Log.w("GlassScrim", "Glass ring backdrop draw failed", e)
         }
         drawRect(glassScrimBrush(baseColor))
-        drawRect(glassNoiseBrush(size))
+        try {
+            glassNoiseBrush(size)?.let { drawRect(it) }
+        } catch (e: Throwable) {
+            Log.w("GlassScrim", "Glass ring noise draw failed", e)
+        }
     }
 }
