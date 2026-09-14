@@ -24,6 +24,10 @@ const val GLASS_SCRIM_ALPHA_MAX = 0.9f
 const val GLASS_BLUR_MIN = 0f
 const val GLASS_BLUR_MAX = 1f
 
+/** Bottom and top of the Atmosphere panel's own opacity slider (see [UiPreferences.atmosphereBaseAlpha]). */
+const val ATMOSPHERE_ALPHA_MIN = 0.15f
+const val ATMOSPHERE_ALPHA_MAX = 0.95f
+
 /**
  * [UiPreferences.glassBlurStrength]'s own 0..1 range, scaled up to an
  * actual blur radius in dp for the glass panels' real (RenderEffect) blur
@@ -91,7 +95,15 @@ enum class PopupBackground {
     Translucent,
 
     /** One opaque panel in the theme's background color. */
-    Solid
+    Solid,
+
+    /**
+     * A burst of colored grain, seeded from the panel's own base color, that
+     * flickers for a moment and then holds still -- see
+     * [UiPreferences.atmosphereBaseAlpha] and
+     * [com.nomixer.volume.compose.AtmosphereBackground].
+     */
+    Atmosphere
 }
 
 /**
@@ -255,7 +267,14 @@ data class UiPreferences(
      * panel into a proper frost whether or not a backdrop is behind it at
      * all. See [GLASS_BLUR_RADIUS_MAX_DP] for that second part's own range.
      */
-    val glassBlurStrength: Float = 0.6f
+    val glassBlurStrength: Float = 0.6f,
+    /**
+     * Opacity of the Atmosphere panel's own grain -- one shared value for
+     * every style, same reasoning as [glassScrimBaseAlpha]: it tunes the
+     * effect itself, not anything about a particular collapsed look. See
+     * [ATMOSPHERE_ALPHA_MIN]/`_MAX`.
+     */
+    val atmosphereBaseAlpha: Float = 0.55f
 )
 
 /**
@@ -349,6 +368,7 @@ fun UiPreferences.paintedPanelAlpha(): Float =
     when (activeBackground()) {
         PopupBackground.Solid -> activeBackgroundOpacity()
         PopupBackground.Translucent -> glassScrimBaseAlpha
+        PopupBackground.Atmosphere -> atmosphereBaseAlpha
     }
 
 /** Peak alpha of the popup's own shadow, at its brightest point. Deliberately light. */

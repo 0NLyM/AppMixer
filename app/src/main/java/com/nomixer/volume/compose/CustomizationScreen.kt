@@ -73,6 +73,8 @@ import com.nomixer.volume.ui.theme.PopupColors
 import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
+import com.nomixer.volume.data.ATMOSPHERE_ALPHA_MAX
+import com.nomixer.volume.data.ATMOSPHERE_ALPHA_MIN
 import com.nomixer.volume.data.GLASS_BLUR_MAX
 import com.nomixer.volume.data.GLASS_BLUR_MIN
 import com.nomixer.volume.data.GLASS_SCRIM_ALPHA_MAX
@@ -601,6 +603,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                         Color.Transparent
                     },
                     trackBackingGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent,
+                    trackBackingAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere,
                     icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (showValue && !besideButton) previewValueText else null,
                     centerContent = if (showRingerButton) {
@@ -977,21 +980,22 @@ fun CustomizationScreen(
                 ChipRow(
                     options = listOf(
                         PopupBackground.Translucent to stringResource(R.string.background_translucent),
-                        PopupBackground.Solid to stringResource(R.string.background_solid)
+                        PopupBackground.Solid to stringResource(R.string.background_solid),
+                        PopupBackground.Atmosphere to stringResource(R.string.background_atmosphere)
                     ),
                     selected = preferences.activeBackground(),
                     onSelect = { background -> onUpdate { it.withBackground(background) } }
                 )
 
                 AnimatedContent(
-                    targetState = preferences.activeBackground() == PopupBackground.Solid,
+                    targetState = preferences.activeBackground(),
                     transitionSpec = {
                         fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
                     },
-                    label = "opacityOrBlur"
-                ) { showOpacity ->
-                    if (showOpacity) {
-                        SliderSetting(
+                    label = "backgroundControls"
+                ) { activeBackground ->
+                    when (activeBackground) {
+                        PopupBackground.Solid -> SliderSetting(
                             label = stringResource(R.string.popup_opacity),
                             valueLabel = "${(preferences.activeBackgroundOpacity() * 100).roundToInt()}%",
                             value = preferences.activeBackgroundOpacity(),
@@ -1000,51 +1004,72 @@ fun CustomizationScreen(
                                 onUpdate { it.withBackgroundOpacity(value) }
                             }
                         )
-                    } else {
-                        // Translucent is the glass scrim -- one shared set of
-                        // knobs for every style, since they tune the effect
-                        // itself rather than anything about a particular
-                        // collapsed look.
-                        Column {
-                            SliderSetting(
-                                label = stringResource(R.string.glass_scrim_opacity),
-                                valueLabel = "${(preferences.glassScrimBaseAlpha * 100).roundToInt()}%",
-                                value = preferences.glassScrimBaseAlpha,
-                                valueRange = GLASS_SCRIM_ALPHA_MIN..GLASS_SCRIM_ALPHA_MAX,
-                                onValueChange = { value ->
-                                    onUpdate { it.copy(glassScrimBaseAlpha = value) }
-                                }
-                            )
-                            ToggleSetting(
-                                label = stringResource(R.string.glass_capture_backdrop),
-                                checked = preferences.glassCaptureBackdrop,
-                                onCheckedChange = { checked ->
-                                    onUpdate { it.copy(glassCaptureBackdrop = checked) }
-                                }
-                            )
-                            Text(
-                                text = stringResource(R.string.glass_capture_backdrop_description),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            AnimatedVisibility(
-                                visible = preferences.glassCaptureBackdrop,
-                                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                                    fadeIn(tween(Motion.MorphMillis)),
-                                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                                    fadeOut(tween(160))
-                            ) {
+
+                        PopupBackground.Translucent ->
+                            // Translucent is the glass scrim -- one shared set of
+                            // knobs for every style, since they tune the effect
+                            // itself rather than anything about a particular
+                            // collapsed look.
+                            Column {
                                 SliderSetting(
-                                    label = stringResource(R.string.glass_blur_strength),
-                                    valueLabel = "${(preferences.glassBlurStrength * 100).roundToInt()}%",
-                                    value = preferences.glassBlurStrength,
-                                    valueRange = GLASS_BLUR_MIN..GLASS_BLUR_MAX,
+                                    label = stringResource(R.string.glass_scrim_opacity),
+                                    valueLabel = "${(preferences.glassScrimBaseAlpha * 100).roundToInt()}%",
+                                    value = preferences.glassScrimBaseAlpha,
+                                    valueRange = GLASS_SCRIM_ALPHA_MIN..GLASS_SCRIM_ALPHA_MAX,
                                     onValueChange = { value ->
-                                        onUpdate { it.copy(glassBlurStrength = value) }
+                                        onUpdate { it.copy(glassScrimBaseAlpha = value) }
                                     }
                                 )
+                                ToggleSetting(
+                                    label = stringResource(R.string.glass_capture_backdrop),
+                                    checked = preferences.glassCaptureBackdrop,
+                                    onCheckedChange = { checked ->
+                                        onUpdate { it.copy(glassCaptureBackdrop = checked) }
+                                    }
+                                )
+                                Text(
+                                    text = stringResource(R.string.glass_capture_backdrop_description),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                AnimatedVisibility(
+                                    visible = preferences.glassCaptureBackdrop,
+                                    enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                                        fadeIn(tween(Motion.MorphMillis)),
+                                    exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                                        fadeOut(tween(160))
+                                ) {
+                                    SliderSetting(
+                                        label = stringResource(R.string.glass_blur_strength),
+                                        valueLabel = "${(preferences.glassBlurStrength * 100).roundToInt()}%",
+                                        value = preferences.glassBlurStrength,
+                                        valueRange = GLASS_BLUR_MIN..GLASS_BLUR_MAX,
+                                        onValueChange = { value ->
+                                            onUpdate { it.copy(glassBlurStrength = value) }
+                                        }
+                                    )
+                                }
                             }
-                        }
+
+                        PopupBackground.Atmosphere ->
+                            // Same reasoning as Translucent's own knobs above:
+                            // one shared setting for the effect itself.
+                            Column {
+                                SliderSetting(
+                                    label = stringResource(R.string.atmosphere_opacity),
+                                    valueLabel = "${(preferences.atmosphereBaseAlpha * 100).roundToInt()}%",
+                                    value = preferences.atmosphereBaseAlpha,
+                                    valueRange = ATMOSPHERE_ALPHA_MIN..ATMOSPHERE_ALPHA_MAX,
+                                    onValueChange = { value ->
+                                        onUpdate { it.copy(atmosphereBaseAlpha = value) }
+                                    }
+                                )
+                                Text(
+                                    text = stringResource(R.string.atmosphere_description),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                     }
                 }
               }
@@ -1247,6 +1272,7 @@ fun CustomizationScreen(
                             glassScrimBaseAlpha = defaults.glassScrimBaseAlpha,
                             glassCaptureBackdrop = defaults.glassCaptureBackdrop,
                             glassBlurStrength = defaults.glassBlurStrength,
+                            atmosphereBaseAlpha = defaults.atmosphereBaseAlpha,
                             expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,
                             discPopupShowValue = defaults.discPopupShowValue,

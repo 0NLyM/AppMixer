@@ -72,6 +72,8 @@
     <string name="glass_capture_backdrop">Refract the screen</string>
     <string name="glass_capture_backdrop_description">Takes a still of the screen the instant before the popup appears and blurs it behind the glass, so the panel really does refract what it\'s sitting on. Uses this accessibility service\'s own screenshot capability — no extra permission prompt, nothing captured while the popup is up, nothing kept once it goes away. Turned off, the glass is a plain tinted sheet.</string>
     <string name="glass_blur_strength">Blur</string>
+    <string name="atmosphere_opacity">Grain opacity</string>
+    <string name="atmosphere_description">A burst of colored grain, seeded from the panel\'s own base color, that flickers for a moment and settles into one fixed pattern behind the sliders.</string>
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
     <string name="bar_center_content">Slider center</string>
@@ -89,6 +91,7 @@
     <string name="popup_show_background_bar">Show bar background</string>
     <string name="background_translucent">Translucent</string>
     <string name="background_solid">Solid</string>
+    <string name="background_atmosphere">Atmosphere</string>
     <string name="popup_content">Content</string>
     <string name="popup_content_description">What shows on the popup itself: the level, the icon, and the ringer switch.</string>
     <string name="show_ringer_button">Show ringer switch</string>

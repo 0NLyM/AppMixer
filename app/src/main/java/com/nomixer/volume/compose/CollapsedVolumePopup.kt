@@ -340,6 +340,7 @@ fun CollapsedVolumePopup(
     // tint. Never true for Solid: that flat fill is the user's own opacity
     // setting.
     val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
+    val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
 
     // The popup's own light shadow, painted right behind its main shape --
     // the disc's ring (inside VolumeDisc itself), the whole bar panel when
@@ -403,13 +404,20 @@ fun CollapsedVolumePopup(
                 modifier = Modifier.matchParentSize()
             )
         }
+        if (!isDisc && panelAtmosphere) {
+            AtmosphereBackground(
+                shape = panelShape,
+                baseColor = panelColor,
+                modifier = Modifier.matchParentSize()
+            )
+        }
         Surface(
             // The disc's own panel never paints a background of its own --
             // its margin and shadow-fade sliver always stay exactly as they
             // look with the background off; only the ring's own track
-            // (inside VolumeDisc, below) ever picks up Solid's tint or
-            // Translucent's glass scrim.
-            color = if (isDisc || panelGlass) Color.Transparent else panelColor,
+            // (inside VolumeDisc, below) ever picks up Solid's tint,
+            // Translucent's glass scrim, or Atmosphere's grain.
+            color = if (isDisc || panelGlass || panelAtmosphere) Color.Transparent else panelColor,
             contentColor = MaterialTheme.colorScheme.onBackground,
             shape = panelShape
         ) {
@@ -601,6 +609,7 @@ fun CollapsedVolumePopup(
                         trackBackingColor = panelColor,
                         trackBackingGlass = panelGlass,
                         glassBackdrop = glassBackdrop,
+                        trackBackingAtmosphere = panelAtmosphere,
                         icon = if (showIcon) volumeIcon else null,
                         label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer
@@ -643,7 +652,7 @@ fun CollapsedVolumePopup(
             }
         }
         }
-        if (!isDisc && panelGlass) {
+        if (!isDisc && (panelGlass || panelAtmosphere)) {
             Box(
                 Modifier
                     .matchParentSize()

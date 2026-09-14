@@ -1172,5 +1172,20 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   -- it now gets the same soft shadow the bar-style panel already wraps
   itself in, controlled by the same existing Shadow switch.
 
+## 2026-09-14 — 1.0.45
+
+- Added Atmosphere as a third choice alongside Translucent and Solid for
+  every background-effect selector (bar styles, the expanded mixer, and
+  the disc's own ring): a burst of colored grain, seeded from the panel's
+  own base color via a small AGSL shader, that flickers for about half a
+  second and then holds perfectly still behind the sliders -- closer to
+  how Nothing OS's own wallpaper generator resolves a field of static
+  into one fixed image than a looping animation or a flat cut to a still.
+  Unlike Translucent's glass it needs no real screen capture and no real
+  blur, so there's no accessibility-capability or hardware-acceleration
+  dependency for it to fail against -- just the panel's own color. Its
+  opacity has its own dedicated slider, the same way Translucent's glass
+  and Solid's fill each have theirs.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

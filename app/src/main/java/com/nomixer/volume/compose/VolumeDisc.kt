@@ -109,6 +109,13 @@ fun VolumeDisc(
     trackBackingGlass: Boolean = false,
     /** The blurred still of the screen behind the ring; see [GlassBackdrop]. Ignored unless [trackBackingGlass]. */
     glassBackdrop: GlassBackdrop? = null,
+    /**
+     * Paints [trackBackingColor] as the Atmosphere grain (see
+     * [drawAtmosphereRing]) instead of a flat fill -- mutually exclusive
+     * with [trackBackingGlass], same as the Solid/Translucent/Atmosphere
+     * choice it mirrors.
+     */
+    trackBackingAtmosphere: Boolean = false,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -167,6 +174,12 @@ fun VolumeDisc(
     // covering. Only read when there's a backdrop to place at all.
     val hostView = LocalView.current
     var canvasInWindow by remember { mutableStateOf(Offset.Zero) }
+
+    // Unconditional even though only Atmosphere mode ever uses it -- same
+    // reasoning as canvasInWindow above, and it costs nothing while unused:
+    // a settled seed that never changes again once its own brief coroutine
+    // finishes.
+    val atmosphereSeed = rememberAtmosphereSeed()
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
@@ -287,6 +300,14 @@ fun VolumeDisc(
                         } else {
                             hostView.screenOrigin(canvasInWindow)
                         },
+                        center = center,
+                        ringRadius = ringRadius,
+                        ringWidth = ringWidth
+                    )
+                } else if (trackBackingAtmosphere) {
+                    drawAtmosphereRing(
+                        baseColor = trackBackingColor,
+                        seed = atmosphereSeed,
                         center = center,
                         ringRadius = ringRadius,
                         ringWidth = ringWidth

@@ -65,6 +65,7 @@ import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.GlassBackdrop
+import com.nomixer.volume.compose.AtmosphereBackground
 import com.nomixer.volume.compose.GlassBackground
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.glassEdgeLightBrush
@@ -455,6 +456,7 @@ class Service : AccessibilityService() {
                         label = "mixerPanel"
                     )
                     val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
+                    val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
                     val sliderShadowColor by animateColorAsState(
                         targetValue = if (showBackground) {
                             Color.Transparent
@@ -547,8 +549,15 @@ class Service : AccessibilityService() {
                                             modifier = Modifier.matchParentSize()
                                         )
                                     }
+                                    if (panelAtmosphere) {
+                                        AtmosphereBackground(
+                                            shape = mixerShape,
+                                            baseColor = panelColor,
+                                            modifier = Modifier.matchParentSize()
+                                        )
+                                    }
                                     Surface(
-                                        color = if (panelGlass) Color.Transparent else panelColor,
+                                        color = if (panelGlass || panelAtmosphere) Color.Transparent else panelColor,
                                         contentColor = MaterialTheme.colorScheme.onBackground,
                                         shape = mixerShape
                                     ) {
@@ -580,7 +589,7 @@ class Service : AccessibilityService() {
                                             }
                                         }
                                     }
-                                    if (panelGlass) {
+                                    if (panelGlass || panelAtmosphere) {
                                         Box(
                                             Modifier
                                                 .matchParentSize()
