@@ -1071,5 +1071,21 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   also now happens before the hardware buffer is released rather than
   after.
 
+## 2026-09-14 — 1.0.38
+
+- Device testing isolated the glass panel bug precisely: Solid mode
+  rendered correctly, but Translucent mode was rendering fully
+  transparent -- not just unblurred, but completely invisible, with
+  underlying content perfectly readable straight through it. That meant one
+  draw call inside the glass panel (either the backdrop's screen-position
+  lookup via `View.getLocationOnScreen`, or the `RuntimeShader`/AGSL noise
+  shader compiling on that particular device's GPU driver) was throwing and
+  aborting the draw before the base tint -- a plain Compose gradient
+  `Brush`, unrelated to either of those and normally guaranteed to work --
+  ever got painted. Each layer (backdrop, tint, noise) is now wrapped and
+  drawn independently, so a failure in one can no longer blank the others:
+  the base tint should now always render once Translucent mode is on, with
+  the backdrop and grain each best-effort on top of it.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
