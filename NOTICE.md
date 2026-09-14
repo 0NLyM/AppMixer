@@ -1087,5 +1087,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   the base tint should now always render once Translucent mode is on, with
   the backdrop and grain each best-effort on top of it.
 
+## 2026-09-14 — 1.0.39
+
+- The previous release's capability pre-check assumed that turning the
+  accessibility service off and back on would re-grant the screenshot
+  capability -- but that advice assumed a toggle switch that turns out not
+  to exist on at least one real device (some launchers/OEMs expose only
+  the accessibility-button shortcut, never a separate service switch), so
+  it was undeliverable. That pre-check is removed entirely. The app now
+  calls the platform's screenshot API directly whenever the glass wants a
+  backdrop, and reports the real result -- success, with the captured
+  image's size, or the exact numeric error code and what it means --
+  temporarily on both outcomes, not just failure, so this can finally be
+  diagnosed from real data instead of another guess.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
