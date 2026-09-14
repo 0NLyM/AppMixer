@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -67,6 +68,7 @@ import com.nomixer.volume.compose.AboutDialog
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CrashReportDialog
 import com.nomixer.volume.compose.CustomizationScreen
+import com.nomixer.volume.compose.DiagnosticLogScreen
 import com.nomixer.volume.compose.NothingDot
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.ToggleButton
@@ -249,6 +251,7 @@ class MainActivity : ComponentActivity() {
             var crashReport by remember { mutableStateOf<String?>(null) }
             var showAboutDialog by remember { mutableStateOf(false) }
             var showCustomization by remember { mutableStateOf(false) }
+            var showDiagnosticLog by remember { mutableStateOf(false) }
             val uiPreferences = manager.uiPreferences
 
             LaunchedEffect(showCrashReport) {
@@ -308,6 +311,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            if (showDiagnosticLog) {
+                Dialog(
+                    onDismissRequest = { showDiagnosticLog = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    NoMixerTheme(preferences = uiPreferences) {
+                        DiagnosticLogScreen(onClose = { showDiagnosticLog = false })
+                    }
+                }
+            }
+
             NoMixerTheme(preferences = uiPreferences) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(), topBar = {
@@ -357,6 +371,21 @@ class MainActivity : ComponentActivity() {
                                     Icon(
                                         Icons.Default.Palette,
                                         contentDescription = stringResource(R.string.customization)
+                                    )
+                                }
+                            }
+
+                            TooltipBox(
+                                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                    TooltipAnchorPosition.Below, 12.dp
+                                ),
+                                tooltip = { PlainTooltip { Text("Diagnostic log") } },
+                                state = rememberTooltipState()
+                            ) {
+                                IconButton(onClick = { showDiagnosticLog = true }) {
+                                    Icon(
+                                        Icons.Default.List,
+                                        contentDescription = "Diagnostic log"
                                     )
                                 }
                             }

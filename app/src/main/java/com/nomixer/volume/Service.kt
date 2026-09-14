@@ -68,6 +68,7 @@ import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.glassScrim
 import com.nomixer.volume.compose.softShadow
 import com.nomixer.volume.data.shadowAlpha
+import com.nomixer.volume.data.DiagnosticLog
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.PopupAnchor
@@ -124,9 +125,6 @@ class Service : AccessibilityService() {
          */
         private const val GLASS_BLUR_MIN_HALVINGS = 2f
         private const val GLASS_BLUR_MAX_HALVINGS = 5f
-
-        /** Floor between "the glass can't read the screen" toasts. */
-        private const val GLASS_WARNING_COOLDOWN_MS = 10_000L
 
         /**
          * Floor between "Shizuku isn't connected" toasts, so holding a
@@ -233,11 +231,12 @@ class Service : AccessibilityService() {
         if (!captureEnabled || !showBackground || !isTranslucent) {
             glassBackdropState = null
             // The one branch of this whole path that used to return with
-            // nothing shown at all -- reported once so "no toast ever
-            // appears" stops being ambiguous between "not even trying" and
-            // "tried and the platform said nothing back".
+            // nothing recorded at all -- logged so a blank glass panel
+            // never looks unexplained: this is why nothing was even
+            // attempted, as opposed to an attempt the platform refused.
             warnGlassCapture(
-                "skip: refract=$captureEnabled bg=$showBackground trans=$isTranslucent",
+                "not requesting a capture -- refract=$captureEnabled, " +
+                    "showBackground=$showBackground, translucent=$isTranslucent",
                 isError = false
             )
             return
@@ -253,11 +252,12 @@ class Service : AccessibilityService() {
         // says -- success or its own specific error code -- is ground
         // truth instead of a second-hand guess about how to react to it.
         val capabilities = serviceInfo?.capabilities ?: 0
-        Log.i(
-            TAG,
-            "Requesting glass backdrop capture; reported capabilities = " +
-                "0x${capabilities.toString(16)} (canTakeScreenshot bit " +
-                "${if (capabilities and AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT != 0) "set" else "not set"})"
+        val screenshotBitSet =
+            capabilities and AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT != 0
+        DiagnosticLog.log(
+            "Glass",
+            "requesting capture; capabilities=0x${capabilities.toString(16)} " +
+                "(canTakeScreenshot bit ${if (screenshotBitSet) "set" else "not set"})"
         )
 
         val blurStrength = preferences.glassBlurStrength
@@ -271,22 +271,18 @@ class Service : AccessibilityService() {
                         null
                     }
                     if (backdrop == null) {
-                        warnGlassCapture("unreadable after capture")
+                        warnGlassCapture("captured OK but came back unreadable")
                         return
                     }
-                    Log.i(
-                        TAG,
-                        "Glass backdrop ready: ${backdrop.image.width}x${backdrop.image.height}" +
-                            " at ${backdrop.scale} of screen"
-                    )
                     glassBackdropState = backdrop
-                    // Temporary, loud on purpose: the capability check this
-                    // replaced was guessing at what the failure meant, so
-                    // for now success gets exactly as much visibility as
-                    // failure does, until this is confirmed solid across
-                    // more devices.
+                    // Loud on purpose, success included, not just failure:
+                    // the capability pre-check this replaced was guessing
+                    // at what a failure meant, so for now every outcome is
+                    // recorded until this is confirmed solid across more
+                    // devices.
                     warnGlassCapture(
-                        "OK ${backdrop.image.width}x${backdrop.image.height}",
+                        "captured OK: ${backdrop.image.width}x${backdrop.image.height}" +
+                            " (scale ${backdrop.scale})",
                         isError = false
                     )
                 }
@@ -303,39 +299,30 @@ class Service : AccessibilityService() {
                         3 -> "invalid display"
                         else -> "unknown"
                     }
-                    Log.i(TAG, "Screen capture for the glass backdrop failed, error code $errorCode ($meaning)")
-                    warnGlassCapture("err $errorCode: $meaning")
+                    warnGlassCapture("takeScreenshot failed: error $errorCode ($meaning)")
                 }
             })
         } catch (e: Exception) {
-            Log.w(TAG, "Can't request a screen capture for the glass backdrop", e)
-            val detail = e.message?.take(40) ?: ""
-            warnGlassCapture("${e.javaClass.simpleName} $detail")
+            warnGlassCapture(
+                "takeScreenshot() threw ${e.javaClass.name}: ${e.message ?: "(no message)"}"
+            )
         }
     }
 
-    private var lastGlassWarningAtMs = 0L
-
     /**
-     * Reports exactly what happened with the glass backdrop capture --
+     * Records exactly what happened with the glass backdrop capture --
      * success included, for now (see the call site in [captureGlassBackdrop]):
      * a guess about what a failure meant already turned out wrong once, so
-     * this round surfaces the platform's own ground truth instead, in both
-     * directions. Rate-limited, and only ever reached with the option
-     * actually switched on.
+     * this round surfaces the platform's own ground truth in full, in both
+     * directions. Goes to [DiagnosticLog] rather than a Toast: a Toast on
+     * one real device turned out to truncate at two lines, cutting these
+     * messages off right where their one actually useful token (an
+     * exception's own class name) started. The log screen (reachable from
+     * MainActivity's own top bar) shows every entry in full and lets it be
+     * copied out whole.
      */
     private fun warnGlassCapture(reason: String, isError: Boolean = true) {
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastGlassWarningAtMs < GLASS_WARNING_COOLDOWN_MS) {
-            return
-        }
-        lastGlassWarningAtMs = now
-        // Kept short and led with the technical part rather than English
-        // prose: this device truncates Toast text to two lines, and a
-        // reason padded with explanation was cut off exactly where the
-        // actual diagnostic (an exception's class name) started.
-        val prefix = if (isError) "Glass✗ " else "Glass✓ "
-        Toast.makeText(this, "$prefix$reason", Toast.LENGTH_LONG).show()
+        DiagnosticLog.log(if (isError) "Glass✗" else "Glass✓", reason)
     }
 
     /**
