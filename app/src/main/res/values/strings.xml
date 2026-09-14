@@ -69,10 +69,9 @@
     <string name="button_corner">Button corner radius</string>
     <string name="popup_opacity">Background opacity</string>
     <string name="glass_scrim_opacity">Glass opacity</string>
-    <string name="glass_scrim_adaptive_sampling">Adapt tint to screen</string>
-    <string name="glass_scrim_adaptive_sampling_description">Periodically samples the real screen behind the popup (reduced instantly to a single average color, never stored) to tint the glass scrim. Uses this accessibility service\'s own screenshot capability, no extra permission prompt -- but it is a real, if small, periodic cost, so it\'s off by default.</string>
-    <string name="glass_scrim_tint_strength">Tint strength</string>
-    <string name="glass_scrim_sample_interval">Sample interval</string>
+    <string name="glass_capture_backdrop">Refract the screen</string>
+    <string name="glass_capture_backdrop_description">Takes a still of the screen the instant before the popup appears and blurs it behind the glass, so the panel really does refract what it\'s sitting on. Uses this accessibility service\'s own screenshot capability — no extra permission prompt, nothing captured while the popup is up, nothing kept once it goes away. Turned off, the glass is a plain tinted sheet.</string>
+    <string name="glass_blur_strength">Blur</string>
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
     <string name="bar_center_content">Slider center</string>

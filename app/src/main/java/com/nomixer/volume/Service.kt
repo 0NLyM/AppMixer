@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.unit.dp
@@ -61,6 +62,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
+import com.nomixer.volume.compose.GlassBackdrop
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.glassScrim
 import com.nomixer.volume.compose.softShadow
@@ -79,8 +81,6 @@ import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.Motion
 import java.util.Objects
 import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * The point an anchored popup should grow from: the edge it hugs, so it
@@ -113,6 +113,16 @@ class Service : AccessibilityService() {
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
         private const val AUTO_REPEAT_INITIAL_DELAY = 500L
+
+        /**
+         * How far the glass backdrop's own capture is scaled down, as a
+         * number of successive halvings, across the blur slider's range --
+         * so the weakest setting still softens the screen a little (a
+         * perfectly sharp backdrop wouldn't read as glass at all) and the
+         * strongest is a heavy frost rather than an unrecognisable smear.
+         */
+        private const val GLASS_BLUR_MIN_HALVINGS = 2f
+        private const val GLASS_BLUR_MAX_HALVINGS = 5f
 
         /**
          * Floor between "Shizuku isn't connected" toasts, so holding a
@@ -185,71 +195,106 @@ class Service : AccessibilityService() {
     private var lifecycle: LifecycleRegistry? = null
 
     /**
-     * Sampled from the real screen behind the overlay, reduced immediately
-     * to a single average color and never stored otherwise -- feeds the
-     * glass scrim's optional adaptive tint (see
-     * [com.nomixer.volume.data.UiPreferences.glassScrimAdaptiveSampling]).
-     * Null while sampling is off, or before the first sample has landed.
+     * The blurred still of the screen the glass panels refract, captured
+     * just before the overlay goes up (see [captureGlassBackdrop]). Null
+     * while the capture is switched off, or before the first one lands --
+     * the panels are plain tinted glass until then.
      */
-    private var adaptiveTintState by mutableStateOf<Color?>(null)
+    private var glassBackdropState by mutableStateOf<GlassBackdrop?>(null)
 
     /**
-     * Captures the current screen via this accessibility service's own
-     * screenshot capability (`android:canTakeScreenshot` in
-     * accessibility_service_config.xml -- no MediaProjection, no extra
-     * user-facing permission dialog), downsamples it to an 8x8 grid, and
-     * returns the average color. Never keeps the captured bitmap around
-     * past this call: the hardware buffer, its software copy, and the
-     * downsampled grid are all recycled before returning. Returns null on
-     * any failure (capability missing, rate-limited, no display) rather
-     * than throwing -- a stale or missing tint just leaves the scrim's own
-     * static gradient showing, never a crash.
+     * Asks the platform for a still of the current screen -- through this
+     * accessibility service's own screenshot capability
+     * (`android:canTakeScreenshot` in accessibility_service_config.xml: no
+     * MediaProjection, no extra user-facing permission dialog) -- and turns
+     * it into the glass panels' blurred backdrop.
+     *
+     * Called from [showView] *before* the overlay window is added, which is
+     * the whole trick: the popup can't appear in its own backdrop, so the
+     * glass shows what's genuinely behind it rather than a feedback loop of
+     * previous frames of itself. One capture per appearance -- nothing is
+     * sampled while the popup is up.
+     *
+     * Silent about any failure (capability not granted yet, rate limited, a
+     * secure window on screen): the panels simply carry on as the plain
+     * tinted glass they are without a backdrop.
      */
-    private suspend fun sampleScreenTint(): Color? = suspendCancellableCoroutine { cont ->
+    private fun captureGlassBackdrop() {
+        val preferences = manager.uiPreferences
+        val wantsGlass = preferences.glassCaptureBackdrop &&
+            preferences.activeShowBackground() &&
+            preferences.activeBackground() == PopupBackground.Translucent
+        if (!wantsGlass) {
+            glassBackdropState = null
+            return
+        }
+
+        val blurStrength = preferences.glassBlurStrength
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
-                    val color = try {
-                        val hardwareBitmap = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
-                        result.hardwareBuffer.close()
-                        val software = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
-                        hardwareBitmap?.recycle()
-                        if (software == null) {
-                            null
-                        } else {
-                            val tiny = Bitmap.createScaledBitmap(software, 8, 8, true)
-                            software.recycle()
-                            var r = 0L
-                            var g = 0L
-                            var b = 0L
-                            for (y in 0 until tiny.height) {
-                                for (x in 0 until tiny.width) {
-                                    val px = tiny.getPixel(x, y)
-                                    r += android.graphics.Color.red(px)
-                                    g += android.graphics.Color.green(px)
-                                    b += android.graphics.Color.blue(px)
-                                }
-                            }
-                            val count = (tiny.width * tiny.height).coerceAtLeast(1)
-                            tiny.recycle()
-                            Color(r / count / 255f, g / count / 255f, b / count / 255f, 1f)
-                        }
+                    glassBackdropState = try {
+                        buildGlassBackdrop(result, blurStrength)
                     } catch (e: Exception) {
-                        Log.w(TAG, "Screen tint sample failed to process", e)
+                        Log.w(TAG, "Can't turn the screen capture into a backdrop", e)
                         null
                     }
-                    if (cont.isActive) cont.resumeWith(Result.success(color))
                 }
 
                 override fun onFailure(errorCode: Int) {
-                    Log.i(TAG, "Screen tint sample failed, error code $errorCode")
-                    if (cont.isActive) cont.resumeWith(Result.success(null))
+                    Log.i(TAG, "Screen capture for the glass backdrop failed, error code $errorCode")
                 }
             })
         } catch (e: Exception) {
-            Log.w(TAG, "Can't request screen tint sample", e)
-            if (cont.isActive) cont.resumeWith(Result.success(null))
+            Log.w(TAG, "Can't request a screen capture for the glass backdrop", e)
         }
+    }
+
+    /**
+     * Scales [result] right down -- which is the blur itself, since shrinking
+     * averages neighbouring pixels together -- by halving it [blurStrength]'s
+     * own number of times. Successive halvings, rather than one big jump
+     * straight to the final size, so the averaging actually reaches across
+     * the whole neighbourhood instead of point-sampling it.
+     */
+    private fun buildGlassBackdrop(result: ScreenshotResult, blurStrength: Float): GlassBackdrop? {
+        val hardwareBitmap = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
+        result.hardwareBuffer.close()
+        // Hardware bitmaps can't be scaled (nothing may draw one into a
+        // software canvas), so this one copy at full size is unavoidable --
+        // then it's dropped immediately, before any of the halving below.
+        val fullSize = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+        hardwareBitmap?.recycle()
+        if (fullSize == null) {
+            return null
+        }
+
+        val fullWidth = fullSize.width
+        if (fullWidth <= 0 || fullSize.height <= 0) {
+            fullSize.recycle()
+            return null
+        }
+
+        val halvings = (GLASS_BLUR_MIN_HALVINGS +
+            blurStrength.coerceIn(0f, 1f) * (GLASS_BLUR_MAX_HALVINGS - GLASS_BLUR_MIN_HALVINGS))
+            .roundToInt()
+        var scaled = fullSize
+        repeat(halvings) {
+            val next = Bitmap.createScaledBitmap(
+                scaled,
+                (scaled.width / 2).coerceAtLeast(1),
+                (scaled.height / 2).coerceAtLeast(1),
+                true
+            )
+            scaled.recycle()
+            scaled = next
+        }
+
+        // Not recycled: this one is handed straight to Compose to draw.
+        return GlassBackdrop(
+            image = scaled.asImageBitmap(),
+            scale = scaled.width.toFloat() / fullWidth
+        )
     }
 
     private fun createView(): View {
@@ -304,27 +349,6 @@ class Service : AccessibilityService() {
                     // being fully hidden) -- only expands for the duration
                     // this particular window stays up.
                     var expanded by remember { mutableStateOf(false) }
-
-                    // Adaptive glass tint: sampled periodically from the
-                    // real screen behind the overlay, only while a
-                    // Translucent panel is actually showing and the user
-                    // has opted into sampling (see
-                    // UiPreferences.glassScrimAdaptiveSampling) -- off by
-                    // default, since it's a real per-app-open accessibility
-                    // capability and a small periodic cost, not assumed.
-                    val wantsAdaptiveSampling = preferences.glassScrimAdaptiveSampling &&
-                        preferences.activeShowBackground() &&
-                        preferences.activeBackground() == PopupBackground.Translucent
-                    LaunchedEffect(wantsAdaptiveSampling) {
-                        if (!wantsAdaptiveSampling) {
-                            adaptiveTintState = null
-                            return@LaunchedEffect
-                        }
-                        while (true) {
-                            adaptiveTintState = this@Service.sampleScreenTint()
-                            delay(manager.uiPreferences.glassScrimSampleIntervalMs.toLong().coerceAtLeast(200L))
-                        }
-                    }
 
                     // Animated, so switching translucent/solid or nudging the
                     // opacity bleeds from one background to the other. Same
@@ -404,8 +428,7 @@ class Service : AccessibilityService() {
                                         Modifier.glassScrim(
                                             shape = mixerShape,
                                             baseColor = panelColor,
-                                            adaptiveTint = adaptiveTintState,
-                                            tintStrength = preferences.glassScrimTintStrength
+                                            backdrop = glassBackdropState
                                         )
                                     } else {
                                         Modifier
@@ -445,7 +468,7 @@ class Service : AccessibilityService() {
                                 CollapsedVolumePopup(
                                     audioManager = manager.audioManager,
                                     preferences = preferences,
-                                    adaptiveTint = adaptiveTintState,
+                                    glassBackdrop = glassBackdropState,
                                     onExpand = {
                                         expanded = true
                                         // The window is about to resize for
@@ -667,6 +690,9 @@ class Service : AccessibilityService() {
     private fun showView() {
         if (view == null) {
             Log.i(TAG, "add view")
+            // Strictly before the window goes up, so the glass refracts
+            // what's genuinely behind the popup rather than the popup itself.
+            captureGlassBackdrop()
             // The view doesn't respond to input events if reused
             view = createView()
             layoutParams.alpha = 0f

@@ -27,6 +27,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.DISC_INSET
@@ -90,15 +93,14 @@ fun VolumeDisc(
      */
     trackBackingColor: Color = Color.Transparent,
     /**
-     * Paints [trackBackingColor] as the full glass-scrim effect (gradient +
-     * grain, see [glassScrim]) instead of a flat fill -- the caller sets
-     * this for Translucent mode, never for Solid's own flat opacity.
+     * Paints [trackBackingColor] as the full glass effect (blurred backdrop
+     * + gradient + grain, see [drawGlassRing]) instead of a flat fill -- the
+     * caller sets this for Translucent mode, never for Solid's own flat
+     * opacity.
      */
     trackBackingGlass: Boolean = false,
-    /** Adaptive screen tint to blend into the glass scrim; see [glassScrimBrush]. Ignored unless [trackBackingGlass]. */
-    trackBackingAdaptiveTint: Color? = null,
-    /** How strongly [trackBackingAdaptiveTint] blends in, 0..1. Ignored unless [trackBackingGlass]. */
-    trackBackingTintStrength: Float = 0f,
+    /** The blurred still of the screen behind the ring; see [GlassBackdrop]. Ignored unless [trackBackingGlass]. */
+    glassBackdrop: GlassBackdrop? = null,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -129,7 +131,17 @@ fun VolumeDisc(
      * the screen. The caller (see CollapsedVolumePopup) works this out
      * from the same window-edge math that places the popup itself.
      */
-    ringCutOffsetX: Dp? = null
+    ringCutOffsetX: Dp? = null,
+    /**
+     * Which side of that cut is the one off the screen: `true` when the disc
+     * hugs the right edge (so everything right of the cut is gone), `false`
+     * for the left. Told rather than inferred from [ringCutOffsetX]'s own
+     * sign, because at a zero horizontal offset the cut falls exactly on the
+     * disc's center -- a signless 0 -- and guessing there sent a
+     * right-anchored disc's whole value arc onto the half that isn't on
+     * screen.
+     */
+    ringCutHidesRight: Boolean = false
 ) {
     val range = valueRange.endInclusive - valueRange.start
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -141,6 +153,12 @@ fun VolumeDisc(
     // finger exactly while one is down.
     var dragging by remember { mutableStateOf(false) }
     val fill = remember { Animatable(targetFraction) }
+
+    // Where the ring's own Canvas sits, so the glass backdrop underneath the
+    // track can be lined up with the part of the screen it's actually
+    // covering. Only read when there's a backdrop to place at all.
+    val hostView = LocalView.current
+    var canvasInWindow by remember { mutableStateOf(Offset.Zero) }
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
@@ -157,6 +175,7 @@ fun VolumeDisc(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
+                .onGloballyPositioned { canvasInWindow = it.positionInWindow() }
                 .pointerInput(range) {
                     var startValue = 0f
                     var startY = 0f
@@ -221,7 +240,7 @@ fun VolumeDisc(
                 val phi = Math.toDegrees(
                     acos((cutOffsetPx!! / ringRadius).toDouble())
                 ).toFloat()
-                if (cutOffsetPx <= 0f) {
+                if (!ringCutHidesRight) {
                     // Cut left of center: the visible arc is the
                     // right-hand side, through 3 o'clock. Starting at the
                     // lower cut point and sweeping counter-clockwise (a
@@ -252,16 +271,17 @@ fun VolumeDisc(
             // sliver, the margin beyond it) stays genuinely see-through.
             if (trackBackingColor.alpha > 0f) {
                 if (trackBackingGlass) {
-                    drawGlassArc(
+                    drawGlassRing(
                         baseColor = trackBackingColor,
-                        adaptiveTint = trackBackingAdaptiveTint,
-                        tintStrength = trackBackingTintStrength,
-                        canvasSize = size,
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        topLeft = arcTopLeft,
-                        arcSize = arcSize,
-                        style = Stroke(width = ringWidth)
+                        backdrop = glassBackdrop,
+                        screenOrigin = if (glassBackdrop == null) {
+                            Offset.Zero
+                        } else {
+                            hostView.screenOrigin(canvasInWindow)
+                        },
+                        center = center,
+                        ringRadius = ringRadius,
+                        ringWidth = ringWidth
                     )
                 } else {
                     drawArc(
@@ -357,27 +377,27 @@ fun VolumeDisc(
             }
 
             if (showDots) {
-                // A knob's own marks, at fixed positions evenly spaced
-                // around the full circle -- the sense of "where the level
-                // is" comes from which one of them is currently the
-                // landmark, drawn larger and stepping down from the center
-                // one, rather than the whole ring spinning to carry a
-                // fixed mark around to wherever the level happens to be
-                // (that only ever agreed with the actual fill edge at the
-                // very top and bottom of the range, wandering independently
-                // of it everywhere in between).
+                // A knob's own marks: the whole ring turns as the level
+                // changes, carrying its landmark (the three ticks that step
+                // up in length, below) around with it, rather than sitting
+                // still while a different fixed tick lights up.
                 val tickOrbit = ringRadius - ringWidth * 0.95f
                 val tickLength = radius * 0.05f
                 val tickThickness = radius * 0.028f
-                // The landmark is whichever fixed tick slot sits nearest
-                // the fill's own current edge angle -- the same angle its
-                // arc is actually drawn to above -- so it always tracks the
-                // real level instead of a rotation counter that only
-                // resets to agree with it at the range's own two ends.
-                val edgeAngle = visibleStartAngle + visibleSweepAngle * fraction
-                val edgeSteps = (edgeAngle - startAngle) / (fullSweep / TICK_COUNT)
-                val landmarkIndex =
-                    (((Math.round(edgeSteps) % TICK_COUNT) + TICK_COUNT) % TICK_COUNT)
+                // Both the spacing between ticks and how far the ring turns
+                // across the whole range come off the *visible* arc, not the
+                // full circle -- so on a laterally-cut disc the marks stay
+                // spread across the part still on screen, and one tick of
+                // turn always means the same amount of level as one tick of
+                // the fill beside it. Uncut, visibleSweepAngle is the full
+                // -360 and this is exactly the plain evenly-spaced ring
+                // making one complete rotation.
+                val tickStep = visibleSweepAngle / TICK_COUNT
+                // Index 0 is the landmark, and this puts it right at the
+                // fill's own leading edge at every level -- the two now turn
+                // together instead of the ring spinning at its own unrelated
+                // rate.
+                val ringRotation = visibleSweepAngle * fraction
                 // The shared outer boundary every tick's own outer end sits
                 // on, worked out from the base (non-landmark) length -- so a
                 // landmark tick's extra length grows inward, toward the
@@ -386,8 +406,7 @@ fun VolumeDisc(
                 val tickOuterRadius = tickOrbit + tickLength / 2f
 
                 for (index in 0 until TICK_COUNT) {
-                    val rawDistance = abs(index - landmarkIndex)
-                    val distanceFromLandmark = min(rawDistance, TICK_COUNT - rawDistance)
+                    val distanceFromLandmark = min(index, TICK_COUNT - index)
                     // The middle adjacent step sits exactly halfway between
                     // the landmark and a normal tick, so the size actually
                     // reads as a taper rather than two arbitrary sizes.
@@ -404,7 +423,7 @@ fun VolumeDisc(
                     val thickness = tickThickness
                     val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
 
-                    val angle = startAngle + (fullSweep / TICK_COUNT) * index
+                    val angle = visibleStartAngle + tickStep * index + ringRotation
                     val radians = Math.toRadians(angle.toDouble())
                     val tickCenterRadius = tickOuterRadius - length / 2f
                     val tickCenter = Offset(

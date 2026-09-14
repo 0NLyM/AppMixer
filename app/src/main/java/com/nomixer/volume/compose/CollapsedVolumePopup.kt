@@ -161,13 +161,14 @@ fun CollapsedVolumePopup(
     audioManager: AudioManager,
     preferences: UiPreferences,
     /**
-     * Adaptive tint sampled from the real screen behind the popup, when
-     * [com.nomixer.volume.data.UiPreferences.glassScrimAdaptiveSampling] is
-     * on (see [com.nomixer.volume.Service]) -- null while it's off, or
-     * before the first sample lands, in which case the glass scrim is just
-     * its own static gradient.
+     * The blurred still of the screen behind the popup that its glass
+     * panels refract, captured just before the overlay went up (see
+     * [com.nomixer.volume.Service]) -- null when
+     * [com.nomixer.volume.data.UiPreferences.glassCaptureBackdrop] is off or
+     * the capture didn't land, in which case the glass is a plain tinted
+     * sheet with nothing showing through.
      */
-    adaptiveTint: Color? = null,
+    glassBackdrop: GlassBackdrop? = null,
     onExpand: () -> Unit,
     onInteract: () -> Unit
 ) {
@@ -388,8 +389,7 @@ fun CollapsedVolumePopup(
                 Modifier.glassScrim(
                     shape = panelShape,
                     baseColor = panelColor,
-                    adaptiveTint = adaptiveTint,
-                    tintStrength = preferences.glassScrimTintStrength
+                    backdrop = glassBackdrop
                 )
             } else {
                 Modifier
@@ -590,8 +590,7 @@ fun CollapsedVolumePopup(
                         // nowhere else.
                         trackBackingColor = panelColor,
                         trackBackingGlass = panelGlass,
-                        trackBackingAdaptiveTint = adaptiveTint,
-                        trackBackingTintStrength = preferences.glassScrimTintStrength,
+                        glassBackdrop = glassBackdrop,
                         icon = if (showIcon) volumeIcon else null,
                         label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer
@@ -627,6 +626,7 @@ fun CollapsedVolumePopup(
                         },
                         centerContentOffsetX = centerContentOffsetX,
                         ringCutOffsetX = ringCutOffsetX,
+                        ringCutHidesRight = discOutwardSign > 0,
                         onValueChange = { value -> setVolume(value.roundToInt()) }
                     )
                 }

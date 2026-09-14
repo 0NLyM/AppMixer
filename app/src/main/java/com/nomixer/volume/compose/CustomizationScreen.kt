@@ -73,12 +73,10 @@ import com.nomixer.volume.ui.theme.PopupColors
 import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
+import com.nomixer.volume.data.GLASS_BLUR_MAX
+import com.nomixer.volume.data.GLASS_BLUR_MIN
 import com.nomixer.volume.data.GLASS_SCRIM_ALPHA_MAX
 import com.nomixer.volume.data.GLASS_SCRIM_ALPHA_MIN
-import com.nomixer.volume.data.GLASS_SCRIM_SAMPLE_INTERVAL_MAX_MS
-import com.nomixer.volume.data.GLASS_SCRIM_SAMPLE_INTERVAL_MIN_MS
-import com.nomixer.volume.data.GLASS_SCRIM_TINT_STRENGTH_MAX
-import com.nomixer.volume.data.GLASS_SCRIM_TINT_STRENGTH_MIN
 import com.nomixer.volume.data.POPUP_BACKGROUND_OPACITY_MIN
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
@@ -1017,45 +1015,33 @@ fun CustomizationScreen(
                                 }
                             )
                             ToggleSetting(
-                                label = stringResource(R.string.glass_scrim_adaptive_sampling),
-                                checked = preferences.glassScrimAdaptiveSampling,
+                                label = stringResource(R.string.glass_capture_backdrop),
+                                checked = preferences.glassCaptureBackdrop,
                                 onCheckedChange = { checked ->
-                                    onUpdate { it.copy(glassScrimAdaptiveSampling = checked) }
+                                    onUpdate { it.copy(glassCaptureBackdrop = checked) }
                                 }
                             )
                             Text(
-                                text = stringResource(R.string.glass_scrim_adaptive_sampling_description),
+                                text = stringResource(R.string.glass_capture_backdrop_description),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             AnimatedVisibility(
-                                visible = preferences.glassScrimAdaptiveSampling,
+                                visible = preferences.glassCaptureBackdrop,
                                 enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
                                     fadeIn(tween(Motion.MorphMillis)),
                                 exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
                                     fadeOut(tween(160))
                             ) {
-                                Column {
-                                    SliderSetting(
-                                        label = stringResource(R.string.glass_scrim_tint_strength),
-                                        valueLabel = "${(preferences.glassScrimTintStrength * 100).roundToInt()}%",
-                                        value = preferences.glassScrimTintStrength,
-                                        valueRange = GLASS_SCRIM_TINT_STRENGTH_MIN..GLASS_SCRIM_TINT_STRENGTH_MAX,
-                                        onValueChange = { value ->
-                                            onUpdate { it.copy(glassScrimTintStrength = value) }
-                                        }
-                                    )
-                                    SliderSetting(
-                                        label = stringResource(R.string.glass_scrim_sample_interval),
-                                        valueLabel = "${preferences.glassScrimSampleIntervalMs} ms",
-                                        value = preferences.glassScrimSampleIntervalMs.toFloat(),
-                                        valueRange = GLASS_SCRIM_SAMPLE_INTERVAL_MIN_MS.toFloat()..
-                                            GLASS_SCRIM_SAMPLE_INTERVAL_MAX_MS.toFloat(),
-                                        onValueChange = { value ->
-                                            onUpdate { it.copy(glassScrimSampleIntervalMs = value.roundToInt()) }
-                                        }
-                                    )
-                                }
+                                SliderSetting(
+                                    label = stringResource(R.string.glass_blur_strength),
+                                    valueLabel = "${(preferences.glassBlurStrength * 100).roundToInt()}%",
+                                    value = preferences.glassBlurStrength,
+                                    valueRange = GLASS_BLUR_MIN..GLASS_BLUR_MAX,
+                                    onValueChange = { value ->
+                                        onUpdate { it.copy(glassBlurStrength = value) }
+                                    }
+                                )
                             }
                         }
                     }
@@ -1251,9 +1237,8 @@ fun CustomizationScreen(
                             popupBackgroundOpacity = defaults.popupBackgroundOpacity,
                             discPopupBackgroundOpacity = defaults.discPopupBackgroundOpacity,
                             glassScrimBaseAlpha = defaults.glassScrimBaseAlpha,
-                            glassScrimTintStrength = defaults.glassScrimTintStrength,
-                            glassScrimAdaptiveSampling = defaults.glassScrimAdaptiveSampling,
-                            glassScrimSampleIntervalMs = defaults.glassScrimSampleIntervalMs,
+                            glassCaptureBackdrop = defaults.glassCaptureBackdrop,
+                            glassBlurStrength = defaults.glassBlurStrength,
                             expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,
                             discPopupShowValue = defaults.discPopupShowValue,

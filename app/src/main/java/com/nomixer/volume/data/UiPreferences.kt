@@ -18,13 +18,11 @@ const val BUTTON_CORNER_RADIUS_MAX = 50
  */
 const val POPUP_BACKGROUND_OPACITY_MIN = 0.01f
 
-/** Bottom and top of the glass scrim's own tuning sliders (see [UiPreferences.glassScrimBaseAlpha] and friends). */
+/** Bottom and top of the glass panel's own tuning sliders (see [UiPreferences.glassScrimBaseAlpha] and friends). */
 const val GLASS_SCRIM_ALPHA_MIN = 0.05f
 const val GLASS_SCRIM_ALPHA_MAX = 0.9f
-const val GLASS_SCRIM_TINT_STRENGTH_MIN = 0f
-const val GLASS_SCRIM_TINT_STRENGTH_MAX = 1f
-const val GLASS_SCRIM_SAMPLE_INTERVAL_MIN_MS = 300
-const val GLASS_SCRIM_SAMPLE_INTERVAL_MAX_MS = 2000
+const val GLASS_BLUR_MIN = 0f
+const val GLASS_BLUR_MAX = 1f
 
 /** Top of the disc tick corner-radius slider's range, as a percent. */
 const val DISC_TICK_CORNER_MAX = 50
@@ -215,24 +213,27 @@ data class UiPreferences(
      */
     val glassScrimBaseAlpha: Float = 0.42f,
     /**
-     * How strongly the adaptive screen tint (when
-     * [glassScrimAdaptiveSampling] is on) blends into the scrim's own base
-     * color, 0 (ignored) to 1 (fully replaces it). Meaningless while
-     * sampling is off.
+     * Whether the glass actually refracts the screen behind it: a still of
+     * that screen is taken the instant before the popup appears (through
+     * this accessibility service's own screenshot capability -- no
+     * MediaProjection, no consent dialog), scaled right down to blur it, and
+     * shown through the panel. Nothing is captured while the popup is up,
+     * nothing is kept once it goes away, and the still never leaves the
+     * device.
+     *
+     * Without it the panel is still a glass sheet -- tint, sheen, grain,
+     * lit rim -- but a tinted one, with nothing of the real screen coming
+     * through, since the platform's own cross-window blur can't be relied on
+     * to do that job (see NOTICE.md).
      */
-    val glassScrimTintStrength: Float = 0.5f,
+    val glassCaptureBackdrop: Boolean = true,
     /**
-     * Whether the scrim periodically samples the real screen behind it
-     * (via this accessibility service's own screenshot capability, reduced
-     * immediately to a single average color and never stored) to adapt its
-     * tint to whatever's actually showing through. Off by default: a real,
-     * if small, periodic cost and a broader accessibility capability,
-     * opt-in rather than assumed. With it off the scrim is still a full
-     * glass effect -- just not reactive to the exact content behind it.
+     * How hard that still is scaled down before being drawn back up to panel
+     * size, 0 (barely, so the backdrop reads almost sharp) to 1 (right down,
+     * a heavy frost). The downscale *is* the blur. Meaningless while
+     * [glassCaptureBackdrop] is off.
      */
-    val glassScrimAdaptiveSampling: Boolean = false,
-    /** Milliseconds between adaptive-tint samples, when [glassScrimAdaptiveSampling] is on. */
-    val glassScrimSampleIntervalMs: Int = 700
+    val glassBlurStrength: Float = 0.6f
 )
 
 /**
