@@ -65,8 +65,13 @@ import kotlin.math.roundToInt
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
 
-/** How far a panel-wrapping shadow lifts, for [Modifier.shadow]'s own elevation model. */
-private val PANEL_SHADOW_ELEVATION_DP = 12.dp
+/**
+ * How far a panel-wrapping shadow lifts, for [Modifier.shadow]'s own
+ * elevation model. Internal rather than private: Service.kt's expanded
+ * mixer panel uses the same elevation for its own [softShadow], so both
+ * panels' shadows read as the same weight.
+ */
+internal val PANEL_SHADOW_ELEVATION_DP = 12.dp
 
 /** Same, for a single element's shadow (ringer button or slider) when the panel is hidden. */
 private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp

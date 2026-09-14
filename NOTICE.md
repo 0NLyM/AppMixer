@@ -1150,5 +1150,27 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   actually catch, giving the rim real depth; applied to both the
   bar-style/expanded-mixer panels and the disc's own ring.
 
+## 2026-09-14 — 1.0.44
+
+- Found the actual reason 1.0.43's real blur (and, on inspection, the
+  bar-style panel's own shadow) never showed up on device: a window a
+  Service adds via `WindowManager.addView()` -- which is how this app's
+  whole overlay is created -- stays software-rendered unless
+  `FLAG_HARDWARE_ACCELERATED` is set on its `LayoutParams` explicitly.
+  Unlike an Activity's window, it does **not** inherit
+  `android:hardwareAccelerated` from the manifest automatically. Both the
+  glass panel's blur (a `graphicsLayer` `renderEffect`) and its elevation
+  shadow (`Modifier.shadow`) need hardware-accelerated rendering to draw
+  anything -- without it they don't fail or log, they silently paint
+  nothing, which is exactly what made both look like they were doing
+  nothing at all. The flag is now set on the overlay window.
+- The border's diagonal light now brightens at two opposite corners
+  instead of one, fading in between -- closer to how a real edge catches
+  light from both a source and its own reflection.
+- The expanded mixer's own panel never had an outer-edge shadow of its
+  own (only its individual sliders did, once the panel was switched off)
+  -- it now gets the same soft shadow the bar-style panel already wraps
+  itself in, controlled by the same existing Shadow switch.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

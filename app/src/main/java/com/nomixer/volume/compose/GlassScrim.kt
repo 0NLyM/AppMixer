@@ -71,8 +71,8 @@ import kotlin.math.roundToInt
  *    or not a real backdrop landed, since blurring the grain alone already
  *    reads as glass.
  * 5. A soft diagonal light along the shape's own edge ([glassEdgeLightBrush]),
- *    brighter at one corner, the way light actually catches the rim of real
- *    glass instead of a single flat border color.
+ *    brighter at two opposite corners, the way light actually catches the
+ *    rim of real glass instead of a single flat border color.
  */
 class GlassBackdrop(
     /** The screen still, already scaled down -- that downscale is the blur. */
@@ -103,16 +103,18 @@ fun glassScrimBrush(baseColor: Color): Brush = Brush.linearGradient(
 )
 
 /**
- * A soft diagonal highlight for the glass edge, brightest at the corner a
- * light source would actually catch and fading to almost nothing at the
- * opposite one -- real depth instead of the flat, uniform rim a single
- * border color reads as.
+ * A soft diagonal highlight for the glass edge, brightest at the two
+ * opposite corners a light source and its own reflection would actually
+ * catch and dimmest exactly between them -- real depth instead of the flat,
+ * uniform rim a single border color reads as.
  */
 fun glassEdgeLightBrush(strength: Float = 1f): Brush = Brush.linearGradient(
     colorStops = arrayOf(
         0f to Color.White.copy(alpha = 0.35f * strength),
-        0.4f to Color.White.copy(alpha = 0.10f * strength),
-        1f to Color.White.copy(alpha = 0.02f * strength)
+        0.18f to Color.White.copy(alpha = 0.10f * strength),
+        0.5f to Color.White.copy(alpha = 0.02f * strength),
+        0.82f to Color.White.copy(alpha = 0.10f * strength),
+        1f to Color.White.copy(alpha = 0.35f * strength)
     )
 )
 
