@@ -1111,5 +1111,16 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   response." That path now reports which of the three settings is actually
   the blocker.
 
+## 2026-09-14 — 1.0.41
+
+- Device testing confirmed the glass diagnostics were working, but the
+  toast text was being cut off by this device's two-line Toast limit right
+  where the one genuinely useful token -- an exception's class name --
+  started, so the last diagnostic round-trip produced an unreadable
+  result. Every glass diagnostic toast is now short enough to fit on two
+  lines and leads with the actual technical detail (exception name plus a
+  trimmed message, the error code, the captured image's dimensions, or
+  which setting is off) instead of English framing text around it.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
