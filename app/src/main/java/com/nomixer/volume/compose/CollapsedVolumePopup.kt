@@ -575,6 +575,7 @@ fun CollapsedVolumePopup(
                         gestureModifier = expandSwipeModifier,
                         showDots = preferences.discShowDots,
                         tickCornerPercent = preferences.discTickCornerPercent,
+                        ringRoundEnds = preferences.discRingRoundEnds,
                         // Gated by showBackground too, not just the shadow
                         // switch alone: unlike a bar (which moves this same
                         // shadow onto the ringer button and slider once its

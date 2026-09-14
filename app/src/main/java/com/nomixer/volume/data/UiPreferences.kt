@@ -181,6 +181,13 @@ data class UiPreferences(
     /** Corner rounding of each disc tick, as a percent: 0 square, 50 a capsule. */
     val discTickCornerPercent: Int = 30,
     /**
+     * Rounds off the ends of the disc's own value arc and its outline, so a
+     * part-filled ring finishes in a capped tip instead of a squared-off
+     * cut. Independent of [discTickCornerPercent], which rounds the tick
+     * marks rather than the ring they sit on.
+     */
+    val discRingRoundEnds: Boolean = false,
+    /**
      * Whether a bar-style popup paints its own soft shadow behind its
      * slider track at all. Independent of [popupBackground]: that
      * Translucent/Solid choice is about the *panel's* own fill (and, in

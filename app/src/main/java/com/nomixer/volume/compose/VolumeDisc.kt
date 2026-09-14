@@ -23,6 +23,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -74,6 +75,13 @@ fun VolumeDisc(
     showDots: Boolean = true,
     /** Corner rounding of each tick: 0 is square, 50 is a full capsule. */
     tickCornerPercent: Int = 30,
+    /**
+     * Rounds off the ends of the value arc and its outline, so a
+     * part-filled ring finishes in a capped tip rather than a squared-off
+     * cut. Only the ends are affected -- the ring's width and path are the
+     * same either way.
+     */
+    ringRoundEnds: Boolean = false,
     /**
      * A light shadow behind the disc's own ring: painted as a circle that
      * follows the disc's own radius and fades out to fully transparent at
@@ -330,6 +338,8 @@ fun VolumeDisc(
                 style = Stroke(width = 1.dp.toPx())
             )
 
+            val ringCap = if (ringRoundEnds) StrokeCap.Round else StrokeCap.Butt
+
             if (fraction > 0f) {
                 drawArc(
                     color = fillColor,
@@ -338,7 +348,7 @@ fun VolumeDisc(
                     useCenter = false,
                     topLeft = arcTopLeft,
                     size = arcSize,
-                    style = Stroke(width = ringWidth)
+                    style = Stroke(width = ringWidth, cap = ringCap)
                 )
             }
 
@@ -372,32 +382,30 @@ fun VolumeDisc(
                     useCenter = false,
                     topLeft = Offset(center.x - outerBorderRadius, center.y - outerBorderRadius),
                     size = Size(outerBorderRadius * 2f, outerBorderRadius * 2f),
-                    style = Stroke(width = 1.5.dp.toPx())
+                    style = Stroke(width = 1.5.dp.toPx(), cap = ringCap)
                 )
             }
 
             if (showDots) {
-                // A knob's own marks: the whole ring turns as the level
-                // changes, carrying its landmark (the three ticks that step
-                // up in length, below) around with it, rather than sitting
-                // still while a different fixed tick lights up.
+                // A knob's own marks. Every one of them stays on screen at
+                // every level: they're spread across the *visible* arc and
+                // stay put there, so a laterally-cut disc shows its whole
+                // ring of ticks rather than turning most of them off the
+                // edge. What moves is the landmark -- the longest tick, with
+                // its two shorter neighbours -- which rides the fill's own
+                // leading edge, so the level still reads off the ring at a
+                // glance.
                 val tickOrbit = ringRadius - ringWidth * 0.95f
                 val tickLength = radius * 0.05f
                 val tickThickness = radius * 0.028f
-                // Both the spacing between ticks and how far the ring turns
-                // across the whole range come off the *visible* arc, not the
-                // full circle -- so on a laterally-cut disc the marks stay
-                // spread across the part still on screen, and one tick of
-                // turn always means the same amount of level as one tick of
-                // the fill beside it. Uncut, visibleSweepAngle is the full
-                // -360 and this is exactly the plain evenly-spaced ring
-                // making one complete rotation.
-                val tickStep = visibleSweepAngle / TICK_COUNT
-                // Index 0 is the landmark, and this puts it right at the
-                // fill's own leading edge at every level -- the two now turn
-                // together instead of the ring spinning at its own unrelated
-                // rate.
-                val ringRotation = visibleSweepAngle * fraction
+                // A complete circle closes on itself, so its last tick sits
+                // one step short of the start (step 24 *is* step 0); a cut
+                // arc has two real ends instead, and wants a tick on each of
+                // them.
+                val tickDivisions = if (ringIsClipped) TICK_COUNT - 1 else TICK_COUNT
+                val tickStep = visibleSweepAngle / tickDivisions
+                val landmarkIndex =
+                    ((Math.round(fraction * tickDivisions) % TICK_COUNT) + TICK_COUNT) % TICK_COUNT
                 // The shared outer boundary every tick's own outer end sits
                 // on, worked out from the base (non-landmark) length -- so a
                 // landmark tick's extra length grows inward, toward the
@@ -406,7 +414,15 @@ fun VolumeDisc(
                 val tickOuterRadius = tickOrbit + tickLength / 2f
 
                 for (index in 0 until TICK_COUNT) {
-                    val distanceFromLandmark = min(index, TICK_COUNT - index)
+                    val rawDistance = abs(index - landmarkIndex)
+                    // A cut arc's two ends are opposite sides of the screen,
+                    // not neighbours, so only a closed circle counts the
+                    // short way round.
+                    val distanceFromLandmark = if (ringIsClipped) {
+                        rawDistance
+                    } else {
+                        min(rawDistance, TICK_COUNT - rawDistance)
+                    }
                     // The middle adjacent step sits exactly halfway between
                     // the landmark and a normal tick, so the size actually
                     // reads as a taper rather than two arbitrary sizes.
@@ -423,7 +439,7 @@ fun VolumeDisc(
                     val thickness = tickThickness
                     val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
 
-                    val angle = visibleStartAngle + tickStep * index + ringRotation
+                    val angle = visibleStartAngle + tickStep * index
                     val radians = Math.toRadians(angle.toDouble())
                     val tickCenterRadius = tickOuterRadius - length / 2f
                     val tickCenter = Offset(

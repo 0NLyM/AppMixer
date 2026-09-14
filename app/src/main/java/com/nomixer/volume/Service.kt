@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityButtonController.AccessibilityB
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.animation.Animator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
@@ -124,6 +125,9 @@ class Service : AccessibilityService() {
         private const val GLASS_BLUR_MIN_HALVINGS = 2f
         private const val GLASS_BLUR_MAX_HALVINGS = 5f
 
+        /** Floor between "the glass can't read the screen" toasts. */
+        private const val GLASS_WARNING_COOLDOWN_MS = 10_000L
+
         /**
          * Floor between "Shizuku isn't connected" toasts, so holding a
          * volume key (or repeatedly tapping the accessibility button) while
@@ -215,9 +219,11 @@ class Service : AccessibilityService() {
      * previous frames of itself. One capture per appearance -- nothing is
      * sampled while the popup is up.
      *
-     * Silent about any failure (capability not granted yet, rate limited, a
-     * secure window on screen): the panels simply carry on as the plain
-     * tinted glass they are without a backdrop.
+     * A failure (capability not granted yet, a secure window on screen, the
+     * system refusing) never breaks anything -- the panels carry on as the
+     * plain tinted glass they are without a backdrop -- but it does say why,
+     * via [warnGlassCapture]: an option that silently does nothing is
+     * indistinguishable from one that isn't working.
      */
     private fun captureGlassBackdrop() {
         val preferences = manager.uiPreferences
@@ -229,25 +235,65 @@ class Service : AccessibilityService() {
             return
         }
 
+        // A capability only granted when the service is bound: adding it to
+        // accessibility_service_config.xml doesn't reach a service the
+        // system is already running, so an app update alone can leave this
+        // off until the user toggles the service. Worth saying out loud --
+        // silently doing nothing is exactly what this looked like.
+        val capabilities = serviceInfo?.capabilities ?: 0
+        if (capabilities and AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT == 0) {
+            warnGlassCapture("turn NoMixer's accessibility service off and back on to grant it")
+            return
+        }
+
         val blurStrength = preferences.glassBlurStrength
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
-                    glassBackdropState = try {
+                    val backdrop = try {
                         buildGlassBackdrop(result, blurStrength)
                     } catch (e: Exception) {
                         Log.w(TAG, "Can't turn the screen capture into a backdrop", e)
                         null
                     }
+                    if (backdrop == null) {
+                        warnGlassCapture("the screen capture came back unreadable")
+                        return
+                    }
+                    Log.i(
+                        TAG,
+                        "Glass backdrop ready: ${backdrop.image.width}x${backdrop.image.height}" +
+                            " at ${backdrop.scale} of screen"
+                    )
+                    glassBackdropState = backdrop
                 }
 
                 override fun onFailure(errorCode: Int) {
                     Log.i(TAG, "Screen capture for the glass backdrop failed, error code $errorCode")
+                    warnGlassCapture("the system refused the screen capture (error $errorCode)")
                 }
             })
         } catch (e: Exception) {
             Log.w(TAG, "Can't request a screen capture for the glass backdrop", e)
+            warnGlassCapture("the screen capture couldn't be requested (${e.javaClass.simpleName})")
         }
+    }
+
+    private var lastGlassWarningAtMs = 0L
+
+    /**
+     * Says why the glass has nothing of the screen in it, rather than
+     * leaving the option looking like it does nothing at all. Rate-limited,
+     * and only ever reached with the option actually switched on.
+     */
+    private fun warnGlassCapture(reason: String) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastGlassWarningAtMs < GLASS_WARNING_COOLDOWN_MS) {
+            return
+        }
+        lastGlassWarningAtMs = now
+        Toast.makeText(this, "NoMixer can't read the screen for the glass: $reason", Toast.LENGTH_LONG)
+            .show()
     }
 
     /**
@@ -259,12 +305,14 @@ class Service : AccessibilityService() {
      */
     private fun buildGlassBackdrop(result: ScreenshotResult, blurStrength: Float): GlassBackdrop? {
         val hardwareBitmap = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
-        result.hardwareBuffer.close()
         // Hardware bitmaps can't be scaled (nothing may draw one into a
         // software canvas), so this one copy at full size is unavoidable --
         // then it's dropped immediately, before any of the halving below.
+        // Read back before releasing the buffer it came from, rather than
+        // trusting the wrapper to have taken its own reference.
         val fullSize = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
         hardwareBitmap?.recycle()
+        result.hardwareBuffer.close()
         if (fullSize == null) {
             return null
         }

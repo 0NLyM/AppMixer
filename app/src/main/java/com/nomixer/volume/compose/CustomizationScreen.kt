@@ -584,6 +584,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     centerContentOffsetX = centerContentOffsetX,
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
+                    ringRoundEnds = preferences.discRingRoundEnds,
                     // Mirrors CollapsedVolumePopup's own gating -- background
                     // off must read as fully transparent, same as the real
                     // popup.
@@ -1173,6 +1174,13 @@ fun CustomizationScreen(
                     }
                 )
                 ToggleSetting(
+                    label = stringResource(R.string.disc_ring_round_ends),
+                    checked = preferences.discRingRoundEnds,
+                    onCheckedChange = { checked ->
+                        onUpdate { it.copy(discRingRoundEnds = checked) }
+                    }
+                )
+                ToggleSetting(
                     label = stringResource(R.string.disc_dots),
                     checked = preferences.discShowDots,
                     onCheckedChange = { checked ->
@@ -1249,6 +1257,7 @@ fun CustomizationScreen(
                             discPopupShowRingerButton = defaults.discPopupShowRingerButton,
                             discShowDots = defaults.discShowDots,
                             discTickCornerPercent = defaults.discTickCornerPercent,
+                            discRingRoundEnds = defaults.discRingRoundEnds,
                             popupShowShadow = defaults.popupShowShadow,
                             discPopupShowShadow = defaults.discPopupShowShadow,
                             discValueBesideButton = defaults.discValueBesideButton

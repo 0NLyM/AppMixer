@@ -78,6 +78,7 @@
     <string name="center_value">Center the level</string>
     <string name="center_icon">Center the icon</string>
     <string name="disc_value_beside_button">Value beside switch</string>
+    <string name="disc_ring_round_ends">Round ring ends</string>
     <string name="disc_dots">Show tick ring</string>
     <string name="disc_tick_corner">Tick corner radius</string>
     <string name="disc_hint">Anchored to a screen edge the disc reveals itself from that edge inward as the horizontal offset grows, up to a full circle; anchored to the middle column it\'s always a full circle. Drag up or down to change the volume.</string>
