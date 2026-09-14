@@ -1042,5 +1042,34 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   it's on by default now, with a blur-amount slider in place of the old
   sample-interval one.
 
+## 2026-09-14 — 1.0.37
+
+- The tick ring is no longer the thing getting cut off. Turning the ring
+  (restored in 1.0.36) carried its marks off the visible arc and out of
+  sight, so a laterally-cut disc showed only part of its ring at most
+  levels. The ticks stay put now, spread across the visible arc so the
+  whole ring is always on screen, and the landmark -- the long tick with
+  its two shorter neighbours -- is what travels, riding the fill's own
+  leading edge so the level still reads off the ring at a glance. A closed
+  circle spaces them 24 to the turn (its last tick one step short of the
+  start, since step 24 is step 0); a cut arc has two real ends and gets a
+  tick on each.
+- Added a switch to round off the ends of the disc's value arc and its
+  outline, so a part-filled ring finishes in a capped tip instead of a
+  squared-off cut. Separate from the existing tick corner radius, which
+  rounds the marks rather than the ring they sit on.
+- The glass capture now says why it has no backdrop instead of failing
+  silently. It was asked for before the overlay window goes up and quietly
+  dropped on any failure, so a capability the system hadn't granted, a
+  refused request and an unreadable buffer all looked identical to the
+  option simply doing nothing. It now checks the service really holds
+  `CAPABILITY_CAN_TAKE_SCREENSHOT` -- adding `canTakeScreenshot` to
+  accessibility_service_config.xml doesn't reach a service the system is
+  already running, so an app update alone can leave it off until the
+  accessibility service is toggled off and back on -- and reports the
+  actual reason in every failure path, rate-limited. The full-size readback
+  also now happens before the hardware buffer is released rather than
+  after.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
