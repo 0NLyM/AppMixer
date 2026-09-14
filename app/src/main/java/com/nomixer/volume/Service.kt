@@ -237,8 +237,7 @@ class Service : AccessibilityService() {
             // appears" stops being ambiguous between "not even trying" and
             // "tried and the platform said nothing back".
             warnGlassCapture(
-                "not requesting a capture (refract=$captureEnabled, " +
-                    "showBackground=$showBackground, translucent=$isTranslucent)",
+                "skip: refract=$captureEnabled bg=$showBackground trans=$isTranslucent",
                 isError = false
             )
             return
@@ -272,7 +271,7 @@ class Service : AccessibilityService() {
                         null
                     }
                     if (backdrop == null) {
-                        warnGlassCapture("captured OK but came back unreadable")
+                        warnGlassCapture("unreadable after capture")
                         return
                     }
                     Log.i(
@@ -287,7 +286,7 @@ class Service : AccessibilityService() {
                     // failure does, until this is confirmed solid across
                     // more devices.
                     warnGlassCapture(
-                        "captured OK: ${backdrop.image.width}x${backdrop.image.height}",
+                        "OK ${backdrop.image.width}x${backdrop.image.height}",
                         isError = false
                     )
                 }
@@ -305,12 +304,13 @@ class Service : AccessibilityService() {
                         else -> "unknown"
                     }
                     Log.i(TAG, "Screen capture for the glass backdrop failed, error code $errorCode ($meaning)")
-                    warnGlassCapture("system error $errorCode -- $meaning")
+                    warnGlassCapture("err $errorCode: $meaning")
                 }
             })
         } catch (e: Exception) {
             Log.w(TAG, "Can't request a screen capture for the glass backdrop", e)
-            warnGlassCapture("the screen capture couldn't be requested (${e.javaClass.simpleName})")
+            val detail = e.message?.take(40) ?: ""
+            warnGlassCapture("${e.javaClass.simpleName} $detail")
         }
     }
 
@@ -330,7 +330,11 @@ class Service : AccessibilityService() {
             return
         }
         lastGlassWarningAtMs = now
-        val prefix = if (isError) "NoMixer glass capture failed: " else "NoMixer glass: "
+        // Kept short and led with the technical part rather than English
+        // prose: this device truncates Toast text to two lines, and a
+        // reason padded with explanation was cut off exactly where the
+        // actual diagnostic (an exception's class name) started.
+        val prefix = if (isError) "Glass✗ " else "Glass✓ "
         Toast.makeText(this, "$prefix$reason", Toast.LENGTH_LONG).show()
     }
 
