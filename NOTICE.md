@@ -1101,5 +1101,15 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   temporarily on both outcomes, not just failure, so this can finally be
   diagnosed from real data instead of another guess.
 
+## 2026-09-14 — 1.0.40
+
+- 1.0.39's diagnostics still had one silent path left: if any of the three
+  settings that gate the glass capture (the refract-the-screen toggle,
+  show-background, or Translucent mode) was off, the app returned without
+  telling the user anything -- leaving "no toast ever appears" ambiguous
+  between "not even trying to capture" and "tried and the platform gave no
+  response." That path now reports which of the three settings is actually
+  the blocker.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
