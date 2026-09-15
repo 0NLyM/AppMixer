@@ -549,11 +549,30 @@ private fun PreviewPanelBackground(preferences: UiPreferences, shape: Shape, mod
 }
 
 /**
+ * A plain, non-interactive stand-in for [RingerModeButton] -- shaped and
+ * sized to match exactly, but with no real [android.media.AudioManager]
+ * behind it, which a settings preview must never be able to toggle for
+ * real. Shared by every style's branch in [CollapsedPopupPreviewContent]
+ * below, so all three read the ringer switch at the same fidelity.
+ */
+@Composable
+private fun MockRingerButton(size: Dp, cornerPercent: Int) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(percent = cornerPercent))
+            .background(MaterialTheme.colorScheme.tertiary)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(percent = cornerPercent))
+    )
+}
+
+/**
  * The collapsed popup mockup, built from the real [TrackSlider] /
  * [VerticalTrackSlider] / [VolumeDisc] components (and, for the bar styles,
- * [PreviewPanelBackground]) so corner radii, fills, effects and the disc's
- * edge fade all match the actual overlay exactly, rather than approximating
- * it with plain boxes.
+ * [PreviewPanelBackground] plus [PanelShadow]) so corner radii, fills,
+ * effects, the ringer switch and the disc's edge fade all match the actual
+ * overlay exactly, rather than approximating it with plain boxes sized by
+ * hand.
  *
  * [scaleMultiplier] sizes every drawn element -- 1f is the real popup's own
  * size (see [LiveSliderPreview]); [PositionPreview]'s own shrunk-down mockup
@@ -585,114 +604,155 @@ private fun CollapsedPopupPreviewContent(
     val buttonCornerRadius = preferences.activeButtonCornerRadius()
 
     val shadow = MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
+    // Same constant CollapsedVolumePopup.kt's own BUTTON_SIZE_DP resolves
+    // to -- kept in step by hand since that one's private to that file.
+    val buttonSize = (48 * scale).dp
 
     when (preferences.popupStyle) {
-        PopupStyle.VerticalBar -> Box {
-            if (showBackground) {
-                PreviewPanelBackground(
-                    preferences = preferences,
-                    shape = RoundedCornerShape(preferences.popupCornerRadius.dp),
-                    modifier = Modifier
-                        .width((64 * scale).dp)
-                        .height((250 * scale).dp)
-                        .softShadow(shadow, RoundedCornerShape(preferences.popupCornerRadius.dp), 12.dp)
-                )
-            }
-            VerticalTrackSlider(
-                value = previewFraction,
-                onValueChange = {},
-                enabled = false,
-                modifier = Modifier
-                    .width((64 * scale).dp)
-                    .height((250 * scale).dp)
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (showValue) {
-                        Text(
-                            text = previewValueText,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontSize = (11 * scale).sp,
-                            maxLines = 1,
-                            modifier = Modifier.align(
-                                if (preferences.centeredContent == PopupCenterContent.Value) {
-                                    Alignment.Center
-                                } else {
-                                    Alignment.TopCenter
-                                }
-                            )
-                        )
+        PopupStyle.VerticalBar -> {
+            val shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+            Box {
+                if (showBackground) {
+                    PanelShadow(
+                        color = shadow,
+                        shape = shape,
+                        blurRadius = PANEL_SHADOW_BLUR_DP,
+                        modifier = Modifier.matchParentSize()
+                    )
+                    PreviewPanelBackground(
+                        preferences = preferences,
+                        shape = shape,
+                        modifier = Modifier.matchParentSize()
+                    )
+                }
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (showRingerButton) {
+                        MockRingerButton(buttonSize, buttonCornerRadius)
                     }
-                    if (showIcon) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = null,
+                    VerticalTrackSlider(
+                        value = previewFraction,
+                        onValueChange = {},
+                        enabled = false,
+                        modifier = Modifier
+                            .width(buttonSize)
+                            .height((220 * scale).dp)
+                    ) {
+                        Box(
                             modifier = Modifier
-                                .align(
-                                    if (preferences.centeredContent == PopupCenterContent.Icon) {
-                                        Alignment.Center
-                                    } else {
-                                        Alignment.BottomCenter
-                                    }
+                                .fillMaxSize()
+                                .padding(vertical = (12 * scale).dp)
+                        ) {
+                            if (showValue) {
+                                Text(
+                                    text = previewValueText,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontSize = (11 * scale).sp,
+                                    maxLines = 1,
+                                    modifier = Modifier.align(
+                                        if (preferences.centeredContent == PopupCenterContent.Value) {
+                                            Alignment.Center
+                                        } else {
+                                            Alignment.TopCenter
+                                        }
+                                    )
                                 )
-                                .size((20 * scale).dp)
-                        )
+                            }
+                            if (showIcon) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .align(
+                                            if (preferences.centeredContent == PopupCenterContent.Icon) {
+                                                Alignment.Center
+                                            } else {
+                                                Alignment.BottomCenter
+                                            }
+                                        )
+                                        .size((20 * scale).dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
 
-        PopupStyle.HorizontalBar -> Box {
-            if (showBackground) {
-                PreviewPanelBackground(
-                    preferences = preferences,
-                    shape = RoundedCornerShape(preferences.popupCornerRadius.dp),
-                    modifier = Modifier
-                        .width((240 * scale).dp)
-                        .height((56 * scale).dp)
-                        .softShadow(shadow, RoundedCornerShape(preferences.popupCornerRadius.dp), 12.dp)
-                )
-            }
-            TrackSlider(
-            value = previewFraction,
-            onValueChange = {},
-            enabled = false,
-            modifier = Modifier
-                .width((240 * scale).dp)
-                .height((56 * scale).dp)
-        ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                if (showIcon) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = null,
+        PopupStyle.HorizontalBar -> {
+            val shape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+            Box {
+                if (showBackground) {
+                    PanelShadow(
+                        color = shadow,
+                        shape = shape,
+                        blurRadius = PANEL_SHADOW_BLUR_DP,
+                        modifier = Modifier.matchParentSize()
+                    )
+                    PreviewPanelBackground(
+                        preferences = preferences,
+                        shape = shape,
+                        modifier = Modifier.matchParentSize()
+                    )
+                }
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (showRingerButton) {
+                        MockRingerButton(buttonSize, buttonCornerRadius)
+                    }
+                    TrackSlider(
+                        value = previewFraction,
+                        onValueChange = {},
+                        enabled = false,
                         modifier = Modifier
-                            .align(
-                                if (preferences.centeredContent == PopupCenterContent.Icon) {
-                                    Alignment.Center
-                                } else {
-                                    Alignment.CenterStart
-                                }
-                            )
-                            .size((22 * scale).dp)
-                    )
-                }
-                if (showValue) {
-                    Text(
-                        text = previewValueText,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontSize = (13 * scale).sp,
-                        maxLines = 1,
-                        modifier = Modifier.align(
-                            if (preferences.centeredContent == PopupCenterContent.Value) {
-                                Alignment.Center
-                            } else {
-                                Alignment.CenterEnd
+                            .width((200 * scale).dp)
+                            .height(buttonSize)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = (14 * scale).dp)
+                        ) {
+                            if (showIcon) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .align(
+                                            if (preferences.centeredContent == PopupCenterContent.Icon) {
+                                                Alignment.Center
+                                            } else {
+                                                Alignment.CenterStart
+                                            }
+                                        )
+                                        .size((22 * scale).dp)
+                                )
                             }
-                        )
-                    )
+                            if (showValue) {
+                                Text(
+                                    text = previewValueText,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontSize = (13 * scale).sp,
+                                    maxLines = 1,
+                                    modifier = Modifier.align(
+                                        if (preferences.centeredContent == PopupCenterContent.Value) {
+                                            Alignment.Center
+                                        } else {
+                                            Alignment.CenterEnd
+                                        }
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             }
-        }
         }
 
         PopupStyle.Disc -> {
@@ -716,7 +776,7 @@ private fun CollapsedPopupPreviewContent(
                 val radius = discDiameter / 2
                 val edgeGap = DISC_EDGE_GAP_DP.dp * edgeGapMultiplier
                 val overhang = (radius - (radius + edgeGap) * revealFraction).coerceAtLeast(0.dp)
-                val contentHalfWidth = (38 * scale).dp / 2
+                val contentHalfWidth = (buttonSize * 0.8f) / 2
                 val maxLocalCenter = radius - overhang - edgeGap - contentHalfWidth
                 val localCenter = if (maxLocalCenter < 0.dp) maxLocalCenter else 0.dp
                 localCenter * discOutwardSign
@@ -726,19 +786,7 @@ private fun CollapsedPopupPreviewContent(
 
             val besideButton = preferences.discValueBesideButton &&
                 showRingerButton && showValue
-            val mockButton = @Composable {
-                Box(
-                    modifier = Modifier
-                        .size((38 * scale).dp)
-                        .clip(RoundedCornerShape(percent = buttonCornerRadius))
-                        .background(MaterialTheme.colorScheme.tertiary)
-                        .border(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline,
-                            RoundedCornerShape(percent = buttonCornerRadius)
-                        )
-                )
-            }
+            val mockButton = @Composable { MockRingerButton(buttonSize * 0.8f, buttonCornerRadius) }
 
             Box(contentAlignment = Alignment.Center) {
                 VolumeDisc(
@@ -811,33 +859,42 @@ private fun CollapsedPopupPreviewContent(
 @Composable
 private fun ExpandedMixerPreview(preferences: UiPreferences) {
     val corner = preferences.popupCornerRadius.dp
-    Box(
-        modifier = Modifier
-            .fillMaxWidth(0.86f)
-            .clip(RoundedCornerShape(corner))
-            .background(
-                MaterialTheme.colorScheme.background.copy(alpha = preferences.paintedPanelAlpha())
-            )
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(corner))
-            .padding(10.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(
-                0.7f to Icons.AutoMirrored.Filled.VolumeUp,
-                0.45f to Icons.Default.RingVolume,
-                0.3f to Icons.Default.Alarm
-            ).forEach { (fraction, icon) ->
-                TrackSlider(
-                    value = fraction,
-                    onValueChange = {},
-                    enabled = false,
-                    modifier = Modifier.height(20.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
-                        contentAlignment = Alignment.CenterStart
+    val shape = RoundedCornerShape(corner)
+    val shadow = Color.Black.copy(alpha = preferences.shadowAlpha())
+    Box(modifier = Modifier.fillMaxWidth(0.86f)) {
+        PanelShadow(
+            color = shadow,
+            shape = shape,
+            blurRadius = PANEL_SHADOW_BLUR_DP,
+            modifier = Modifier.matchParentSize()
+        )
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(
+                    MaterialTheme.colorScheme.background.copy(alpha = preferences.paintedPanelAlpha())
+                )
+                .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+                .padding(10.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    0.7f to Icons.AutoMirrored.Filled.VolumeUp,
+                    0.45f to Icons.Default.RingVolume,
+                    0.3f to Icons.Default.Alarm
+                ).forEach { (fraction, icon) ->
+                    TrackSlider(
+                        value = fraction,
+                        onValueChange = {},
+                        enabled = false,
+                        modifier = Modifier.height(20.dp)
                     ) {
-                        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(10.dp))
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(10.dp))
+                        }
                     }
                 }
             }
@@ -1171,14 +1228,18 @@ fun CustomizationScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // The grid and its adjacent simplified preview sit side by side,
-            // the same 16dp gutter the whole screen already uses on every
-            // other side (the parent Column's own horizontal padding) --
-            // left edge to grid, grid to preview, preview to right edge, all
-            // equal. The grid's own cells are grown tall enough (see
-            // ANCHOR_CELL_HEIGHT) that the two elements read as one block at
-            // the same height.
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // The grid and its adjacent simplified preview sit side by
+            // side, centered as one block rather than hugging the left
+            // edge, with some breathing room from the description text
+            // above and the offset sliders below. The grid's own cells are
+            // grown tall enough (see ANCHOR_CELL_HEIGHT) that the two
+            // elements read as one block at the same height.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+            ) {
                 AnchorGrid(
                     selected = preferences.activeAnchor(),
                     onSelect = { anchor -> onUpdate { it.withAnchor(anchor) } },

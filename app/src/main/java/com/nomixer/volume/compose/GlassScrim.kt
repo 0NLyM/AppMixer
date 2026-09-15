@@ -57,12 +57,13 @@ import kotlin.math.sin
  *    everywhere, so nothing about the tint alone depends on what's behind
  *    it.
  * 2. The beam itself ([glassBeamBrush]), white light added across the face.
- * 3. A subtle AGSL grain ([glassNoiseBrush]), the way real frosted glass
- *    never tints perfectly evenly -- a couple of ops per pixel, sampling
- *    nothing.
+ * 3. Sparse AGSL grain ([glassNoiseBrush]) -- scattered flecks with real
+ *    empty space between them, the way dust actually sits on real glass,
+ *    rather than a texture covering every pixel.
  * 4. All of the above, optionally run through a real blur
- *    ([GlassBackground]'s own `blurRadius`) -- blurring the grain alone
- *    already reads as frost.
+ *    ([GlassBackground]'s own `blurRadius`) -- the sparse flecks are what
+ *    actually gives that blur something to visibly melt; blurring an
+ *    already-even wash barely changes it at all.
  * 5. The same beam again along the shape's own edge ([glassEdgeLightBrush]),
  *    brightest exactly where the face's lit band reaches the rim.
  */
@@ -78,21 +79,38 @@ private const val NOISE_SHADER_SRC = """
     half4 main(float2 fragCoord) {
         // Coarse cells, not per-pixel noise: single-pixel-frequency grain
         // averages away almost entirely under even the smallest real blur
-        // radius, which is exactly why the Blur slider used to look like it
-        // did nothing -- past the first millimetre or two of radius there
-        // was nothing left with any spatial size for it to actually soften.
-        // Cells a few dp wide give the slider's whole range something real
-        // to melt, from a crisp fleck pattern at the low end to a smooth
-        // creamy wash at the top.
-        float2 cell = floor(fragCoord / 26.0);
-        float n = hash(cell);
+        // radius. Cells a few dp wide give the slider's whole range
+        // something real to melt, from crisp scattered flecks at the low
+        // end to a soft creamy haze at the top.
+        float2 cell = floor(fragCoord / 22.0);
+
+        // Most cells carry no fleck at all -- real empty space, not a
+        // faint tint -- so the tint/beam underneath still reads cleanly
+        // through the gaps instead of the whole sheet looking like an
+        // evenly noisy wall of pixels.
+        float density = hash(cell + 71.3);
+        if (density > 0.18) {
+            return half4(noiseColor, 0.0);
+        }
+
+        // A small round dot, jittered off the cell's own center, rather
+        // than filling the whole cell -- reads as an individual grain of
+        // dust, not a solid tile.
+        float2 cellCenter = (cell + 0.5) * 22.0;
+        float2 jitter = float2(hash(cell + 5.1), hash(cell + 9.7)) - 0.5;
+        float2 dotCenter = cellCenter + jitter * 14.0;
+        float dist = length(fragCoord - dotCenter);
+        float radius = 3.0 + hash(cell + 3.3) * 4.0;
+        float coverage = 1.0 - smoothstep(radius - 1.5, radius, dist);
+
         // Even across the whole sheet on purpose: this used to carry its own
         // top-left-to-bottom-right sheen, a second light direction that had
         // nothing to do with the beam and quietly worked against it.
         // noiseAlphaScale is the dedicated transparency slider's own
-        // multiplier -- 0 removes the layer, 1 keeps the per-cell alpha this
-        // always varied between.
-        float a = (0.05 + n * 0.22) * noiseAlphaScale;
+        // multiplier -- 0 removes the layer, 1 keeps each fleck's own
+        // brightness at full strength.
+        float brightness = 0.35 + hash(cell + 1.9) * 0.65;
+        float a = coverage * brightness * noiseAlphaScale;
         return half4(noiseColor, a);
     }
 """

@@ -507,11 +507,25 @@ fun VolumeDisc(
                 // rides the fill's own leading edge, like a real knob being
                 // turned. The default instead leaves every tick's own slot
                 // fixed and grows whichever one is nearest the level.
-                val ringRotation = if (tickRotatingKnob) (-fullSweep) * fraction else 0f
+                //
+                // Both read off levelAngle -- the same visibleStartAngle +
+                // visibleSweepAngle*fraction the fill arc and the dots-off
+                // fallback marker already use -- rather than fraction
+                // against the *full* sweep. The ticks' own fixed slots are
+                // always spread across the complete circle (see above), but
+                // when the disc is laterally clipped the fill's own visible
+                // range is a much shorter remapped arc; reading raw
+                // fraction*TICK_COUNT here landed the landmark (or the
+                // rotation) wherever it would be on the *uncut* circle,
+                // which is nowhere near where the fill's leading edge
+                // actually renders once clipped.
+                val levelAngle = visibleStartAngle + visibleSweepAngle * fraction
+                val ringRotation = if (tickRotatingKnob) levelAngle - startAngle else 0f
                 val landmarkIndex = if (tickRotatingKnob) {
                     0
                 } else {
-                    ((Math.round(fraction * TICK_COUNT) % TICK_COUNT) + TICK_COUNT) % TICK_COUNT
+                    val nearest = Math.round((levelAngle - startAngle) / tickStep)
+                    ((nearest % TICK_COUNT) + TICK_COUNT) % TICK_COUNT
                 }
 
                 for (index in 0 until TICK_COUNT) {

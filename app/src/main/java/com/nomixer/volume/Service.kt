@@ -66,8 +66,8 @@ import com.nomixer.volume.compose.AtmosphereBackground
 import com.nomixer.volume.compose.GlassBackground
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.glassEdgeLightBrush
-import com.nomixer.volume.compose.PANEL_SHADOW_ELEVATION_DP
-import com.nomixer.volume.compose.softShadow
+import com.nomixer.volume.compose.PANEL_SHADOW_BLUR_DP
+import com.nomixer.volume.compose.PanelShadow
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
@@ -332,13 +332,13 @@ class Service : AccessibilityService() {
                         label = "mixerSliderShadow"
                     )
                     // The panel's own shadow around its outer edge -- same
-                    // [PANEL_SHADOW_ELEVATION_DP]/[softShadow] pair the
-                    // collapsed bar styles already use, applied here to the
-                    // mixer's own Surface instead: unlike [sliderShadowColor]
-                    // above, it only matters while there's a panel to sit
-                    // behind (showBackground off already moves the shadow
-                    // onto each slider individually). Black, for the same
-                    // reason CollapsedVolumePopup's own is.
+                    // [PanelShadow] the collapsed bar styles already use,
+                    // applied here to the mixer's own Surface instead:
+                    // unlike [sliderShadowColor] above, it only matters
+                    // while there's a panel to sit behind (showBackground
+                    // off already moves the shadow onto each slider
+                    // individually). Black, for the same reason
+                    // CollapsedVolumePopup's own is.
                     val panelShadowColor by animateColorAsState(
                         targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
                         animationSpec = Motion.ColorShift,
@@ -391,19 +391,21 @@ class Service : AccessibilityService() {
                                 // siblings in this Box rather than through a
                                 // Modifier chained onto Surface itself.
                                 //
-                                // The same outer-edge softShadow the
-                                // collapsed bar styles already wrap their
-                                // own panel in (CollapsedVolumePopup's
-                                // panelShadowModifier) -- this panel never
-                                // had one of its own before, only its
-                                // individual sliders did once the panel
-                                // itself was switched off.
-                                val mixerShadowModifier = if (showBackground) {
-                                    Modifier.softShadow(panelShadowColor, mixerShape, PANEL_SHADOW_ELEVATION_DP)
-                                } else {
-                                    Modifier
-                                }
-                                Box(modifier = mixerShadowModifier) {
+                                // The same outer-edge halo the collapsed
+                                // bar styles already paint behind their own
+                                // panel (CollapsedVolumePopup's PanelShadow)
+                                // -- this panel never had one of its own
+                                // before, only its individual sliders did
+                                // once the panel itself was switched off.
+                                Box {
+                                    if (showBackground) {
+                                        PanelShadow(
+                                            color = panelShadowColor,
+                                            shape = mixerShape,
+                                            blurRadius = PANEL_SHADOW_BLUR_DP,
+                                            modifier = Modifier.matchParentSize()
+                                        )
+                                    }
                                     if (panelGlass) {
                                         GlassBackground(
                                             shape = mixerShape,
@@ -580,13 +582,13 @@ class Service : AccessibilityService() {
             // here: unlike an Activity's own window (which inherits
             // android:hardwareAccelerated from the manifest automatically),
             // a raw window a Service adds via WindowManager.addView() stays
-            // software-rendered unless this flag is set explicitly. Both
-            // the glass panel's real blur (GlassBackground's graphicsLayer
-            // renderEffect) and the panel's own elevation shadow
-            // (softShadow, Modifier.shadow) need a hardware-accelerated
-            // RenderNode to draw anything at all -- without it they don't
-            // throw or log, they just silently paint nothing, which is
-            // exactly the "blur/shadow does nothing" behaviour this fixes.
+            // software-rendered unless this flag is set explicitly. The
+            // glass panel's real blur, the panel's own PanelShadow halo, and
+            // small-element shadows (softShadow, Modifier.shadow) all need a
+            // hardware-accelerated RenderNode to draw anything at all --
+            // without it they don't throw or log, they just silently paint
+            // nothing, which is exactly the "blur/shadow does nothing"
+            // behaviour this fixes.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT // Make the background translucent
         ).apply {

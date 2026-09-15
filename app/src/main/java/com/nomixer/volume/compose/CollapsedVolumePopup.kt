@@ -2,6 +2,7 @@ package com.nomixer.volume.compose
 
 import android.media.AudioManager
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -31,8 +32,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -68,12 +72,12 @@ import kotlin.math.roundToInt
 private const val BUTTON_SIZE_DP = 48
 
 /**
- * How far a panel-wrapping shadow lifts, for [Modifier.shadow]'s own
- * elevation model. Internal rather than private: Service.kt's expanded
- * mixer panel uses the same elevation for its own [softShadow], so both
- * panels' shadows read as the same weight.
+ * How far [PanelShadow]'s own halo spreads past the panel's outer edge.
+ * Internal rather than private: Service.kt's expanded mixer panel uses the
+ * same radius for its own halo, so both panels' shadows read as the same
+ * weight.
  */
-internal val PANEL_SHADOW_ELEVATION_DP = 12.dp
+internal val PANEL_SHADOW_BLUR_DP = 12.dp
 
 /** Same, for a single element's shadow (ringer button or slider) when the panel is hidden. */
 private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp
@@ -85,6 +89,11 @@ private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp
  * theme-colored backing used everywhere else this app calls something a
  * shadow. [clip] is always off: whatever this is chained onto (a Surface,
  * a button, a slider) already clips its own content to [shape].
+ *
+ * Fine for a single small element (a button, a slider track), where the
+ * platform's own ambient+spot elevation model reads as a reasonable soft
+ * lift. A whole panel wants [PanelShadow] instead -- see its own doc
+ * comment for why.
  */
 internal fun Modifier.softShadow(color: Color, shape: Shape, elevation: Dp): Modifier =
     if (color.alpha <= 0f) {
@@ -98,6 +107,40 @@ internal fun Modifier.softShadow(color: Color, shape: Shape, elevation: Dp): Mod
             spotColor = color
         )
     }
+
+/**
+ * A uniform halo behind a panel's own [shape] -- unlike [softShadow]'s
+ * platform elevation model (an ambient glow plus a directional spot light,
+ * calibrated to look like a card lit from above, so the shadow reads
+ * heavier on one side than the other), a real Gaussian blur of a solid
+ * copy of the same shape spreads outward evenly in every direction. The
+ * panel painted on top of this (a later sibling in the same [Box]) covers
+ * the halo's own solid center, leaving only its blurred rim showing -- the
+ * same distance past the panel's own outer edge all the way around, which
+ * is what actually reads as depth rather than a shadow trailing off
+ * unevenly.
+ *
+ * A sibling composable, not a [Modifier]: a real blur needs its own
+ * graphics layer, separate from whatever it isn't supposed to blur (same
+ * reasoning as [GlassBackground]'s own doc comment), so this has to be a
+ * genuine node behind the panel rather than paint chained onto it. The
+ * caller sizes it with [modifier] -- `Modifier.matchParentSize()` in the
+ * same [Box] the panel itself sits in, so both agree on the exact same
+ * shape and size.
+ */
+@Composable
+internal fun PanelShadow(color: Color, shape: Shape, blurRadius: Dp, modifier: Modifier = Modifier) {
+    if (color.alpha <= 0f || blurRadius <= 0.dp) {
+        return
+    }
+    Box(
+        modifier
+            .graphicsLayer {
+                renderEffect = BlurEffect(blurRadius.toPx(), blurRadius.toPx(), TileMode.Decal)
+            }
+            .background(color, shape)
+    )
+}
 
 /**
  * Direction the expand swipe has to travel, away from the edge the popup
@@ -380,16 +423,10 @@ fun CollapsedVolumePopup(
     )
 
     // The disc paints its own shadow internally (VolumeDisc). A bar panel
-    // gets the platform's own soft shadow wrapped around it -- the ringer
-    // button included, not just the slider -- as long as it's actually
-    // showing; with [showBackground] off there's no panel to hang a shadow
-    // on, so it moves onto the ringer button and slider individually below
-    // instead.
-    val panelShadowModifier = if (!isDisc && showBackground) {
-        Modifier.softShadow(shadow, panelShape, PANEL_SHADOW_ELEVATION_DP)
-    } else {
-        Modifier
-    }
+    // gets a uniform blurred halo behind it -- the ringer button included,
+    // not just the slider -- as long as it's actually showing; with
+    // [showBackground] off there's no panel to hang a shadow on, so it
+    // moves onto the ringer button and slider individually below instead.
     val elementShadowColor = if (!isDisc && !showBackground) shadow else Color.Transparent
 
     // A real blur needs a genuinely separate graphics layer from whatever
@@ -398,7 +435,15 @@ fun CollapsedVolumePopup(
     // chained onto Surface -- the glass background and its edge light are
     // now painted as Surface's own siblings in this Box, behind and above
     // it respectively, instead of through Surface's `modifier`.
-    Box(modifier = panelShadowModifier) {
+    Box {
+        if (!isDisc && showBackground) {
+            PanelShadow(
+                color = shadow,
+                shape = panelShape,
+                blurRadius = PANEL_SHADOW_BLUR_DP,
+                modifier = Modifier.matchParentSize()
+            )
+        }
         if (!isDisc && panelGlass) {
             GlassBackground(
                 shape = panelShape,
