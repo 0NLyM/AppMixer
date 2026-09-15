@@ -71,9 +71,9 @@
     <string name="glass_blur_strength">Blur</string>
     <string name="glass_light_angle">Light rotation</string>
     <string name="glass_light_width">Light width</string>
-    <string name="glass_light_description">One beam of light crossing the glass: the sheet thins where it lands and the rim catches it at the same two points, so both read as the same light.</string>
-    <string name="atmosphere_opacity">Grain opacity</string>
-    <string name="atmosphere_description">A burst of colored grain, seeded from the panel\'s own base color, that flickers for a moment and settles into one fixed pattern behind the sliders.</string>
+    <string name="glass_light_description">One beam of light crossing the glass: white light is added where it lands and the rim catches it at the same two points, so both read as the same light.</string>
+    <string name="atmosphere_grain_intensity">Grain intensity</string>
+    <string name="atmosphere_description">A field of colored grain, seeded from whatever app is underneath, that turns for a moment and settles into one fixed pattern behind the sliders.</string>
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
     <string name="bar_center_content">Slider center</string>
@@ -86,7 +86,7 @@
     <string name="disc_hint">Anchored to a screen edge the disc reveals itself from that edge inward as the horizontal offset grows, up to a full circle; anchored to the middle column it\'s always a full circle. Drag up or down to change the volume.</string>
     <string name="popup_background">Background</string>
     <string name="popup_background_bar">Bar background</string>
-    <string name="popup_background_description">Whether the panel is lit glass, generated grain or a plain fill, and how strong that effect is. Glass takes its color — and how opaque it is — from the Background color above. Never changes the disc\'s own ring colors.</string>
+    <string name="popup_background_description">Whether the panel is lit glass, generated grain or a plain fill, and how strong that effect is. Glass and Atmosphere both take their color — and how opaque they are — from the Background color above. Never changes the disc\'s own ring colors.</string>
     <string name="popup_show_background">Show background</string>
     <string name="popup_show_background_bar">Show bar background</string>
     <string name="background_translucent">Glass</string>

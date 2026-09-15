@@ -50,9 +50,15 @@ const val GLASS_LIGHT_WIDTH_DEFAULT = 0.45f
  */
 const val GLASS_DEFAULT_ALPHA = 0.42f
 
-/** Bottom and top of the Atmosphere panel's own opacity slider (see [UiPreferences.atmosphereBaseAlpha]). */
-const val ATMOSPHERE_ALPHA_MIN = 0.15f
-const val ATMOSPHERE_ALPHA_MAX = 0.95f
+/**
+ * Bottom and top of the Atmosphere grain's own intensity slider (see
+ * [UiPreferences.atmosphereGrainIntensity]) -- how strongly the grain shows,
+ * not how opaque the panel is. That comes off the Background color's own
+ * alpha now, the same as Glass (see [glassAlpha]).
+ */
+const val ATMOSPHERE_GRAIN_MIN = 0f
+const val ATMOSPHERE_GRAIN_MAX = 1f
+const val ATMOSPHERE_GRAIN_DEFAULT = 0.7f
 
 /**
  * [UiPreferences.glassBlurStrength]'s own 0..1 range, scaled up to an
@@ -129,10 +135,12 @@ enum class PopupBackground {
     Solid,
 
     /**
-     * A burst of colored grain, seeded from the panel's own base color, that
-     * flickers for a moment and then holds still -- see
-     * [UiPreferences.atmosphereBaseAlpha] and
-     * [com.nomixer.volume.compose.AtmosphereBackground].
+     * A field of colored grain, wound around the panel's own center, that
+     * turns for a moment and then holds still -- see
+     * [UiPreferences.atmosphereGrainIntensity] and
+     * [com.nomixer.volume.compose.AtmosphereBackground]. Opaque exactly like
+     * Glass is: off the Background color's own alpha, not a setting of its
+     * own (see [glassAlpha]).
      */
     Atmosphere
 }
@@ -287,12 +295,15 @@ data class UiPreferences(
      */
     val glassLightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
     /**
-     * Opacity of the Atmosphere panel's own grain -- one shared value for
-     * every style, same reasoning as [glassLightAngle]: it tunes the effect
-     * itself, not anything about a particular collapsed look. See
-     * [ATMOSPHERE_ALPHA_MIN]/`_MAX`.
+     * How strongly the Atmosphere grain shows, 0 (a smooth two-color sweep,
+     * no texture at all) to 1 (the full grain) -- one shared value for every
+     * style, same reasoning as [glassLightAngle]: it tunes the effect
+     * itself, not anything about a particular collapsed look. Not the
+     * panel's own opacity, which -- like Glass's -- comes off the
+     * Background color's own alpha instead (see [glassAlpha]). See
+     * [ATMOSPHERE_GRAIN_MIN]/`_MAX`.
      */
-    val atmosphereBaseAlpha: Float = 0.55f
+    val atmosphereGrainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT
 )
 
 /**
@@ -371,11 +382,13 @@ fun UiPreferences.withShowShadow(value: Boolean): UiPreferences =
     if (popupStyle == PopupStyle.Disc) copy(discPopupShowShadow = value) else copy(popupShowShadow = value)
 
 /**
- * How opaque the glass tint is: the alpha of the user's own
+ * How opaque a Glass or Atmosphere panel is: the alpha of the user's own
  * [backgroundColor], straight off that color picker's own opacity slider,
  * so the one control that already sets the panel's color sets how much of
- * it there is too. [GLASS_DEFAULT_ALPHA] until they pick a color of their
- * own -- an untouched install keeps the glass the sheet it has always been.
+ * it there is too -- all the way down to fully transparent at 0%, the same
+ * as any other color role here. [GLASS_DEFAULT_ALPHA] until they pick a
+ * color of their own -- an untouched install keeps both effects the sheet
+ * they have always been.
  */
 fun UiPreferences.glassAlpha(): Float =
     backgroundColor?.let { argb -> ((argb ushr 24) and 0xFF) / 255f } ?: GLASS_DEFAULT_ALPHA
@@ -386,17 +399,21 @@ fun UiPreferences.glassAlpha(): Float =
  * Solid: exactly [UiPreferences.popupBackgroundOpacity], the only mode that
  * slider affects.
  *
- * Glass: [glassAlpha] -- painted the same way on every device and power
- * state (see [com.nomixer.volume.compose.GlassBackground]). Unlike the old
+ * Glass and Atmosphere: [glassAlpha] alike -- painted the same way on every
+ * device and power state (see [com.nomixer.volume.compose.GlassBackground]
+ * and [com.nomixer.volume.compose.AtmosphereBackground]). Unlike the old
  * system-blur fallback this used to be, there's no capability check here at
- * all: the scrim never depends on whether the platform feels like granting
- * blur.
+ * all: neither effect's opacity ever depends on whether the platform feels
+ * like granting blur -- and Atmosphere used to ignore the Background
+ * color's alpha entirely, reading a separate "grain opacity" slider of its
+ * own instead, which is why setting that color's opacity to 0% never made
+ * an Atmosphere panel actually disappear.
  */
 fun UiPreferences.paintedPanelAlpha(): Float =
     when (activeBackground()) {
         PopupBackground.Solid -> activeBackgroundOpacity()
         PopupBackground.Translucent -> glassAlpha()
-        PopupBackground.Atmosphere -> atmosphereBaseAlpha
+        PopupBackground.Atmosphere -> glassAlpha()
     }
 
 /** Peak alpha of the popup's own shadow, at its brightest point. Deliberately light. */

@@ -28,8 +28,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.DISC_INSET
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
@@ -101,8 +103,10 @@ fun VolumeDisc(
     trackBackingColor: Color = Color.Transparent,
     /**
      * Paints [trackBackingColor] as the full glass effect (beam-lit tint +
-     * grain + rim light, see [drawGlassRing]) instead of a flat fill -- the
-     * caller sets this for Glass mode, never for Solid's own flat opacity.
+     * grain + optional real blur, see [GlassRingBackground], plus the rim
+     * light [drawGlassRingRim] draws separately) instead of a flat fill --
+     * the caller sets this for Glass mode, never for Solid's own flat
+     * opacity.
      */
     trackBackingGlass: Boolean = false,
     /**
@@ -123,6 +127,12 @@ fun VolumeDisc(
      */
     atmosphereColors: Pair<Color, Color>? = null,
     /**
+     * How strongly the Atmosphere grain shows, ignored unless
+     * [trackBackingAtmosphere] -- see [drawAtmosphereRing]'s own parameter
+     * of the same name.
+     */
+    grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
+    /**
      * Which way the light crossing the ring runs, and how broad its lit band
      * is -- the same single beam the flat panels are lit by (see
      * [glassEdgeLightBrush]), so a disc and a bar-style panel agree on where
@@ -130,6 +140,13 @@ fun VolumeDisc(
      */
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
     lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    /**
+     * The ring's own real (RenderEffect) frost, ignored unless
+     * [trackBackingGlass] -- see [GlassRingBackground]'s own parameter of
+     * the same name, and [GlassBackground]'s for why this needs a graphics
+     * layer of its own rather than being just another Canvas draw call.
+     */
+    blurRadius: Dp = 0.dp,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -195,10 +212,37 @@ fun VolumeDisc(
         }
     }
 
+    // Worked out here, in the composable phase rather than the Canvas's own
+    // draw phase, purely so [GlassRingBackground] -- a real sibling
+    // composable, not a Canvas draw call, see its own doc comment -- can be
+    // given the exact same ring geometry the Canvas below computes for
+    // itself from `size`. Both start from the same `diameter`-sized square,
+    // so the two agree exactly.
+    val density = LocalDensity.current
+    val ringRadiusPx: Float
+    val ringWidthPx: Float
+    with(density) {
+        val outerRadiusPx = diameter.toPx() / 2f
+        val radiusPx = outerRadiusPx * DISC_INSET
+        ringWidthPx = radiusPx * DISC_RING_WIDTH_FRACTION
+        ringRadiusPx = radiusPx - ringWidthPx / 2f - 1.dp.toPx()
+    }
+
     Box(
         modifier = modifier.size(diameter),
         contentAlignment = Alignment.Center
     ) {
+        if (trackBackingColor.alpha > 0f && trackBackingGlass) {
+            GlassRingBackground(
+                ringRadius = ringRadiusPx,
+                ringWidth = ringWidthPx,
+                baseColor = trackBackingColor,
+                blurRadius = blurRadius,
+                lightAngle = lightAngle,
+                lightWidth = lightWidth,
+                modifier = Modifier.matchParentSize()
+            )
+        }
         Canvas(
             modifier = Modifier
                 .matchParentSize()
@@ -297,8 +341,11 @@ fun VolumeDisc(
             // margin beyond it) stays genuinely see-through.
             if (trackBackingColor.alpha > 0f) {
                 if (trackBackingGlass) {
-                    drawGlassRing(
-                        baseColor = trackBackingColor,
+                    // The tint/beam/grain/blur itself is painted by
+                    // GlassRingBackground, a real sibling composable behind
+                    // this Canvas (see the Box above) -- this draws just the
+                    // rim light on top, the same as it always did.
+                    drawGlassRingRim(
                         center = center,
                         ringRadius = ringRadius,
                         ringWidth = ringWidth,
@@ -313,8 +360,7 @@ fun VolumeDisc(
                         center = center,
                         ringRadius = ringRadius,
                         ringWidth = ringWidth,
-                        lightAngle = lightAngle,
-                        lightWidth = lightWidth
+                        grainIntensity = grainIntensity
                     )
                 } else {
                     drawArc(

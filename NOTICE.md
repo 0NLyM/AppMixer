@@ -1245,5 +1245,37 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   package so only the first popup over a given app pays for the lookup.
   Falls back to the panel's own tint whenever no foreground app resolves.
 
+## 2026-09-15 — 1.0.47
+- Atmosphere's opacity now comes off the Background color's own alpha, the
+  same as Glass, instead of a separate "grain opacity" slider that ignored
+  it entirely -- setting that color's opacity to 0% used to leave an
+  Atmosphere panel fully visible; now it disappears like every other color
+  role does.
+- The Disc style's own Blur slider used to do nothing at all: the ring's
+  Glass backing was painted straight into VolumeDisc's shared Canvas, which
+  has no graphics layer of its own for a real (RenderEffect) blur to run
+  on. It's now painted by a genuine sibling composable, clipped to the
+  ring's own annulus, with the same blur the bar styles and expanded mixer
+  already had. The grain layer's own noise is also coarser now (a few dp
+  per cell instead of one pixel), since single-pixel noise already averages
+  away almost entirely under the smallest real blur radius -- there was
+  nothing left with any spatial size for the slider's higher end to
+  visibly soften.
+- Atmosphere's settle animation is shorter (650ms, was 900ms) -- same
+  curve, same distance, just quicker to finish.
+- Atmosphere no longer lights its ring's edge to match Glass's own beam: a
+  beam-lit rim on an effect with no beam of its own read as a mismatched
+  leftover from Glass. It now gets the same plain outline Solid mode
+  already has.
+- The removed "grain opacity" slider's slot now holds a grain *intensity*
+  slider instead: how strongly the grain's own texture shows, from a
+  perfectly smooth two-color sweep at 0% up to the full grain at 100%,
+  independent of the panel's own opacity.
+- The background-style section (Glass/Solid/Atmosphere and each one's own
+  knobs) now sits directly under the Popup section's style picker instead
+  of above it, next to Colors -- it's a per-style setting (bar and disc
+  keep independent copies), so it only makes sense once the style it
+  belongs to has actually been picked.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

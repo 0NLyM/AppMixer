@@ -4,6 +4,7 @@ import android.graphics.RuntimeShader
 import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -14,6 +15,7 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.LinearGradientShader
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.Shader
@@ -22,9 +24,10 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
@@ -65,12 +68,25 @@ import kotlin.math.sin
 private const val NOISE_SHADER_SRC = """
     uniform float2 resolution;
 
+    float hash(float2 p) {
+        return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
+    }
+
     half4 main(float2 fragCoord) {
-        float n = fract(sin(dot(fragCoord, float2(12.9898, 78.233))) * 43758.5453);
+        // Coarse cells, not per-pixel noise: single-pixel-frequency grain
+        // averages away almost entirely under even the smallest real blur
+        // radius, which is exactly why the Blur slider used to look like it
+        // did nothing -- past the first millimetre or two of radius there
+        // was nothing left with any spatial size for it to actually soften.
+        // Cells a few dp wide give the slider's whole range something real
+        // to melt, from a crisp fleck pattern at the low end to a smooth
+        // creamy wash at the top.
+        float2 cell = floor(fragCoord / 26.0);
+        float n = hash(cell);
         // Even across the whole sheet on purpose: this used to carry its own
         // top-left-to-bottom-right sheen, a second light direction that had
         // nothing to do with the beam and quietly worked against it.
-        float a = 0.035 + n * 0.03;
+        float a = 0.05 + n * 0.22;
         return half4(1.0, 1.0, 1.0, a);
     }
 """
@@ -274,26 +290,11 @@ fun GlassBackground(
     )
 }
 
-/**
- * The same beam-lit tint, grain and edge light as [GlassBackground], but
- * confined to a ring -- for [VolumeDisc]'s own track, painted straight into
- * its Canvas rather than through a Compose layout node. No adjustable blur
- * here, unlike [GlassBackground]: a real blur needs a genuinely separate
- * graphics layer (see that function's own doc comment), and the ring is
- * drawn as one call among several sharing VolumeDisc's single Canvas, not a
- * node of its own.
- */
-fun DrawScope.drawGlassRing(
-    baseColor: Color,
-    center: Offset,
-    ringRadius: Float,
-    ringWidth: Float,
-    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
-    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
-) {
+/** The two-circle, punch-a-hole-in-the-middle path an annulus ring occupies. */
+private fun ringPath(center: Offset, ringRadius: Float, ringWidth: Float): Path {
     val outerRadius = ringRadius + ringWidth / 2f
     val innerRadius = (ringRadius - ringWidth / 2f).coerceAtLeast(0f)
-    val ring = Path().apply {
+    return Path().apply {
         addOval(
             Rect(
                 center.x - outerRadius,
@@ -314,23 +315,100 @@ fun DrawScope.drawGlassRing(
         // annulus the ring's own track occupies, and nothing else.
         fillType = PathFillType.EvenOdd
     }
+}
 
-    clipPath(ring) {
-        drawRect(baseColor)
-        drawRect(glassBeamBrush(lightAngle, lightWidth))
-        // Same isolation as GlassBackground: the tint must show even if the
-        // noise shader fails.
-        try {
-            glassNoiseBrush(size)?.let { drawRect(it) }
-        } catch (e: Throwable) {
-            Log.w("GlassScrim", "Glass ring noise draw failed", e)
-        }
-        // Stroking the same two-circle path used for the clip above catches
-        // both the ring's outer and inner rim in one call.
-        drawPath(
-            ring,
-            brush = glassEdgeLightBrush(lightAngle, lightWidth),
-            style = Stroke(width = 1.5.dp.toPx())
-        )
+/**
+ * The annulus a disc's own ring track occupies, as a [Shape] -- lets
+ * [GlassRingBackground] clip *and blur* it exactly the way [GlassBackground]
+ * clips and blurs a bar panel's rounded rect, instead of painting straight
+ * into VolumeDisc's shared Canvas the way this used to work. A plain Canvas
+ * draw call has no graphics layer of its own for a [BlurEffect] to run on --
+ * which is exactly why the Disc style's own Blur slider used to do nothing
+ * at all, regardless of its value.
+ */
+private class RingShape(
+    private val ringRadius: Float,
+    private val ringWidth: Float
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        return Outline.Generic(ringPath(center, ringRadius, ringWidth))
     }
+}
+
+/**
+ * [GlassBackground]'s own tint, beam, grain and (now genuinely working)
+ * blur, clipped to a ring instead of an arbitrary [Shape] -- the backing
+ * behind [VolumeDisc]'s own track. A real sibling composable with a graphics
+ * layer of its own, same reasoning as [GlassBackground] (see its own doc
+ * comment): pair with [drawGlassRingRim] for the rim light, drawn straight
+ * into VolumeDisc's Canvas since -- like [GlassBackground]'s own
+ * [glassEdgeLightBrush] border -- it's a thin unblurred sibling on top,
+ * never part of the blurred layer itself.
+ */
+@Composable
+fun GlassRingBackground(
+    ringRadius: Float,
+    ringWidth: Float,
+    baseColor: Color,
+    modifier: Modifier = Modifier,
+    blurRadius: Dp = 0.dp,
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
+) {
+    val shape = remember(ringRadius, ringWidth) { RingShape(ringRadius, ringWidth) }
+    Box(
+        modifier
+            .clip(shape)
+            .then(
+                if (blurRadius > 0.dp) {
+                    Modifier.graphicsLayer {
+                        renderEffect = BlurEffect(
+                            blurRadius.toPx(), blurRadius.toPx(), TileMode.Clamp
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            )
+            .drawWithCache {
+                val beam = glassBeamBrush(lightAngle, lightWidth)
+                onDrawBehind {
+                    drawRect(baseColor)
+                    drawRect(beam)
+                    try {
+                        glassNoiseBrush(size)?.let { drawRect(it) }
+                    } catch (e: Throwable) {
+                        Log.w("GlassScrim", "Glass ring noise draw failed", e)
+                    }
+                }
+            }
+    )
+}
+
+/**
+ * Just the beam-lit rim -- [GlassRingBackground] now paints the ring's own
+ * tint/beam/grain/blur as a separate composable sibling (see that
+ * function's own doc comment for why), so this draws only the
+ * [glassEdgeLightBrush] stroke, straight into [VolumeDisc]'s Canvas
+ * alongside its other painted details, the same as it always did.
+ */
+fun DrawScope.drawGlassRingRim(
+    center: Offset,
+    ringRadius: Float,
+    ringWidth: Float,
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
+) {
+    // Stroking the same two-circle path an equivalent clip would use catches
+    // both the ring's outer and inner rim in one call.
+    drawPath(
+        ringPath(center, ringRadius, ringWidth),
+        brush = glassEdgeLightBrush(lightAngle, lightWidth),
+        style = Stroke(width = 1.5.dp.toPx())
+    )
 }

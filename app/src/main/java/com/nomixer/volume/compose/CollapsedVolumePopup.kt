@@ -412,6 +412,7 @@ fun CollapsedVolumePopup(
                 shape = panelShape,
                 baseColor = panelColor,
                 colors = atmosphereColors,
+                grainIntensity = preferences.atmosphereGrainIntensity,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -614,8 +615,10 @@ fun CollapsedVolumePopup(
                         trackBackingGlass = panelGlass,
                         trackBackingAtmosphere = panelAtmosphere,
                         atmosphereColors = atmosphereColors,
+                        grainIntensity = preferences.atmosphereGrainIntensity,
                         lightAngle = preferences.glassLightAngle,
                         lightWidth = preferences.glassLightWidth,
+                        blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                         icon = if (showIcon) volumeIcon else null,
                         label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer
@@ -658,7 +661,7 @@ fun CollapsedVolumePopup(
             }
         }
         }
-        if (!isDisc && (panelGlass || panelAtmosphere)) {
+        if (!isDisc && panelGlass) {
             Box(
                 Modifier
                     .matchParentSize()
@@ -670,6 +673,17 @@ fun CollapsedVolumePopup(
                         ),
                         panelShape
                     )
+            )
+        }
+        if (!isDisc && panelAtmosphere) {
+            // A normal outline, not the beam-lit glass edge: Atmosphere has
+            // no beam of its own, so that light read as a mismatched
+            // leftover from Glass -- see AtmosphereScrim.kt's own doc
+            // comment on drawAtmosphereRing.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .border(1.dp, MaterialTheme.colorScheme.outline, panelShape)
             )
         }
     }

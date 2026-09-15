@@ -414,6 +414,7 @@ class Service : AccessibilityService() {
                                             shape = mixerShape,
                                             baseColor = panelColor,
                                             colors = atmosphereColorsState,
+                                            grainIntensity = preferences.atmosphereGrainIntensity,
                                             modifier = Modifier.matchParentSize()
                                         )
                                     }
@@ -450,7 +451,7 @@ class Service : AccessibilityService() {
                                             }
                                         }
                                     }
-                                    if (panelGlass || panelAtmosphere) {
+                                    if (panelGlass) {
                                         Box(
                                             Modifier
                                                 .matchParentSize()
@@ -462,6 +463,17 @@ class Service : AccessibilityService() {
                                                     ),
                                                     mixerShape
                                                 )
+                                        )
+                                    }
+                                    if (panelAtmosphere) {
+                                        // Normal outline, not the beam-lit
+                                        // glass edge -- see
+                                        // AtmosphereScrim.kt's own doc
+                                        // comment on drawAtmosphereRing.
+                                        Box(
+                                            Modifier
+                                                .matchParentSize()
+                                                .border(1.dp, MaterialTheme.colorScheme.outline, mixerShape)
                                         )
                                     }
                                 }

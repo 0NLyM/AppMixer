@@ -73,10 +73,11 @@ import com.nomixer.volume.ui.theme.PopupColors
 import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
-import com.nomixer.volume.data.ATMOSPHERE_ALPHA_MAX
-import com.nomixer.volume.data.ATMOSPHERE_ALPHA_MIN
+import com.nomixer.volume.data.ATMOSPHERE_GRAIN_MAX
+import com.nomixer.volume.data.ATMOSPHERE_GRAIN_MIN
 import com.nomixer.volume.data.GLASS_BLUR_MAX
 import com.nomixer.volume.data.GLASS_BLUR_MIN
+import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MAX
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MIN
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MAX
@@ -606,8 +607,10 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     },
                     trackBackingGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent,
                     trackBackingAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere,
+                    grainIntensity = preferences.atmosphereGrainIntensity,
                     lightAngle = preferences.glassLightAngle,
                     lightWidth = preferences.glassLightWidth,
+                    blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                     icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (showValue && !besideButton) previewValueText else null,
                     centerContent = if (showRingerButton) {
@@ -822,6 +825,34 @@ fun CustomizationScreen(
                 Text(stringResource(R.string.reset_colors))
             }
 
+            SectionHeader(stringResource(R.string.popup))
+
+            Text(
+                text = stringResource(R.string.popup_style),
+                style = MaterialTheme.typography.bodyLarge
+            )
+            ChipRow(
+                options = listOf(
+                    PopupStyle.VerticalBar to stringResource(R.string.style_vertical),
+                    PopupStyle.HorizontalBar to stringResource(R.string.style_horizontal),
+                    PopupStyle.Disc to stringResource(R.string.style_disc)
+                ),
+                selected = preferences.popupStyle,
+                onSelect = { style -> onUpdate { it.copy(popupStyle = style) } }
+            )
+
+            // The expand button is gone, so the gesture that replaced it
+            // needs saying out loud somewhere.
+            Text(
+                text = stringResource(R.string.expand_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Below the style picker, not above it -- the background is
+            // independent per style (bar vs. disc keep their own copies, see
+            // UiPreferences' own activeBackground), so it only makes sense
+            // once the style it belongs to has actually been chosen.
             SectionHeader(
                 if (preferences.popupStyle == PopupStyle.Disc) {
                     stringResource(R.string.popup_background)
@@ -926,15 +957,18 @@ fun CustomizationScreen(
 
                         PopupBackground.Atmosphere ->
                             // Same reasoning as Translucent's own knobs above:
-                            // one shared setting for the effect itself.
+                            // one shared setting for the effect itself. How
+                            // opaque it is isn't among them either, same as
+                            // Glass: that comes off the Background color's
+                            // own alpha too.
                             Column {
                                 SliderSetting(
-                                    label = stringResource(R.string.atmosphere_opacity),
-                                    valueLabel = "${(preferences.atmosphereBaseAlpha * 100).roundToInt()}%",
-                                    value = preferences.atmosphereBaseAlpha,
-                                    valueRange = ATMOSPHERE_ALPHA_MIN..ATMOSPHERE_ALPHA_MAX,
+                                    label = stringResource(R.string.atmosphere_grain_intensity),
+                                    valueLabel = "${(preferences.atmosphereGrainIntensity * 100).roundToInt()}%",
+                                    value = preferences.atmosphereGrainIntensity,
+                                    valueRange = ATMOSPHERE_GRAIN_MIN..ATMOSPHERE_GRAIN_MAX,
                                     onValueChange = { value ->
-                                        onUpdate { it.copy(atmosphereBaseAlpha = value) }
+                                        onUpdate { it.copy(atmosphereGrainIntensity = value) }
                                     }
                                 )
                                 Text(
@@ -947,30 +981,6 @@ fun CustomizationScreen(
                 }
               }
             }
-
-            SectionHeader(stringResource(R.string.popup))
-
-            Text(
-                text = stringResource(R.string.popup_style),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            ChipRow(
-                options = listOf(
-                    PopupStyle.VerticalBar to stringResource(R.string.style_vertical),
-                    PopupStyle.HorizontalBar to stringResource(R.string.style_horizontal),
-                    PopupStyle.Disc to stringResource(R.string.style_disc)
-                ),
-                selected = preferences.popupStyle,
-                onSelect = { style -> onUpdate { it.copy(popupStyle = style) } }
-            )
-
-            // The expand button is gone, so the gesture that replaced it
-            // needs saying out loud somewhere.
-            Text(
-                text = stringResource(R.string.expand_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
 
             SectionHeader(stringResource(R.string.popup_position))
 
@@ -1272,7 +1282,7 @@ fun CustomizationScreen(
                             glassBlurStrength = defaults.glassBlurStrength,
                             glassLightAngle = defaults.glassLightAngle,
                             glassLightWidth = defaults.glassLightWidth,
-                            atmosphereBaseAlpha = defaults.atmosphereBaseAlpha,
+                            atmosphereGrainIntensity = defaults.atmosphereGrainIntensity,
                             expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,
                             discPopupShowValue = defaults.discPopupShowValue,

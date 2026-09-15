@@ -22,11 +22,8 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.unit.dp
-import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
-import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
+import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 
 /**
  * The Atmosphere background: a Nothing-OS-flavoured alternative to
@@ -63,6 +60,7 @@ private const val ATMOSPHERE_SHADER_SRC = """
     uniform float rotation;
     uniform float3 colorA;
     uniform float3 colorB;
+    uniform float grainIntensity;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
@@ -92,15 +90,26 @@ private const val ATMOSPHERE_SHADER_SRC = """
         float2 cell = floor(turned * 1.7);
         float grain = hash(cell) * 0.55 + hash(cell * 1.37 + 19.7) * 0.45;
 
-        float3 color = mix(colorA, colorB, clamp(band + (grain - 0.5) * 0.5, 0.0, 1.0));
-        color = color * (0.74 + grain * 0.48);
+        // grainIntensity scales how much the grain perturbs both the color
+        // mix and the brightness -- 0 is a perfectly smooth two-color sweep
+        // with no texture at all, 1 is the full grain these constants always
+        // produced before this was adjustable.
+        float mixAmount = 0.5 * grainIntensity;
+        float3 color = mix(colorA, colorB, clamp(band + (grain - 0.5) * mixAmount, 0.0, 1.0));
+        float brightnessBase = 1.0 - 0.26 * grainIntensity;
+        float brightnessRange = 0.48 * grainIntensity;
+        color = color * (brightnessBase + grain * brightnessRange);
         return half4(color, 1.0);
     }
 """
 
-/** How far the field turns while settling, and how long it takes to get there. */
+/**
+ * How far the field turns while settling, and how long it takes to get
+ * there -- shortened from the original 900ms without touching the curve
+ * itself (still [FastOutSlowInEasing]) or how far it turns.
+ */
 private const val ATMOSPHERE_TURN_RADIANS = 2.1f
-private const val ATMOSPHERE_SETTLE_MILLIS = 900
+private const val ATMOSPHERE_SETTLE_MILLIS = 650
 
 // Same reasoning as GlassScrim's own noiseBrush cache: compiling AGSL is far
 // too expensive to redo whenever a panel appears. Unlike that cache this one
@@ -128,14 +137,17 @@ private fun atmosphereShaderOrNull(): RuntimeShader? {
 /**
  * The grain brush for the current draw call, made of [colors] (falling back
  * to a single flat [fallback] color when there's nothing better -- see this
- * file's own doc comment) and turned by [rotation]. Null if the shader can't
- * run on this device at all, in which case a caller should just fall back to
- * a flat fill rather than leaving the panel unpainted.
+ * file's own doc comment), turned by [rotation] and textured by
+ * [grainIntensity] (0 a smooth sweep with no grain at all, 1 the full
+ * thing). Null if the shader can't run on this device at all, in which case
+ * a caller should just fall back to a flat fill rather than leaving the
+ * panel unpainted.
  */
 private fun DrawScope.atmosphereBrush(
     colors: Pair<Color, Color>?,
     fallback: Color,
-    rotation: Float
+    rotation: Float,
+    grainIntensity: Float
 ): Brush? {
     val shader = atmosphereShaderOrNull() ?: return null
     return try {
@@ -144,6 +156,7 @@ private fun DrawScope.atmosphereBrush(
         shader.setFloatUniform("rotation", rotation)
         shader.setFloatUniform("colorA", first.red, first.green, first.blue)
         shader.setFloatUniform("colorB", second.red, second.green, second.blue)
+        shader.setFloatUniform("grainIntensity", grainIntensity.coerceIn(0f, 1f))
         ShaderBrush(shader)
     } catch (e: Throwable) {
         Log.w("GlassScrim", "Atmosphere shader failed to update", e)
@@ -186,7 +199,8 @@ fun AtmosphereBackground(
     shape: Shape,
     baseColor: Color,
     colors: Pair<Color, Color>?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT
 ) {
     val spin = rememberAtmosphereSpin()
 
@@ -194,7 +208,7 @@ fun AtmosphereBackground(
         modifier
             .clip(shape)
             .drawBehind {
-                val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), spin.value)
+                val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), spin.value, grainIntensity)
                 if (brush != null) {
                     drawRect(brush, alpha = baseColor.alpha)
                 } else {
@@ -207,10 +221,18 @@ fun AtmosphereBackground(
 /**
  * The same grain as [AtmosphereBackground], confined to a ring -- for
  * [VolumeDisc]'s own track, painted straight into its Canvas rather than
- * through a Compose layout node, same reasoning as [drawGlassRing]'s own doc
- * comment. [rotation] is read straight from the caller's own draw phase (see
- * [rememberAtmosphereSpin]); [colors] is handed in the same way as
- * [AtmosphereBackground]'s own (see this file's top comment).
+ * through a Compose layout node (unlike Glass, Atmosphere never needs a real
+ * blur, so there's no need for a separate graphics layer here the way
+ * [GlassRingBackground] needs one). [rotation] is read straight from the
+ * caller's own draw phase (see [rememberAtmosphereSpin]); [colors] is handed
+ * in the same way as [AtmosphereBackground]'s own (see this file's top
+ * comment).
+ *
+ * Draws no rim of its own -- unlike Glass, which lights its ring's edge to
+ * match its own beam, Atmosphere leaves that to VolumeDisc's ordinary
+ * outline strokes (the disc face's own inner border, and the ring's plain
+ * outer one), the same as Solid mode already does. A beam-lit glass edge on
+ * a panel with no beam of its own read as a mismatched leftover from Glass.
  */
 fun DrawScope.drawAtmosphereRing(
     baseColor: Color,
@@ -219,8 +241,7 @@ fun DrawScope.drawAtmosphereRing(
     center: Offset,
     ringRadius: Float,
     ringWidth: Float,
-    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
-    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
+    grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT
 ) {
     val outerRadius = ringRadius + ringWidth / 2f
     val innerRadius = (ringRadius - ringWidth / 2f).coerceAtLeast(0f)
@@ -245,18 +266,11 @@ fun DrawScope.drawAtmosphereRing(
     }
 
     clipPath(ring) {
-        val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), rotation)
+        val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), rotation, grainIntensity)
         if (brush != null) {
             drawRect(brush, alpha = baseColor.alpha)
         } else {
             drawRect(baseColor)
         }
-        // Same finishing touch as drawGlassRing's own rim, lit by the same
-        // beam so switching between the two effects doesn't move the light.
-        drawPath(
-            ring,
-            brush = glassEdgeLightBrush(lightAngle, lightWidth),
-            style = Stroke(width = 1.5.dp.toPx())
-        )
     }
 }
