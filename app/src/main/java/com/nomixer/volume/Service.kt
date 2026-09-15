@@ -259,22 +259,21 @@ class Service : AccessibilityService() {
                         targetValue = if (showBackground) {
                             Color.Transparent
                         } else {
-                            MaterialTheme.colorScheme.background.copy(alpha = preferences.shadowAlpha())
+                            Color.Black.copy(alpha = preferences.shadowAlpha())
                         },
                         animationSpec = Motion.ColorShift,
                         label = "mixerSliderShadow"
                     )
-                    // The panel's own light shadow around its outer edge --
-                    // same [PANEL_SHADOW_ELEVATION_DP]/[softShadow] pair the
+                    // The panel's own shadow around its outer edge -- same
+                    // [PANEL_SHADOW_ELEVATION_DP]/[softShadow] pair the
                     // collapsed bar styles already use, applied here to the
                     // mixer's own Surface instead: unlike [sliderShadowColor]
                     // above, it only matters while there's a panel to sit
                     // behind (showBackground off already moves the shadow
-                    // onto each slider individually).
+                    // onto each slider individually). Black, for the same
+                    // reason CollapsedVolumePopup's own is.
                     val panelShadowColor by animateColorAsState(
-                        targetValue = MaterialTheme.colorScheme.background.copy(
-                            alpha = preferences.shadowAlpha()
-                        ),
+                        targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
                         animationSpec = Motion.ColorShift,
                         label = "mixerPanelShadow"
                     )

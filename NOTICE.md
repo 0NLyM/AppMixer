@@ -1205,5 +1205,36 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   grain, blur and rim light, which is what it had really been doing all
   along. The Blur slider no longer hides behind that switch.
 
+## 2026-09-15 — 1.0.46
+
+- The glass beam is now light rather than a hole in the tint. It used to
+  thin the sheet where the beam landed, which only reads as light when
+  whatever is behind the panel is brighter than the tint -- over a dark
+  background the same gradient read as a *shadow*, exactly backwards. The
+  tint is now even everywhere and white light is added along the beam, so it
+  brightens over any background.
+- Fixed the flat rectangle visible inside the panel, most obviously in the
+  expanded mixer: the blur used `TileMode.Decal`, which treats everything
+  past the layer's bounds as transparent and so faded the tint out over the
+  blur's whole radius at every edge, leaving a visible inset edge that far
+  in. It now clamps instead, carrying the edge pixels outward.
+- The panel shadow is black instead of the theme's own background color. A
+  shadow tinted the same color as the panel it sits behind is invisible
+  against any background near that color -- a white shadow on a white page --
+  which is how a switched-on shadow kept looking switched off.
+- Dropped the fixed diagonal sheen from the glass grain: it was a second
+  light direction, unrelated to the beam and quietly working against it.
+- Atmosphere now *turns*. The grain field is wound around the panel's center
+  and rotates through about 120 degrees as the popup appears, decelerating
+  into stillness, instead of reshuffling itself every frame -- which read as
+  static going in all directions at once rather than as one thing moving.
+- Atmosphere's two colors now come from the wallpaper behind the popup
+  (`WallpaperManager.getWallpaperColors`) rather than the panel's own tint,
+  falling back to the tint when the platform won't report them. This is as
+  close to sampling the pixels under the popup as is possible without the
+  screenshot capability the platform refuses on some devices (see the 1.0.45
+  entry): wallpaper colors need no permission, but they describe the
+  wallpaper rather than whatever app happens to be on screen.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

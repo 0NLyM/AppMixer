@@ -338,10 +338,13 @@ fun CollapsedVolumePopup(
     // it has one, or the ringer button and slider individually once
     // [showBackground] turns that panel off entirely -- independent of the
     // panel's Translucent/Solid fill either way.
+    // Black rather than the theme's own background color, which is what this
+    // used to be: a shadow tinted the same color as the panel it sits behind
+    // is invisible against any background close to that color -- a white
+    // shadow on a white page, a red one on a red page -- which is exactly
+    // how a switched-on shadow ended up looking switched off.
     val shadow by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.background.copy(
-            alpha = preferences.shadowAlpha()
-        ),
+        targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
         animationSpec = Motion.ColorShift,
         label = "popupShadow"
     )

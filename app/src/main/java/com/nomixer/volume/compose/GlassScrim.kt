@@ -41,40 +41,43 @@ import kotlin.math.sin
  *
  * Everything here hangs off one idea: a single beam of light crossing the
  * panel at [GLASS_LIGHT_ANGLE_DEFAULT] (and as wide as
- * [GLASS_LIGHT_WIDTH_DEFAULT]), both user-adjustable. The sheet is thinnest
- * -- so lightest -- where that beam lands and thickens away from it, and the
- * rim catches the same beam at the same two points it crosses the shape's
- * own edge. Tint and rim reading off one shared axis is what makes it look
- * lit rather than merely shaded: a gradient running one way with a rim lit
- * the other is the giveaway that neither is really a light.
+ * [GLASS_LIGHT_WIDTH_DEFAULT]), both user-adjustable. White light is added
+ * along that beam, and the rim catches the same beam at the same two points
+ * it crosses the shape's own edge. Face and rim reading off one shared axis
+ * is what makes it look lit rather than merely shaded: a gradient running
+ * one way with a rim lit the other is the giveaway that neither is really a
+ * light.
  *
  * Painted in order, behind the panel's own content:
- * 1. The beam-lit tint ([glassScrimBrush]), a sheet of the panel's own base
- *    color that thins where the light crosses it.
- * 2. A subtle AGSL grain ([glassNoiseBrush]), the way real frosted glass
+ * 1. An even sheet of the panel's own base color -- the same opacity
+ *    everywhere, so nothing about the tint alone depends on what's behind
+ *    it.
+ * 2. The beam itself ([glassBeamBrush]), white light added across the face.
+ * 3. A subtle AGSL grain ([glassNoiseBrush]), the way real frosted glass
  *    never tints perfectly evenly -- a couple of ops per pixel, sampling
  *    nothing.
- * 3. Both of the above, optionally run through a real blur
+ * 4. All of the above, optionally run through a real blur
  *    ([GlassBackground]'s own `blurRadius`) -- blurring the grain alone
  *    already reads as frost.
- * 4. The same beam again along the shape's own edge ([glassEdgeLightBrush]),
- *    brightest exactly where the lit band of the tint reaches the rim.
+ * 5. The same beam again along the shape's own edge ([glassEdgeLightBrush]),
+ *    brightest exactly where the face's lit band reaches the rim.
  */
 private const val NOISE_SHADER_SRC = """
     uniform float2 resolution;
 
     half4 main(float2 fragCoord) {
-        float2 uv = fragCoord / resolution;
         float n = fract(sin(dot(fragCoord, float2(12.9898, 78.233))) * 43758.5453);
-        float sheen = uv.x * 0.5 + uv.y * 0.5;
+        // Even across the whole sheet on purpose: this used to carry its own
+        // top-left-to-bottom-right sheen, a second light direction that had
+        // nothing to do with the beam and quietly worked against it.
         float a = 0.035 + n * 0.03;
-        return half4(1.0, 1.0, 1.0, a * (0.5 + sheen * 0.5));
+        return half4(1.0, 1.0, 1.0, a);
     }
 """
 
 /**
  * A gradient laid along the light beam's own axis rather than the panel's
- * diagonal, so [glassScrimBrush] and [glassEdgeLightBrush] can be turned
+ * diagonal, so [glassBeamBrush] and [glassEdgeLightBrush] can be turned
  * together and stay one beam. Resolved per draw ([createShader] is handed
  * the real size) because the axis depends on the shape it crosses, which a
  * fixed-offset [Brush.linearGradient] can't know.
@@ -107,30 +110,44 @@ private fun beamStops(width: Float): List<Float> {
     return listOf(0f, 0.5f - half, 0.5f, 0.5f + half, 1f)
 }
 
-/**
- * The tinted sheet: thinnest (so lightest) right along the beam, thickening
- * either side of it. See [glassNoiseBrush] for the grain on top of it, and
- * [glassEdgeLightBrush] for the same beam caught at the rim.
- */
-fun glassScrimBrush(
-    baseColor: Color,
-    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
-    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
-): Brush {
-    val unlit = baseColor.copy(alpha = (baseColor.alpha * 1.6f).coerceAtMost(1f))
-    val lit = baseColor.copy(alpha = baseColor.alpha * 0.45f)
-    return BeamBrush(
-        angleDegrees = lightAngle,
-        colors = listOf(unlit, baseColor, lit, baseColor, unlit),
-        stops = beamStops(lightWidth)
-    )
-}
+/** Peak brightness of the beam across the panel's face, and along its rim. */
+private const val FACE_LIGHT_ALPHA = 0.26f
+private const val EDGE_LIGHT_ALPHA = 0.55f
 
 /**
- * The rim light: the same beam as [glassScrimBrush], on the same axis and
- * with the same band, so the edge is brightest exactly where the tint's own
+ * The beam across the glass's own face: white light *added* along it, over a
+ * tint that stays exactly as opaque everywhere.
+ *
+ * That's deliberate, and it's the difference between light and a hole. This
+ * used to vary the tint's alpha instead -- thinning the sheet where the beam
+ * landed -- which only reads as light when whatever is behind the panel is
+ * brighter than the tint. Over a dark background a thinner sheet reads as a
+ * *shadow*, exactly backwards. Added white always brightens, whatever is
+ * behind it.
+ */
+fun glassBeamBrush(
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    peakAlpha: Float = FACE_LIGHT_ALPHA
+): Brush = BeamBrush(
+    angleDegrees = lightAngle,
+    colors = listOf(
+        Color.Transparent,
+        Color.White.copy(alpha = peakAlpha * 0.3f),
+        Color.White.copy(alpha = peakAlpha),
+        Color.White.copy(alpha = peakAlpha * 0.3f),
+        Color.Transparent
+    ),
+    stops = beamStops(lightWidth)
+)
+
+/**
+ * The rim light: the same beam as [glassBeamBrush], on the same axis and
+ * with the same band, so the edge is brightest exactly where the face's own
  * lit band runs off it -- one light crossing the glass rather than two
- * unrelated gradients.
+ * unrelated gradients. Brighter at its peak than the face, since it only has
+ * a hairline to show itself in, and never quite reaching nothing at the ends
+ * so the shape keeps an edge all the way round.
  */
 fun glassEdgeLightBrush(
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
@@ -139,11 +156,11 @@ fun glassEdgeLightBrush(
 ): Brush = BeamBrush(
     angleDegrees = lightAngle,
     colors = listOf(
-        Color.White.copy(alpha = 0.02f * strength),
-        Color.White.copy(alpha = 0.12f * strength),
-        Color.White.copy(alpha = 0.38f * strength),
-        Color.White.copy(alpha = 0.12f * strength),
-        Color.White.copy(alpha = 0.02f * strength)
+        Color.White.copy(alpha = 0.04f * strength),
+        Color.White.copy(alpha = 0.18f * strength),
+        Color.White.copy(alpha = EDGE_LIGHT_ALPHA * strength),
+        Color.White.copy(alpha = 0.18f * strength),
+        Color.White.copy(alpha = 0.04f * strength)
     ),
     stops = beamStops(lightWidth)
 )
@@ -158,7 +175,7 @@ private var noiseBrushBroken = false
 
 /**
  * The AGSL grain/sheen layer, sized to [size] -- draw it right on top of
- * [glassScrimBrush]'s own fill. Null if [RuntimeShader] can't be built on
+ * the tint and [glassBeamBrush]. Null if [RuntimeShader] can't be built on
  * this device (a bad driver, an AGSL feature it doesn't actually support
  * despite the API level) -- a caller must treat that as "skip the grain",
  * never let it take the base tint down with it, which a construction
@@ -223,8 +240,15 @@ fun GlassBackground(
             .then(
                 if (blurRadius > 0.dp) {
                     Modifier.graphicsLayer {
+                        // Clamp, never Decal: Decal treats everything past
+                        // the layer's own bounds as transparent, so the blur
+                        // faded the tint out over its whole radius at every
+                        // edge and left a visibly flat rectangle inset that
+                        // far into the panel. Clamp carries the edge pixels
+                        // outward instead, so the sheet stays even right up
+                        // to the rim.
                         renderEffect = BlurEffect(
-                            blurRadius.toPx(), blurRadius.toPx(), TileMode.Decal
+                            blurRadius.toPx(), blurRadius.toPx(), TileMode.Clamp
                         )
                     }
                 } else {
@@ -232,9 +256,10 @@ fun GlassBackground(
                 }
             )
             .drawWithCache {
-                val tint = glassScrimBrush(baseColor, lightAngle, lightWidth)
+                val beam = glassBeamBrush(lightAngle, lightWidth)
                 onDrawBehind {
-                    drawRect(tint)
+                    drawRect(baseColor)
+                    drawRect(beam)
                     // Wrapped on its own: a broken noise shader (see
                     // glassNoiseBrush) must never take the tint down with
                     // it -- that shared fate is exactly what made the whole
@@ -291,7 +316,8 @@ fun DrawScope.drawGlassRing(
     }
 
     clipPath(ring) {
-        drawRect(glassScrimBrush(baseColor, lightAngle, lightWidth))
+        drawRect(baseColor)
+        drawRect(glassBeamBrush(lightAngle, lightWidth))
         // Same isolation as GlassBackground: the tint must show even if the
         // noise shader fails.
         try {

@@ -173,10 +173,11 @@ fun VolumeDisc(
     var dragging by remember { mutableStateOf(false) }
     val fill = remember { Animatable(targetFraction) }
 
-    // Unconditional even though only Atmosphere mode ever uses it, and it
-    // costs nothing while unused: a settled seed that never changes again
-    // once its own brief coroutine finishes.
-    val atmosphereSeed = rememberAtmosphereSeed()
+    // Unconditional even though only Atmosphere mode ever uses them, and
+    // they cost nothing while unused: one turn that finishes and then holds,
+    // and one wallpaper read that happens once.
+    val atmosphereSpin = rememberAtmosphereSpin()
+    val atmosphereColors = rememberAtmosphereColors(trackBackingColor.copy(alpha = 1f))
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
@@ -299,7 +300,8 @@ fun VolumeDisc(
                 } else if (trackBackingAtmosphere) {
                     drawAtmosphereRing(
                         baseColor = trackBackingColor,
-                        seed = atmosphereSeed,
+                        colors = atmosphereColors,
+                        rotation = atmosphereSpin.value,
                         center = center,
                         ringRadius = ringRadius,
                         ringWidth = ringWidth,

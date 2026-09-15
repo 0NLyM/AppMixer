@@ -1,15 +1,16 @@
 package com.nomixer.volume.compose
 
+import android.app.WallpaperManager
 import android.graphics.RuntimeShader
 import android.util.Log
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -24,18 +25,28 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
-import kotlin.random.Random
 
 /**
  * The Atmosphere background: a Nothing-OS-flavoured alternative to
- * [GlassBackground]'s lit glass and a flat Solid fill. It generates its own
- * texture straight from the panel's own base color -- a burst of grain that
- * flickers for [ATMOSPHERE_SETTLE_MILLIS] and then holds perfectly still,
- * the way Nothing's own wallpaper generator resolves a field of static into
- * one fixed image instead of animating forever or simply cutting to a still.
+ * [GlassBackground]'s lit glass and a flat Solid fill. A field of coarse
+ * grain, wound around the panel's own center, that *turns* through
+ * [ATMOSPHERE_TURN_RADIANS] as the popup appears and then holds perfectly
+ * still -- the rotation is the whole character of it, the way Nothing's own
+ * generator sweeps a field around rather than boiling it in place. An
+ * earlier pass reshuffled the noise every frame instead, which read as
+ * static going in every direction at once rather than one thing moving.
+ *
+ * Its two colors come from the wallpaper underneath
+ * ([rememberAtmosphereColors]) when the platform will hand them over, so the
+ * grain is made of what's actually behind the popup rather than the panel's
+ * own tint. That is as close to "sample the pixels under the slider" as this
+ * app can get without the screenshot capability the platform refuses on some
+ * devices (see NOTICE.md); when the colors aren't available it falls back to
+ * the panel color and nothing else changes.
  *
  * No real blur or separate graphics layer needed here, unlike
  * [GlassBackground]: there's nothing to keep out of the panel's own content,
@@ -45,30 +56,47 @@ import kotlin.random.Random
  */
 private const val ATMOSPHERE_SHADER_SRC = """
     uniform float2 resolution;
-    uniform float seed;
-    uniform float3 tint;
+    uniform float rotation;
+    uniform float3 colorA;
+    uniform float3 colorB;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
     }
 
     half4 main(float2 fragCoord) {
-        float2 uv = fragCoord / resolution;
-        float2 cell = fragCoord + seed;
-        float n1 = hash(cell);
-        float n2 = hash(cell * 1.37 + 91.7);
-        float grain = mix(n1, n2, 0.5);
-        // Same diagonal sheen glassScrimBrush uses, so the grain reads as
-        // lit from one side instead of a perfectly flat field.
-        float sheen = uv.x * 0.5 + uv.y * 0.5;
-        float shade = 0.55 + grain * 0.55;
-        float3 color = tint * shade * (0.75 + sheen * 0.25);
+        float2 center = resolution * 0.5;
+        float2 p = fragCoord - center;
+
+        // One rigid turn of the whole field about the panel's center: every
+        // sample below reads off these rotated coordinates, so the grain and
+        // the color sweep travel together instead of each wandering off.
+        float s = sin(rotation);
+        float c = cos(rotation);
+        float2 turned = float2(p.x * c - p.y * s, p.x * s + p.y * c);
+
+        // The coarse sweep: the two colors wound around the center, pulled
+        // outward a little with radius so it spirals rather than pinwheels.
+        float longest = max(resolution.x, resolution.y);
+        float angle = atan(turned.y, turned.x);
+        float radius = length(turned) / longest;
+        float sweep = fract(angle / 6.2831853 + radius * 0.9 + 1.0);
+        float band = 0.5 - 0.5 * cos(sweep * 6.2831853);
+
+        // Grain in chunky cells rather than per pixel, so it reads as
+        // actual grain at a glance instead of sensor noise.
+        float2 cell = floor(turned * 1.7);
+        float grain = hash(cell) * 0.55 + hash(cell * 1.37 + 19.7) * 0.45;
+
+        float3 color = mix(colorA, colorB, clamp(band + (grain - 0.5) * 0.5, 0.0, 1.0));
+        color = color * (0.74 + grain * 0.48);
         return half4(color, 1.0);
     }
 """
 
-/** How long the grain keeps reshuffling before it holds still. */
-private const val ATMOSPHERE_SETTLE_MILLIS = 550L
+/** How far the field turns while settling, and how long it takes to get there. */
+private const val ATMOSPHERE_TURN_RADIANS = 2.1f
+private const val ATMOSPHERE_SETTLE_MILLIS = 900
 
 // Same reasoning as GlassScrim's own noiseBrush cache: compiling AGSL is far
 // too expensive to redo whenever a panel appears. Unlike that cache this one
@@ -94,17 +122,22 @@ private fun atmosphereShaderOrNull(): RuntimeShader? {
 }
 
 /**
- * The grain brush for the current draw call, tinted from [baseColor] and
- * shaped by [seed] -- null if the shader can't run on this device at all,
- * in which case a caller should just fall back to a flat [baseColor] fill
- * rather than leaving the panel unpainted.
+ * The grain brush for the current draw call, made of [colors] and turned by
+ * [rotation] -- null if the shader can't run on this device at all, in which
+ * case a caller should just fall back to a flat fill rather than leaving the
+ * panel unpainted.
  */
-private fun DrawScope.atmosphereBrush(baseColor: Color, seed: Float): Brush? {
+private fun DrawScope.atmosphereBrush(
+    colors: Pair<Color, Color>,
+    rotation: Float
+): Brush? {
     val shader = atmosphereShaderOrNull() ?: return null
     return try {
+        val (first, second) = colors
         shader.setFloatUniform("resolution", size.width, size.height)
-        shader.setFloatUniform("seed", seed)
-        shader.setFloatUniform("tint", baseColor.red, baseColor.green, baseColor.blue)
+        shader.setFloatUniform("rotation", rotation)
+        shader.setFloatUniform("colorA", first.red, first.green, first.blue)
+        shader.setFloatUniform("colorB", second.red, second.green, second.blue)
         ShaderBrush(shader)
     } catch (e: Throwable) {
         Log.w("GlassScrim", "Atmosphere shader failed to update", e)
@@ -113,27 +146,62 @@ private fun DrawScope.atmosphereBrush(baseColor: Color, seed: Float): Brush? {
 }
 
 /**
- * A seed that reshuffles every frame for [ATMOSPHERE_SETTLE_MILLIS] and then
- * stops -- read directly in a draw phase (see [AtmosphereBackground] and
- * [drawAtmosphereRing]'s own callers), the same way [VolumeDisc] already
- * reads its fill animation's value straight in its Canvas, so the panel
- * repaints on every reshuffle without recomposing anything and then simply
- * stops repainting once the coroutine below finishes -- no lingering
- * animation to cancel, no per-frame cost once it's settled.
+ * The turn the field makes as the popup appears: from nothing to
+ * [ATMOSPHERE_TURN_RADIANS], decelerating, and then still for as long as the
+ * popup stays up.
+ *
+ * Handed back as the [Animatable] itself rather than its value so callers
+ * read it in their own draw phase (see [AtmosphereBackground] and
+ * [VolumeDisc]), the same way VolumeDisc already reads its fill animation:
+ * the panel repaints every frame of the turn without recomposing anything,
+ * and stops repainting by itself once the turn is over.
  */
 @Composable
-internal fun rememberAtmosphereSeed(): Float {
-    var seed by remember { mutableFloatStateOf(0f) }
+internal fun rememberAtmosphereSpin(): Animatable<Float, AnimationVector1D> {
+    val spin = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        val random = Random(System.nanoTime())
-        val start = withFrameNanos { it }
-        var now = start
-        while (now - start < ATMOSPHERE_SETTLE_MILLIS * 1_000_000L) {
-            seed = random.nextFloat() * 1000f
-            now = withFrameNanos { it }
-        }
+        spin.animateTo(
+            targetValue = ATMOSPHERE_TURN_RADIANS,
+            animationSpec = tween(ATMOSPHERE_SETTLE_MILLIS, easing = FastOutSlowInEasing)
+        )
     }
-    return seed
+    return spin
+}
+
+/**
+ * The two colors the grain is made of, read from the wallpaper sitting
+ * behind the popup, with [fallback] standing in whenever the platform won't
+ * say (no wallpaper colors yet, a live wallpaper that reports none, or a
+ * policy that refuses the call outright -- all of which are ordinary, so
+ * none of them are treated as errors).
+ *
+ * Read once per panel: wallpaper colors don't change while a volume popup is
+ * on screen, and re-reading them per frame would put a binder call in the
+ * draw path.
+ */
+@Composable
+internal fun rememberAtmosphereColors(fallback: Color): Pair<Color, Color> {
+    val context = LocalContext.current
+    // Keyed on the context alone, never on [fallback]: that one is an
+    // animated color, so keying on it would put a binder call on every frame
+    // of a background fade.
+    val sampled = remember(context) { wallpaperColors(context) }
+    return sampled ?: (fallback to fallback)
+}
+
+private fun wallpaperColors(context: android.content.Context): Pair<Color, Color>? {
+    val colors = try {
+        WallpaperManager.getInstance(context)?.getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
+    } catch (e: Throwable) {
+        Log.w("GlassScrim", "Wallpaper colors unavailable, tinting Atmosphere from the panel instead", e)
+        null
+    } ?: return null
+
+    val primary = Color(colors.primaryColor.toArgb())
+    val secondary = colors.secondaryColor?.let { Color(it.toArgb()) }
+        ?: colors.tertiaryColor?.let { Color(it.toArgb()) }
+        ?: primary
+    return primary to secondary
 }
 
 /**
@@ -149,13 +217,14 @@ fun AtmosphereBackground(
     baseColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val seed = rememberAtmosphereSeed()
+    val spin = rememberAtmosphereSpin()
+    val colors = rememberAtmosphereColors(baseColor.copy(alpha = 1f))
 
     Box(
         modifier
             .clip(shape)
             .drawBehind {
-                val brush = atmosphereBrush(baseColor, seed)
+                val brush = atmosphereBrush(colors, spin.value)
                 if (brush != null) {
                     drawRect(brush, alpha = baseColor.alpha)
                 } else {
@@ -167,14 +236,15 @@ fun AtmosphereBackground(
 
 /**
  * The same grain as [AtmosphereBackground], confined to a ring -- for
- * [VolumeDisc]'s own track, painted straight into its Canvas alongside
- * [drawGlassRing] rather than through a Compose layout node, same reasoning
- * as that function's own doc comment. [seed] is read straight from the
- * caller's own draw phase (see [rememberAtmosphereSeed]).
+ * [VolumeDisc]'s own track, painted straight into its Canvas rather than
+ * through a Compose layout node, same reasoning as [drawGlassRing]'s own doc
+ * comment. [rotation] and [colors] are read straight from the caller's own
+ * draw phase (see [rememberAtmosphereSpin] and [rememberAtmosphereColors]).
  */
 fun DrawScope.drawAtmosphereRing(
     baseColor: Color,
-    seed: Float,
+    colors: Pair<Color, Color>,
+    rotation: Float,
     center: Offset,
     ringRadius: Float,
     ringWidth: Float,
@@ -204,7 +274,7 @@ fun DrawScope.drawAtmosphereRing(
     }
 
     clipPath(ring) {
-        val brush = atmosphereBrush(baseColor, seed)
+        val brush = atmosphereBrush(colors, rotation)
         if (brush != null) {
             drawRect(brush, alpha = baseColor.alpha)
         } else {
