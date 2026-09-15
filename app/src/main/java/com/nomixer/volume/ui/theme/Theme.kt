@@ -18,7 +18,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.activeAccentColor
+import com.nomixer.volume.data.activeBackgroundColor
 import com.nomixer.volume.data.activeButtonCornerRadius
+import com.nomixer.volume.data.activeForegroundColor
+import com.nomixer.volume.data.activeOutlineColor
+import com.nomixer.volume.data.activeSurfaceColor
 
 /**
  * Corner radius every slider in the app reads, so the user's one radius
@@ -130,7 +135,7 @@ fun baseColorScheme(darkTheme: Boolean): ColorScheme =
 fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
     var scheme = this
 
-    preferences.backgroundColor?.let { argb ->
+    preferences.activeBackgroundColor()?.let { argb ->
         val color = Color(argb)
         scheme = scheme.copy(
             background = color,
@@ -143,7 +148,7 @@ fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
         }
     }
 
-    preferences.foregroundColor?.let { argb ->
+    preferences.activeForegroundColor()?.let { argb ->
         val color = Color(argb)
         // `primary` is what fills sliders and filled buttons, so the
         // foreground choice drives both text and those fills.
@@ -159,7 +164,7 @@ fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
         }
     }
 
-    preferences.surfaceColor?.let { argb ->
+    preferences.activeSurfaceColor()?.let { argb ->
         val color = Color(argb)
         scheme = scheme.copy(
             primaryContainer = color,
@@ -171,7 +176,7 @@ fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
         )
     }
 
-    preferences.accentColor?.let { argb ->
+    preferences.activeAccentColor()?.let { argb ->
         val color = Color(argb)
         scheme = scheme.copy(tertiary = color, tertiaryContainer = color)
         if (color.alpha > 0f) {
@@ -179,7 +184,7 @@ fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
         }
     }
 
-    preferences.outlineColor?.let { argb ->
+    preferences.activeOutlineColor()?.let { argb ->
         val color = Color(argb)
         scheme = scheme.copy(outline = color, outlineVariant = color)
     }

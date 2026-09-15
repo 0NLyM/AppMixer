@@ -32,9 +32,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
+import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
 import com.nomixer.volume.data.DISC_INSET
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
+import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
@@ -76,6 +78,14 @@ fun VolumeDisc(
     showDots: Boolean = true,
     /** Corner rounding of each tick: 0 is square, 50 is a full capsule. */
     tickCornerPercent: Int = 30,
+    /**
+     * `false` (default): a landmark tick (with two shorter neighbours) sits
+     * at a fixed slot nearest the fill's leading edge and grows there as the
+     * level changes -- the ticks themselves never move. `true`: the whole
+     * ring of ticks turns together like a real knob, one fixed tick always
+     * riding the fill's own leading edge as it turns.
+     */
+    tickRotatingKnob: Boolean = false,
     /**
      * Rounds off the ends of the value arc and its outline, so a
      * part-filled ring finishes in a capped tip rather than a squared-off
@@ -133,6 +143,12 @@ fun VolumeDisc(
      */
     grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
     /**
+     * How large each Atmosphere grain fleck reads, ignored unless
+     * [trackBackingAtmosphere] -- see [drawAtmosphereRing]'s own parameter
+     * of the same name.
+     */
+    grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT,
+    /**
      * Which way the light crossing the ring runs, and how broad its lit band
      * is -- the same single beam the flat panels are lit by (see
      * [glassEdgeLightBrush]), so a disc and a bar-style panel agree on where
@@ -147,6 +163,13 @@ fun VolumeDisc(
      * layer of its own rather than being just another Canvas draw call.
      */
     blurRadius: Dp = 0.dp,
+    /**
+     * Dedicated color and transparency for the glass noise layer, ignored
+     * unless [trackBackingGlass] -- see [GlassRingBackground]'s own
+     * parameters of the same names.
+     */
+    noiseColor: Color = Color.White,
+    noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -240,6 +263,8 @@ fun VolumeDisc(
                 blurRadius = blurRadius,
                 lightAngle = lightAngle,
                 lightWidth = lightWidth,
+                noiseColor = noiseColor,
+                noiseAlpha = noiseAlpha,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -360,7 +385,8 @@ fun VolumeDisc(
                         center = center,
                         ringRadius = ringRadius,
                         ringWidth = ringWidth,
-                        grainIntensity = grainIntensity
+                        grainIntensity = grainIntensity,
+                        grainSize = grainSize
                     )
                 } else {
                     drawArc(
@@ -458,25 +484,18 @@ fun VolumeDisc(
             }
 
             if (showDots) {
-                // A knob's own marks. Every one of them stays on screen at
-                // every level: they're spread across the *visible* arc and
-                // stay put there, so a laterally-cut disc shows its whole
-                // ring of ticks rather than turning most of them off the
-                // edge. What moves is the landmark -- the longest tick, with
-                // its two shorter neighbours -- which rides the fill's own
-                // leading edge, so the level still reads off the ring at a
-                // glance.
+                // A knob's own marks, always spread across the *complete*
+                // 360deg circle, evenly spaced -- never remapped onto
+                // whatever's left of a laterally-cut disc the way the value
+                // arc/outline above are. A physical knob mounted partway
+                // behind a bezel still has a whole wheel of ticks; the
+                // screen edge just covers some of them, exactly like the
+                // bezel would, rather than the wheel itself shrinking to
+                // fit what's left on screen.
                 val tickOrbit = ringRadius - ringWidth * 0.95f
                 val tickLength = radius * 0.05f
                 val tickThickness = radius * 0.028f
-                // A complete circle closes on itself, so its last tick sits
-                // one step short of the start (step 24 *is* step 0); a cut
-                // arc has two real ends instead, and wants a tick on each of
-                // them.
-                val tickDivisions = if (ringIsClipped) TICK_COUNT - 1 else TICK_COUNT
-                val tickStep = visibleSweepAngle / tickDivisions
-                val landmarkIndex =
-                    ((Math.round(fraction * tickDivisions) % TICK_COUNT) + TICK_COUNT) % TICK_COUNT
+                val tickStep = -fullSweep / TICK_COUNT
                 // The shared outer boundary every tick's own outer end sits
                 // on, worked out from the base (non-landmark) length -- so a
                 // landmark tick's extra length grows inward, toward the
@@ -484,16 +503,22 @@ fun VolumeDisc(
                 // ticks end.
                 val tickOuterRadius = tickOrbit + tickLength / 2f
 
+                // Rotating-knob mode turns the whole ring so tick 0 always
+                // rides the fill's own leading edge, like a real knob being
+                // turned. The default instead leaves every tick's own slot
+                // fixed and grows whichever one is nearest the level.
+                val ringRotation = if (tickRotatingKnob) (-fullSweep) * fraction else 0f
+                val landmarkIndex = if (tickRotatingKnob) {
+                    0
+                } else {
+                    ((Math.round(fraction * TICK_COUNT) % TICK_COUNT) + TICK_COUNT) % TICK_COUNT
+                }
+
                 for (index in 0 until TICK_COUNT) {
                     val rawDistance = abs(index - landmarkIndex)
-                    // A cut arc's two ends are opposite sides of the screen,
-                    // not neighbours, so only a closed circle counts the
-                    // short way round.
-                    val distanceFromLandmark = if (ringIsClipped) {
-                        rawDistance
-                    } else {
-                        min(rawDistance, TICK_COUNT - rawDistance)
-                    }
+                    // A complete circle closes on itself, so the short way
+                    // round can go through either end.
+                    val distanceFromLandmark = min(rawDistance, TICK_COUNT - rawDistance)
                     // The middle adjacent step sits exactly halfway between
                     // the landmark and a normal tick, so the size actually
                     // reads as a taper rather than two arbitrary sizes.
@@ -510,7 +535,7 @@ fun VolumeDisc(
                     val thickness = tickThickness
                     val cornerRadiusPx = (min(length, thickness) / 2f) * (tickCornerPercent / 50f)
 
-                    val angle = visibleStartAngle + tickStep * index
+                    val angle = startAngle + tickStep * index + ringRotation
                     val radians = Math.toRadians(angle.toDouble())
                     val tickCenterRadius = tickOuterRadius - length / 2f
                     val tickCenter = Offset(

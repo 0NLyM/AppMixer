@@ -48,8 +48,10 @@ import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupCenterContent
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.activeAnchor
 import com.nomixer.volume.data.activeBackground
 import com.nomixer.volume.data.activeButtonCornerRadius
+import com.nomixer.volume.data.activeOffsetX
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
@@ -247,20 +249,20 @@ fun CollapsedVolumePopup(
     // window half-width (the disc plus its own panel margin, not just the
     // disc alone) -- so this content-layer math and the real window's own
     // position always agree on where the cut line actually is.
-    val discIsLateral = isDisc && preferences.popupAnchor in setOf(
+    val discIsLateral = isDisc && preferences.activeAnchor() in setOf(
         PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart,
         PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd
     )
     // Shared by both centerContentOffsetX and ringCutOffsetX below -- both
     // need the same window-edge math, just applied to a different point
     // (the switch/label vs. the ring's own track).
-    val discOutwardSign = when (preferences.popupAnchor) {
+    val discOutwardSign = when (preferences.activeAnchor()) {
         PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
         else -> -1
     }
     val discOverhang = if (discIsLateral) {
         val revealFraction =
-            (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
+            (preferences.activeOffsetX().toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
         val windowHalfWidth = discPanelCornerRadius
         val edgeGap = DISC_EDGE_GAP_DP.dp
         (windowHalfWidth - (windowHalfWidth + edgeGap) * revealFraction).coerceAtLeast(0.dp)
@@ -372,7 +374,7 @@ fun CollapsedVolumePopup(
         direction = if (preferences.popupStyle == PopupStyle.HorizontalBar) {
             0
         } else {
-            preferences.popupAnchor.expandDirection()
+            preferences.activeAnchor().expandDirection()
         },
         onExpand = onExpand
     )
@@ -404,6 +406,8 @@ fun CollapsedVolumePopup(
                 blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                 lightAngle = preferences.glassLightAngle,
                 lightWidth = preferences.glassLightWidth,
+                noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
+                noiseAlpha = preferences.glassNoiseAlpha,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -413,6 +417,7 @@ fun CollapsedVolumePopup(
                 baseColor = panelColor,
                 colors = atmosphereColors,
                 grainIntensity = preferences.atmosphereGrainIntensity,
+                grainSize = preferences.atmosphereGrainSize,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -597,6 +602,7 @@ fun CollapsedVolumePopup(
                         gestureModifier = expandSwipeModifier,
                         showDots = preferences.discShowDots,
                         tickCornerPercent = preferences.discTickCornerPercent,
+                        tickRotatingKnob = preferences.discTickRotatingKnob,
                         ringRoundEnds = preferences.discRingRoundEnds,
                         // Gated by showBackground too, not just the shadow
                         // switch alone: unlike a bar (which moves this same
@@ -616,9 +622,12 @@ fun CollapsedVolumePopup(
                         trackBackingAtmosphere = panelAtmosphere,
                         atmosphereColors = atmosphereColors,
                         grainIntensity = preferences.atmosphereGrainIntensity,
+                        grainSize = preferences.atmosphereGrainSize,
                         lightAngle = preferences.glassLightAngle,
                         lightWidth = preferences.glassLightWidth,
                         blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
+                        noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
+                        noiseAlpha = preferences.glassNoiseAlpha,
                         icon = if (showIcon) volumeIcon else null,
                         label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer

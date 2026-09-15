@@ -34,13 +34,8 @@
     <string name="reset">重置</string>
     <string name="color_default">默认（#%s）</string>
 
-    <string name="theme">主题</string>
-    <string name="theme_mode">主题模式</string>
-    <string name="theme_system">跟随系统</string>
-    <string name="theme_dark">深色</string>
-    <string name="theme_light">浅色</string>
-
     <string name="colors">颜色</string>
+    <string name="colors_description">每种弹窗样式相互独立：竖向滑块、横向滑块和圆盘各自保留自己的配色。</string>
     <string name="color_accent">强调色</string>
     <string name="color_background">背景</string>
     <string name="color_foreground">文字与填充</string>
@@ -57,6 +52,7 @@
     <string name="style_disc">圆盘</string>
 
     <string name="popup_position">位置</string>
+    <string name="popup_position_description">每种弹窗样式相互独立：竖向滑块、横向滑块和圆盘各自保留自己的位置和偏移。</string>
     <string name="offset_horizontal">水平偏移</string>
     <string name="offset_vertical">垂直偏移</string>
 
@@ -71,8 +67,11 @@
     <string name="glass_light_angle">光线角度</string>
     <string name="glass_light_width">光线宽度</string>
     <string name="glass_light_description">一束光穿过玻璃：光线落处会叠加白色高光，边缘也在同样的两处被照亮，因而看起来是同一束光。</string>
+    <string name="glass_noise_color">噪点颜色</string>
+    <string name="glass_noise_alpha">噪点透明度</string>
     <string name="atmosphere_grain_intensity">颗粒强度</string>
-    <string name="atmosphere_description">一片取自滑块下方应用的彩色颗粒，先短暂旋转，然后定格为滑块背后的固定纹理。</string>
+    <string name="atmosphere_grain_size">颗粒大小</string>
+    <string name="atmosphere_description">一片取自滑块下方应用的彩色颗粒，先短暂旋转，然后定格为滑块背后的固定纹理。与玻璃不同，氛围效果始终完全不透明。</string>
     <string name="show_value">显示音量值</string>
     <string name="show_icon">显示图标</string>
     <string name="bar_center_content">滑块中央内容</string>
@@ -82,9 +81,10 @@
     <string name="disc_ring_round_ends">圆角环端</string>
     <string name="disc_dots">显示刻度环</string>
     <string name="disc_tick_corner">刻度圆角半径</string>
+    <string name="disc_tick_rotating_knob">旋钮旋转动画</string>
     <string name="disc_hint">贴靠屏幕边缘时，圆盘会随着水平偏移增大从边缘向内逐渐显露，直至完整圆盘；位于中间一列时始终为完整圆盘。上下拖动即可调节音量。</string>
     <string name="popup_background">背景</string>
-    <string name="popup_background_description">面板是受光玻璃、生成颗粒还是纯色填充，以及该效果的强弱。玻璃与氛围颗粒的颜色和不透明度均取自上方的背景色。不会改变圆盘自身的圆环颜色。</string>
+    <string name="popup_background_description">面板是受光玻璃、生成颗粒还是纯色填充，以及该效果的强弱。玻璃的颜色和不透明度取自上方的背景色；氛围颗粒的颜色也取自背景色，但始终完全不透明。不会改变圆盘自身的圆环颜色。</string>
     <string name="popup_show_background">显示背景</string>
     <string name="background_translucent">玻璃</string>
     <string name="background_solid">纯色</string>

@@ -10,7 +10,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
@@ -74,7 +76,10 @@ import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupStyle
+import com.nomixer.volume.data.activeAnchor
 import com.nomixer.volume.data.activeBackground
+import com.nomixer.volume.data.activeOffsetX
+import com.nomixer.volume.data.activeOffsetY
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
@@ -352,7 +357,7 @@ class Service : AccessibilityService() {
                     // jumped to the full mixer's size before the mixer had
                     // faded in. Swapping outright and animating only what's
                     // on screen keeps the window's own size a single step.
-                    val origin = preferences.popupAnchor.transformOrigin()
+                    val origin = preferences.activeAnchor().transformOrigin()
 
                     key(expanded) {
                         val appear = remember { Animatable(0f) }
@@ -406,6 +411,8 @@ class Service : AccessibilityService() {
                                             blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                                             lightAngle = preferences.glassLightAngle,
                                             lightWidth = preferences.glassLightWidth,
+                                            noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
+                                            noiseAlpha = preferences.glassNoiseAlpha,
                                             modifier = Modifier.matchParentSize()
                                         )
                                     }
@@ -415,6 +422,7 @@ class Service : AccessibilityService() {
                                             baseColor = panelColor,
                                             colors = atmosphereColorsState,
                                             grainIntensity = preferences.atmosphereGrainIntensity,
+                                            grainSize = preferences.atmosphereGrainSize,
                                             modifier = Modifier.matchParentSize()
                                         )
                                     }
@@ -595,7 +603,7 @@ class Service : AccessibilityService() {
         val preferences = manager.uiPreferences
         val density = resources.displayMetrics.density
 
-        params.gravity = when (preferences.popupAnchor) {
+        params.gravity = when (preferences.activeAnchor()) {
             PopupAnchor.TopStart -> Gravity.TOP or Gravity.START
             PopupAnchor.TopCenter -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
             PopupAnchor.TopEnd -> Gravity.TOP or Gravity.END
@@ -607,8 +615,8 @@ class Service : AccessibilityService() {
             PopupAnchor.BottomEnd -> Gravity.BOTTOM or Gravity.END
         }
 
-        params.x = (preferences.popupOffsetX * density).toInt()
-        params.y = (preferences.popupOffsetY * density).toInt()
+        params.x = (preferences.activeOffsetX() * density).toInt()
+        params.y = (preferences.activeOffsetY() * density).toInt()
     }
 
     /**
@@ -644,6 +652,46 @@ class Service : AccessibilityService() {
      * transition uses it to reveal the window only once it's actually
      * sitting in its final spot; see the call in `onExpand` below for why.
      */
+
+    /**
+     * Nudges a would-be position's own absolute top coordinate (screen
+     * space, same as [bounds] and the cutout's own bounding rects -- *not*
+     * the gravity-relative offset [WindowManager.LayoutParams.y] actually
+     * stores; the caller converts both ways) away from the display's camera
+     * cutout, so a vertical or horizontal slider (or a disc) never lands
+     * partly behind it -- landscape only. Portrait's own cutout sits in the
+     * status bar strip above where any collapsed popup ever lands, but
+     * landscape rotates that same cutout onto one of the screen's long
+     * edges, at whatever height the front camera physically is -- exactly
+     * the height a center-anchored popup would land at too, on the same
+     * side. Only ever moves the top coordinate: the cutout occupies a band
+     * across part of the vertical axis at a fixed horizontal edge, so
+     * clearing it is a vertical nudge, never a horizontal one.
+     *
+     * Shifts toward whichever side (above or below the cutout) leaves more
+     * room, then re-clamps within [bounds] so the nudge itself can never
+     * push the popup back off the opposite edge of the screen.
+     */
+    private fun avoidCameraCutout(absoluteLeft: Int, absoluteTop: Int, width: Int, height: Int, bounds: Rect): Int {
+        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
+            return absoluteTop
+        }
+
+        val cutouts = windowManager.currentWindowMetrics.windowInsets.displayCutout?.boundingRects
+        if (cutouts.isNullOrEmpty()) {
+            return absoluteTop
+        }
+
+        val popupRect = Rect(absoluteLeft, absoluteTop, absoluteLeft + width, absoluteTop + height)
+        val overlapping = cutouts.firstOrNull { Rect.intersects(it, popupRect) } ?: return absoluteTop
+
+        val roomAbove = overlapping.top
+        val roomBelow = bounds.height() - overlapping.bottom
+        val adjustedTop = if (roomBelow >= roomAbove) overlapping.bottom else overlapping.top - height
+
+        return adjustedTop.coerceIn(0, (bounds.height() - height).coerceAtLeast(0))
+    }
+
     private fun clampToScreenOnceLaidOut(target: View, expanded: Boolean, onPositioned: (() -> Unit)? = null) {
         target.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
@@ -683,7 +731,7 @@ class Service : AccessibilityService() {
                     val hiddenX = -(target.width / 2)
                     val revealedX = (DISC_EDGE_GAP_DP * density).toInt()
                     val revealFraction =
-                        (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
+                        (preferences.activeOffsetX().toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
                     (hiddenX + (revealedX - hiddenX) * revealFraction).roundToInt()
                 } else {
                     when (horizontalGravity) {
@@ -698,9 +746,33 @@ class Service : AccessibilityService() {
                     else -> layoutParams.y
                 }
 
-                if (clampedX != layoutParams.x || clampedY != layoutParams.y) {
+                // avoidCameraCutout works in absolute screen coordinates,
+                // the same space bounds and the cutout's own bounding rects
+                // are already in -- but LayoutParams.y (like .x) is relative
+                // to whichever edge (or center) the window's gravity is
+                // actually anchored to, so it's converted there and back
+                // around the call.
+                val absoluteLeft = when (horizontalGravity) {
+                    Gravity.LEFT -> clampedX
+                    Gravity.RIGHT -> bounds.width() - target.width - clampedX
+                    else -> (bounds.width() - target.width) / 2 + clampedX
+                }
+                val absoluteTop = when (verticalGravity) {
+                    Gravity.TOP -> clampedY
+                    Gravity.BOTTOM -> bounds.height() - target.height - clampedY
+                    else -> (bounds.height() - target.height) / 2 + clampedY
+                }
+                val adjustedAbsoluteTop =
+                    avoidCameraCutout(absoluteLeft, absoluteTop, target.width, target.height, bounds)
+                val cutoutAdjustedY = when (verticalGravity) {
+                    Gravity.TOP -> adjustedAbsoluteTop
+                    Gravity.BOTTOM -> bounds.height() - target.height - adjustedAbsoluteTop
+                    else -> adjustedAbsoluteTop - (bounds.height() - target.height) / 2
+                }
+
+                if (clampedX != layoutParams.x || cutoutAdjustedY != layoutParams.y) {
                     layoutParams.x = clampedX
-                    layoutParams.y = clampedY
+                    layoutParams.y = cutoutAdjustedY
                     windowManager.updateViewLayout(target, layoutParams)
                 }
                 onPositioned?.invoke()

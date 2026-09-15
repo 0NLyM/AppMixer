@@ -33,13 +33,8 @@
     <string name="reset">Reset</string>
     <string name="color_default">Default (#%s)</string>
 
-    <string name="theme">Theme</string>
-    <string name="theme_mode">Theme mode</string>
-    <string name="theme_system">System</string>
-    <string name="theme_dark">Dark</string>
-    <string name="theme_light">Light</string>
-
     <string name="colors">Colors</string>
+    <string name="colors_description">Independent per popup style: the vertical bar, horizontal bar and disc each keep their own palette.</string>
     <string name="color_accent">Accent</string>
     <string name="color_background">Background</string>
     <string name="color_foreground">Text and fills</string>
@@ -56,6 +51,7 @@
     <string name="style_disc">Disc</string>
 
     <string name="popup_position">Position</string>
+    <string name="popup_position_description">Independent per popup style: the vertical bar, horizontal bar and disc each keep their own anchor and offsets.</string>
     <string name="offset_horizontal">Horizontal offset</string>
     <string name="offset_vertical">Vertical offset</string>
     <string name="expanded_mixer_centered">Center expanded mixer</string>
@@ -72,8 +68,11 @@
     <string name="glass_light_angle">Light rotation</string>
     <string name="glass_light_width">Light width</string>
     <string name="glass_light_description">One beam of light crossing the glass: white light is added where it lands and the rim catches it at the same two points, so both read as the same light.</string>
+    <string name="glass_noise_color">Noise color</string>
+    <string name="glass_noise_alpha">Noise transparency</string>
     <string name="atmosphere_grain_intensity">Grain intensity</string>
-    <string name="atmosphere_description">A field of colored grain, seeded from whatever app is underneath, that turns for a moment and settles into one fixed pattern behind the sliders.</string>
+    <string name="atmosphere_grain_size">Grain size</string>
+    <string name="atmosphere_description">A field of colored grain, seeded from whatever app is underneath, that turns for a moment and settles into one fixed pattern behind the sliders. Always fully opaque, unlike Glass.</string>
     <string name="show_value">Show level</string>
     <string name="show_icon">Show icon</string>
     <string name="bar_center_content">Slider center</string>
@@ -83,10 +82,11 @@
     <string name="disc_ring_round_ends">Round ring ends</string>
     <string name="disc_dots">Show tick ring</string>
     <string name="disc_tick_corner">Tick corner radius</string>
+    <string name="disc_tick_rotating_knob">Rotating knob animation</string>
     <string name="disc_hint">Anchored to a screen edge the disc reveals itself from that edge inward as the horizontal offset grows, up to a full circle; anchored to the middle column it\'s always a full circle. Drag up or down to change the volume.</string>
     <string name="popup_background">Background</string>
     <string name="popup_background_bar">Bar background</string>
-    <string name="popup_background_description">Whether the panel is lit glass, generated grain or a plain fill, and how strong that effect is. Glass and Atmosphere both take their color — and how opaque they are — from the Background color above. Never changes the disc\'s own ring colors.</string>
+    <string name="popup_background_description">Whether the panel is lit glass, generated grain or a plain fill, and how strong that effect is. Glass takes its color — and how opaque it is — from the Background color above; Atmosphere takes its color from it too, but is always fully opaque. Never changes the disc\'s own ring colors.</string>
     <string name="popup_show_background">Show background</string>
     <string name="popup_show_background_bar">Show bar background</string>
     <string name="background_translucent">Glass</string>

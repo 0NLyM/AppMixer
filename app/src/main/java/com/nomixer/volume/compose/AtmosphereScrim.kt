@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
+import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
 
 /**
  * The Atmosphere background: a Nothing-OS-flavoured alternative to
@@ -61,6 +62,7 @@ private const val ATMOSPHERE_SHADER_SRC = """
     uniform float3 colorA;
     uniform float3 colorB;
     uniform float grainIntensity;
+    uniform float grainScale;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
@@ -86,8 +88,9 @@ private const val ATMOSPHERE_SHADER_SRC = """
         float band = 0.5 - 0.5 * cos(sweep * 6.2831853);
 
         // Grain in chunky cells rather than per pixel, so it reads as
-        // actual grain at a glance instead of sensor noise.
-        float2 cell = floor(turned * 1.7);
+        // actual grain at a glance instead of sensor noise. grainScale is
+        // the cell divisor itself -- smaller means coarser (bigger) flecks.
+        float2 cell = floor(turned * grainScale);
         float grain = hash(cell) * 0.55 + hash(cell * 1.37 + 19.7) * 0.45;
 
         // grainIntensity scales how much the grain perturbs both the color
@@ -135,19 +138,36 @@ private fun atmosphereShaderOrNull(): RuntimeShader? {
 }
 
 /**
+ * The finest and coarsest cell divisor [grainSize] maps to -- see
+ * [grainScaleFor]. Finer than [GRAIN_SCALE_COARSE]'s own end of the range
+ * still resolves as grain rather than a smooth wash; coarser than
+ * [GRAIN_SCALE_FINE]'s end stops reading as individual flecks at all.
+ */
+private const val GRAIN_SCALE_FINE = 1.8f
+private const val GRAIN_SCALE_COARSE = 0.25f
+
+/** Maps [grainSize] (0 finest, 1 coarsest) to the shader's own cell divisor. */
+private fun grainScaleFor(grainSize: Float): Float {
+    val t = grainSize.coerceIn(0f, 1f)
+    return GRAIN_SCALE_FINE + (GRAIN_SCALE_COARSE - GRAIN_SCALE_FINE) * t
+}
+
+/**
  * The grain brush for the current draw call, made of [colors] (falling back
  * to a single flat [fallback] color when there's nothing better -- see this
  * file's own doc comment), turned by [rotation] and textured by
  * [grainIntensity] (0 a smooth sweep with no grain at all, 1 the full
- * thing). Null if the shader can't run on this device at all, in which case
- * a caller should just fall back to a flat fill rather than leaving the
- * panel unpainted.
+ * thing) and [grainSize] (0 the finest fleck, 1 the coarsest -- see
+ * [grainScaleFor]). Null if the shader can't run on this device at all, in
+ * which case a caller should just fall back to a flat fill rather than
+ * leaving the panel unpainted.
  */
 private fun DrawScope.atmosphereBrush(
     colors: Pair<Color, Color>?,
     fallback: Color,
     rotation: Float,
-    grainIntensity: Float
+    grainIntensity: Float,
+    grainSize: Float
 ): Brush? {
     val shader = atmosphereShaderOrNull() ?: return null
     return try {
@@ -157,6 +177,7 @@ private fun DrawScope.atmosphereBrush(
         shader.setFloatUniform("colorA", first.red, first.green, first.blue)
         shader.setFloatUniform("colorB", second.red, second.green, second.blue)
         shader.setFloatUniform("grainIntensity", grainIntensity.coerceIn(0f, 1f))
+        shader.setFloatUniform("grainScale", grainScaleFor(grainSize))
         ShaderBrush(shader)
     } catch (e: Throwable) {
         Log.w("GlassScrim", "Atmosphere shader failed to update", e)
@@ -200,7 +221,8 @@ fun AtmosphereBackground(
     baseColor: Color,
     colors: Pair<Color, Color>?,
     modifier: Modifier = Modifier,
-    grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT
+    grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
+    grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT
 ) {
     val spin = rememberAtmosphereSpin()
 
@@ -208,7 +230,7 @@ fun AtmosphereBackground(
         modifier
             .clip(shape)
             .drawBehind {
-                val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), spin.value, grainIntensity)
+                val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), spin.value, grainIntensity, grainSize)
                 if (brush != null) {
                     drawRect(brush, alpha = baseColor.alpha)
                 } else {
@@ -241,7 +263,8 @@ fun DrawScope.drawAtmosphereRing(
     center: Offset,
     ringRadius: Float,
     ringWidth: Float,
-    grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT
+    grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
+    grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT
 ) {
     val outerRadius = ringRadius + ringWidth / 2f
     val innerRadius = (ringRadius - ringWidth / 2f).coerceAtLeast(0f)
@@ -266,7 +289,7 @@ fun DrawScope.drawAtmosphereRing(
     }
 
     clipPath(ring) {
-        val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), rotation, grainIntensity)
+        val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), rotation, grainIntensity, grainSize)
         if (brush != null) {
             drawRect(brush, alpha = baseColor.alpha)
         } else {

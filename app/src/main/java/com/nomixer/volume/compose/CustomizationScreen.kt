@@ -62,14 +62,18 @@ import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.ui.theme.Motion
 import com.nomixer.volume.ui.theme.PopupColors
+import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_MAX
+import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_MIN
 import com.nomixer.volume.data.BUTTON_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
@@ -82,6 +86,8 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MAX
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MIN
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MAX
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MIN
+import com.nomixer.volume.data.GLASS_NOISE_ALPHA_MAX
+import com.nomixer.volume.data.GLASS_NOISE_ALPHA_MIN
 import com.nomixer.volume.data.POPUP_BACKGROUND_OPACITY_MIN
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
@@ -91,24 +97,40 @@ import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.SLIDER_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.ThemeMode
 import com.nomixer.volume.data.UiPreferences
+import com.nomixer.volume.data.activeAccentColor
+import com.nomixer.volume.data.activeAnchor
 import com.nomixer.volume.data.activeBackground
+import com.nomixer.volume.data.activeBackgroundColor
 import com.nomixer.volume.data.activeBackgroundOpacity
 import com.nomixer.volume.data.activeButtonCornerRadius
+import com.nomixer.volume.data.activeForegroundColor
+import com.nomixer.volume.data.activeOffsetX
+import com.nomixer.volume.data.activeOffsetY
+import com.nomixer.volume.data.activeOutlineColor
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
 import com.nomixer.volume.data.activeShowShadow
 import com.nomixer.volume.data.activeShowValue
+import com.nomixer.volume.data.activeSurfaceColor
+import com.nomixer.volume.data.withAccentColor
+import com.nomixer.volume.data.withAnchor
 import com.nomixer.volume.data.withBackground
+import com.nomixer.volume.data.withBackgroundColor
 import com.nomixer.volume.data.withBackgroundOpacity
 import com.nomixer.volume.data.withButtonCornerRadius
+import com.nomixer.volume.data.withForegroundColor
+import com.nomixer.volume.data.withOffsetX
+import com.nomixer.volume.data.withOffsetY
+import com.nomixer.volume.data.withOutlineColor
 import com.nomixer.volume.data.withScale
 import com.nomixer.volume.data.withShowBackground
 import com.nomixer.volume.data.withShowIcon
 import com.nomixer.volume.data.withShowRingerButton
 import com.nomixer.volume.data.withShowShadow
 import com.nomixer.volume.data.withShowValue
+import com.nomixer.volume.data.withSurfaceColor
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.baseColorScheme
@@ -216,26 +238,55 @@ private fun <T> ChipRow(
     }
 }
 
+/** Width of an [AnchorGrid] cell -- fixed; only its height grows to match [PositionPreview]. */
+private val ANCHOR_CELL_WIDTH = 44.dp
+
+/** Gap between rows and between cells within a row, in [AnchorGrid]. */
+private val ANCHOR_GRID_GAP = 8.dp
+
+/** [PositionPreview]'s own fixed phone-silhouette size, in dp. */
+private val POSITION_PREVIEW_WIDTH = 130.dp
+private val POSITION_PREVIEW_HEIGHT = 260.dp
+
+/**
+ * Each cell's own height, grown from a square until the grid's total height
+ * (three cells plus the two gaps between them) matches [POSITION_PREVIEW_HEIGHT]
+ * -- so the anchor grid and the adjacent phone-silhouette preview read as one
+ * balanced block, sitting at the same height. Width is left alone: only the
+ * cells' height grows, so they read as tall rectangles rather than squares.
+ */
+private val ANCHOR_CELL_HEIGHT = (POSITION_PREVIEW_HEIGHT - ANCHOR_GRID_GAP * 2) / 3
+
 /** 3x3 grid mirroring the nine screen anchors the popup can snap to. */
 @Composable
-private fun AnchorGrid(selected: PopupAnchor, onSelect: (PopupAnchor) -> Unit) {
+private fun AnchorGrid(
+    selected: PopupAnchor,
+    onSelect: (PopupAnchor) -> Unit,
+    modifier: Modifier = Modifier,
+    cellHeight: Dp = ANCHOR_CELL_WIDTH
+) {
     val rows = listOf(
         listOf(PopupAnchor.TopStart, PopupAnchor.TopCenter, PopupAnchor.TopEnd),
         listOf(PopupAnchor.CenterStart, PopupAnchor.Center, PopupAnchor.CenterEnd),
         listOf(PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd)
     )
 
+    // No vertical padding of its own, unlike this used to have: the grid's
+    // total height (see ANCHOR_CELL_HEIGHT) is tuned to match
+    // PositionPreview's own exactly, and any padding here would throw that
+    // match off by the same amount.
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(vertical = 8.dp)
+        verticalArrangement = Arrangement.spacedBy(ANCHOR_GRID_GAP),
+        modifier = modifier
     ) {
         rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(ANCHOR_GRID_GAP)) {
                 row.forEach { anchor ->
                     val isSelected = anchor == selected
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
+                            .width(ANCHOR_CELL_WIDTH)
+                            .height(cellHeight)
                             .clip(RoundedCornerShape(12.dp))
                             .background(
                                 if (isSelected) {
@@ -263,23 +314,21 @@ private fun AnchorGrid(selected: PopupAnchor, onSelect: (PopupAnchor) -> Unit) {
  * repeatedly triggering the real overlay. Built from the same slider
  * components the real popup uses (rather than plain colored boxes), so
  * corner radii, fills and the disc's fade are what they'll actually look
- * like, not an approximation of it.
+ * like, not an approximation of it. Deliberately a simplified, shrunk-down
+ * mockup -- unlike [LiveSliderPreview], its job is showing *where* the
+ * popup sits, not exactly how its effects render at real size.
  */
 @Composable
-private fun PopupPreview(
-    preferences: UiPreferences,
-    expanded: Boolean,
-    onToggleExpanded: () -> Unit
-) {
+private fun PositionPreview(preferences: UiPreferences) {
     // Alignment is animated as a bias rather than picked from the nine
     // constants, so tapping a different anchor slides the popup across the
     // little screen the way it will move on the real one.
-    val targetBiasX = when (preferences.popupAnchor) {
+    val targetBiasX = when (preferences.activeAnchor()) {
         PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> -1f
         PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1f
         else -> 0f
     }
-    val targetBiasY = when (preferences.popupAnchor) {
+    val targetBiasY = when (preferences.activeAnchor()) {
         PopupAnchor.TopStart, PopupAnchor.TopCenter, PopupAnchor.TopEnd -> -1f
         PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd -> 1f
         else -> 0f
@@ -294,11 +343,11 @@ private fun PopupPreview(
     // window moves left, a bottom-anchored one moves up, everything else
     // moves right/down.
     val previewScale = 0.32f
-    val horizontalSign = when (preferences.popupAnchor) {
+    val horizontalSign = when (preferences.activeAnchor()) {
         PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> -1
         else -> 1
     }
-    val verticalSign = when (preferences.popupAnchor) {
+    val verticalSign = when (preferences.activeAnchor()) {
         PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd -> -1
         else -> 1
     }
@@ -310,22 +359,91 @@ private fun PopupPreview(
     // silhouette's own rounded-rect clip, standing in for the real
     // display's edge -- and settles fully inside, a small gap from the
     // edge, by the top of the offset range.
-    val isLateralDisc = preferences.popupStyle == PopupStyle.Disc && preferences.popupAnchor in setOf(
+    val isLateralDisc = preferences.popupStyle == PopupStyle.Disc && preferences.activeAnchor() in setOf(
         PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart,
         PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd
     )
-    val discOutwardSign = when (preferences.popupAnchor) {
+    val discOutwardSign = when (preferences.activeAnchor()) {
         PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
         else -> -1
     }
     val discPreviewDiameter = 220.dp * (preferences.activeScale() * previewScale * 1.6f)
     val discRevealFraction =
-        (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
+        (preferences.activeOffsetX().toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
     val discEdgeGap = DISC_EDGE_GAP_DP.dp * previewScale
     val discHiddenShift = discPreviewDiameter / 2
     val discShiftX =
         (discHiddenShift - (discHiddenShift + discEdgeGap) * discRevealFraction) * discOutwardSign
 
+    // Fixed phone silhouette, deliberately painted in the app's own
+    // (unoverridden) theme rather than the popup's -- so turning a popup
+    // color fully off, per its own toggle, never takes the "device" itself
+    // down with it.
+    Box(
+        modifier = Modifier
+            .width(POSITION_PREVIEW_WIDTH)
+            .height(POSITION_PREVIEW_HEIGHT)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.background)
+            .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp))
+    ) {
+        // Painted in the popup's own palette, not the app's, from here down:
+        // the color choices apply to the overlay only, and this is where you
+        // see them.
+        PopupColors(preferences) {
+            Box(
+                modifier = Modifier
+                    .align(alignment)
+                    // Switching style changes the mockup's size; let it
+                    // resize into the new shape rather than cutting to it.
+                    .animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = Motion.MorphMillis,
+                            easing = Motion.Emphasized
+                        )
+                    )
+                    .padding(
+                        start = if (!isLateralDisc && horizontalSign > 0) {
+                            (preferences.activeOffsetX() * previewScale).dp
+                        } else {
+                            0.dp
+                        },
+                        end = if (!isLateralDisc && horizontalSign < 0) {
+                            (preferences.activeOffsetX() * previewScale).dp
+                        } else {
+                            0.dp
+                        },
+                        top = if (verticalSign > 0) (preferences.activeOffsetY() * previewScale).dp else 0.dp,
+                        bottom = if (verticalSign < 0) (preferences.activeOffsetY() * previewScale).dp else 0.dp
+                    )
+                    .then(
+                        if (isLateralDisc) Modifier.offset(x = discShiftX) else Modifier
+                    )
+            ) {
+                CollapsedPopupPreviewContent(
+                    preferences,
+                    scaleMultiplier = previewScale * 1.6f,
+                    edgeGapMultiplier = previewScale
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The live top-of-screen preview: the real popup, built from the same
+ * components the actual overlay uses (see [CollapsedPopupPreviewContent]),
+ * at its real, unshrunk size and with no position simulated -- unlike
+ * [PositionPreview], every appearance change (colors, blur, grain, tick
+ * style...) reads here exactly as it will on the real overlay, just without
+ * the phone silhouette or the anchor's own placement.
+ */
+@Composable
+private fun LiveSliderPreview(
+    preferences: UiPreferences,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit
+) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -349,61 +467,20 @@ private fun PopupPreview(
         }
 
         Box(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Fixed phone silhouette, deliberately painted in the app's own
-            // (unoverridden) theme rather than the popup's -- so turning a
-            // popup color fully off, per its own toggle, never takes the
-            // "device" itself down with it.
-            Box(
-                modifier = Modifier
-                    .width(130.dp)
-                    .height(260.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.background)
-                    .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp))
-            ) {
-                // Painted in the popup's own palette, not the app's, from
-                // here down: the color choices apply to the overlay only,
-                // and this is where you see them.
-                PopupColors(preferences) {
-                    if (expanded) {
-                        ExpandedMixerPreview(preferences)
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .align(alignment)
-                                // Switching style changes the mockup's size;
-                                // let it resize into the new shape rather
-                                // than cutting to it.
-                                .animateContentSize(
-                                    animationSpec = tween(
-                                        durationMillis = Motion.MorphMillis,
-                                        easing = Motion.Emphasized
-                                    )
-                                )
-                                .padding(
-                                    start = if (!isLateralDisc && horizontalSign > 0) {
-                                        (preferences.popupOffsetX * previewScale).dp
-                                    } else {
-                                        0.dp
-                                    },
-                                    end = if (!isLateralDisc && horizontalSign < 0) {
-                                        (preferences.popupOffsetX * previewScale).dp
-                                    } else {
-                                        0.dp
-                                    },
-                                    top = if (verticalSign > 0) (preferences.popupOffsetY * previewScale).dp else 0.dp,
-                                    bottom = if (verticalSign < 0) (preferences.popupOffsetY * previewScale).dp else 0.dp
-                                )
-                                .then(
-                                    if (isLateralDisc) Modifier.offset(x = discShiftX) else Modifier
-                                )
-                        ) {
-                            CollapsedPopupPreviewContent(preferences, previewScale)
-                        }
-                    }
+            PopupColors(preferences) {
+                if (expanded) {
+                    ExpandedMixerPreview(preferences)
+                } else {
+                    CollapsedPopupPreviewContent(
+                        preferences,
+                        scaleMultiplier = 1f,
+                        simulatePosition = false
+                    )
                 }
             }
         }
@@ -411,18 +488,96 @@ private fun PopupPreview(
 }
 
 /**
- * The collapsed popup mockup, built from the real [TrackSlider] /
- * [VerticalTrackSlider] / [VolumeDisc] components at preview scale so the
- * corner radii, fills and the disc's edge fade match the actual overlay
- * exactly, rather than approximating it with plain boxes.
+ * A bar-style panel's real background -- lit glass, generated grain or a
+ * plain fill, exactly like [CollapsedVolumePopup]'s own (see that
+ * function's own Box stack) -- rather than the plain shadowed box this used
+ * to be, which never showed Glass or Atmosphere at all for the bar styles
+ * (the disc's own preview branch, using [VolumeDisc] directly, never had
+ * this gap). The caller gates this on [UiPreferences.activeShowBackground]
+ * itself; this only ever paints the effect a style is actually set to.
  */
 @Composable
-private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScale: Float) {
+private fun PreviewPanelBackground(preferences: UiPreferences, shape: Shape, modifier: Modifier = Modifier) {
+    val panelGlass = preferences.activeBackground() == PopupBackground.Translucent
+    val panelAtmosphere = preferences.activeBackground() == PopupBackground.Atmosphere
+    val panelColor = MaterialTheme.colorScheme.background.copy(alpha = preferences.paintedPanelAlpha())
+
+    Box(modifier) {
+        when {
+            panelGlass -> GlassBackground(
+                shape = shape,
+                baseColor = panelColor,
+                blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
+                lightAngle = preferences.glassLightAngle,
+                lightWidth = preferences.glassLightWidth,
+                noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
+                noiseAlpha = preferences.glassNoiseAlpha,
+                modifier = Modifier.matchParentSize()
+            )
+
+            panelAtmosphere -> AtmosphereBackground(
+                shape = shape,
+                baseColor = panelColor,
+                colors = null,
+                grainIntensity = preferences.atmosphereGrainIntensity,
+                grainSize = preferences.atmosphereGrainSize,
+                modifier = Modifier.matchParentSize()
+            )
+
+            else -> Box(
+                Modifier
+                    .matchParentSize()
+                    .clip(shape)
+                    .background(panelColor)
+            )
+        }
+        if (panelGlass) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .border(1.dp, glassEdgeLightBrush(preferences.glassLightAngle, preferences.glassLightWidth), shape)
+            )
+        }
+        if (panelAtmosphere) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            )
+        }
+    }
+}
+
+/**
+ * The collapsed popup mockup, built from the real [TrackSlider] /
+ * [VerticalTrackSlider] / [VolumeDisc] components (and, for the bar styles,
+ * [PreviewPanelBackground]) so corner radii, fills, effects and the disc's
+ * edge fade all match the actual overlay exactly, rather than approximating
+ * it with plain boxes.
+ *
+ * [scaleMultiplier] sizes every drawn element -- 1f is the real popup's own
+ * size (see [LiveSliderPreview]); [PositionPreview]'s own shrunk-down mockup
+ * passes a smaller one instead. [edgeGapMultiplier] scales only the disc's
+ * own edge-clearance math (see [DISC_EDGE_GAP_DP]), independently of
+ * [scaleMultiplier] -- [PositionPreview] deliberately uses a different
+ * factor for each (see its own call site). [simulatePosition] gates whether
+ * the disc simulates being laterally cut by the anchor it's set to (again,
+ * only meaningful for [PositionPreview]'s own mockup) -- off for
+ * [LiveSliderPreview], which never simulates anchor placement at all and
+ * always shows the disc whole.
+ */
+@Composable
+private fun CollapsedPopupPreviewContent(
+    preferences: UiPreferences,
+    scaleMultiplier: Float,
+    edgeGapMultiplier: Float = scaleMultiplier,
+    simulatePosition: Boolean = true
+) {
     // A representative level -- there's no real stream behind this preview,
     // just something that reads as "partway up" wherever it's shown.
     val previewFraction = 0.62f
     val previewValueText = "7"
-    val scale = preferences.activeScale() * previewScale * 1.6f
+    val scale = preferences.activeScale() * scaleMultiplier
     val showBackground = preferences.activeShowBackground()
     val showValue = preferences.activeShowValue()
     val showIcon = preferences.activeShowIcon()
@@ -434,7 +589,9 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
     when (preferences.popupStyle) {
         PopupStyle.VerticalBar -> Box {
             if (showBackground) {
-                Box(
+                PreviewPanelBackground(
+                    preferences = preferences,
+                    shape = RoundedCornerShape(preferences.popupCornerRadius.dp),
                     modifier = Modifier
                         .width((64 * scale).dp)
                         .height((250 * scale).dp)
@@ -486,7 +643,9 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
 
         PopupStyle.HorizontalBar -> Box {
             if (showBackground) {
-                Box(
+                PreviewPanelBackground(
+                    preferences = preferences,
+                    shape = RoundedCornerShape(preferences.popupCornerRadius.dp),
                     modifier = Modifier
                         .width((240 * scale).dp)
                         .height((56 * scale).dp)
@@ -543,19 +702,19 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
             // exactly (same shape, scaled for the preview), so the live
             // preview shows the same edge-clearance behavior the real
             // popup now has.
-            val discIsLateral = preferences.popupAnchor in setOf(
+            val discIsLateral = simulatePosition && preferences.activeAnchor() in setOf(
                 PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart,
                 PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd
             )
             val centerContentOffsetX = if (discIsLateral) {
-                val discOutwardSign = when (preferences.popupAnchor) {
+                val discOutwardSign = when (preferences.activeAnchor()) {
                     PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1
                     else -> -1
                 }
                 val revealFraction =
-                    (preferences.popupOffsetX.toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
+                    (preferences.activeOffsetX().toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
                 val radius = discDiameter / 2
-                val edgeGap = DISC_EDGE_GAP_DP.dp * previewScale
+                val edgeGap = DISC_EDGE_GAP_DP.dp * edgeGapMultiplier
                 val overhang = (radius - (radius + edgeGap) * revealFraction).coerceAtLeast(0.dp)
                 val contentHalfWidth = (38 * scale).dp / 2
                 val maxLocalCenter = radius - overhang - edgeGap - contentHalfWidth
@@ -589,6 +748,7 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     centerContentOffsetX = centerContentOffsetX,
                     showDots = preferences.discShowDots,
                     tickCornerPercent = preferences.discTickCornerPercent,
+                    tickRotatingKnob = preferences.discTickRotatingKnob,
                     ringRoundEnds = preferences.discRingRoundEnds,
                     // Mirrors CollapsedVolumePopup's own gating -- background
                     // off must read as fully transparent, same as the real
@@ -608,9 +768,12 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                     trackBackingGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent,
                     trackBackingAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere,
                     grainIntensity = preferences.atmosphereGrainIntensity,
+                    grainSize = preferences.atmosphereGrainSize,
                     lightAngle = preferences.glassLightAngle,
                     lightWidth = preferences.glassLightWidth,
                     blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
+                    noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
+                    noiseAlpha = preferences.glassNoiseAlpha,
                     icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (showValue && !besideButton) previewValueText else null,
                     centerContent = if (showRingerButton) {
@@ -738,7 +901,7 @@ fun CustomizationScreen(
             // inside it, so the popup it's previewing never scrolls out of
             // view while a setting below is being tuned.
             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                PopupPreview(
+                LiveSliderPreview(
                     preferences = preferences,
                     expanded = previewExpanded,
                     onToggleExpanded = { previewExpanded = !previewExpanded }
@@ -752,79 +915,6 @@ fun CustomizationScreen(
                     .padding(horizontal = 16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-            SectionHeader(stringResource(R.string.theme))
-
-            Text(
-                text = stringResource(R.string.theme_mode),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            ChipRow(
-                options = listOf(
-                    ThemeMode.System to stringResource(R.string.theme_system),
-                    ThemeMode.Dark to stringResource(R.string.theme_dark),
-                    ThemeMode.Light to stringResource(R.string.theme_light)
-                ),
-                selected = preferences.themeMode,
-                onSelect = { mode -> onUpdate { it.copy(themeMode = mode) } }
-            )
-
-            SectionHeader(stringResource(R.string.colors))
-
-            ColorSettingRow(
-                label = stringResource(R.string.color_accent),
-                color = preferences.accentColor?.let { Color(it) } ?: base.tertiary,
-                isCustom = preferences.accentColor != null,
-                onColorChange = { color -> onUpdate { it.copy(accentColor = color.toArgb()) } },
-                onReset = { onUpdate { it.copy(accentColor = null) } }
-            )
-            ColorSettingRow(
-                label = stringResource(R.string.color_background),
-                color = preferences.backgroundColor?.let { Color(it) } ?: base.background,
-                isCustom = preferences.backgroundColor != null,
-                onColorChange = { color -> onUpdate { it.copy(backgroundColor = color.toArgb()) } },
-                onReset = { onUpdate { it.copy(backgroundColor = null) } }
-            )
-            ColorSettingRow(
-                label = stringResource(R.string.color_foreground),
-                color = preferences.foregroundColor?.let { Color(it) } ?: base.primary,
-                isCustom = preferences.foregroundColor != null,
-                onColorChange = { color -> onUpdate { it.copy(foregroundColor = color.toArgb()) } },
-                onReset = { onUpdate { it.copy(foregroundColor = null) } }
-            )
-            ColorSettingRow(
-                label = stringResource(R.string.color_surface),
-                color = preferences.surfaceColor?.let { Color(it) } ?: base.primaryContainer,
-                isCustom = preferences.surfaceColor != null,
-                onColorChange = { color -> onUpdate { it.copy(surfaceColor = color.toArgb()) } },
-                onReset = { onUpdate { it.copy(surfaceColor = null) } }
-            )
-            ColorSettingRow(
-                label = stringResource(R.string.color_outline),
-                color = preferences.outlineColor?.let { Color(it) } ?: base.outline,
-                isCustom = preferences.outlineColor != null,
-                onColorChange = { color -> onUpdate { it.copy(outlineColor = color.toArgb()) } },
-                onReset = { onUpdate { it.copy(outlineColor = null) } }
-            )
-
-            OutlinedButton(
-                onClick = {
-                    onUpdate {
-                        it.copy(
-                            accentColor = null,
-                            backgroundColor = null,
-                            foregroundColor = null,
-                            surfaceColor = null,
-                            outlineColor = null
-                        )
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-            ) {
-                Text(stringResource(R.string.reset_colors))
-            }
-
             SectionHeader(stringResource(R.string.popup))
 
             Text(
@@ -848,6 +938,66 @@ fun CustomizationScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // Below the style picker, not above it -- colors (like the
+            // background effect and its own knobs below) are independent
+            // per style, so they only make sense once the style they belong
+            // to has actually been chosen.
+            SectionHeader(stringResource(R.string.colors))
+            Text(
+                text = stringResource(R.string.colors_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            ColorSettingRow(
+                label = stringResource(R.string.color_accent),
+                color = preferences.activeAccentColor()?.let { Color(it) } ?: base.tertiary,
+                isCustom = preferences.activeAccentColor() != null,
+                onColorChange = { color -> onUpdate { it.withAccentColor(color.toArgb()) } },
+                onReset = { onUpdate { it.withAccentColor(null) } }
+            )
+            ColorSettingRow(
+                label = stringResource(R.string.color_background),
+                color = preferences.activeBackgroundColor()?.let { Color(it) } ?: base.background,
+                isCustom = preferences.activeBackgroundColor() != null,
+                onColorChange = { color -> onUpdate { it.withBackgroundColor(color.toArgb()) } },
+                onReset = { onUpdate { it.withBackgroundColor(null) } }
+            )
+            ColorSettingRow(
+                label = stringResource(R.string.color_foreground),
+                color = preferences.activeForegroundColor()?.let { Color(it) } ?: base.primary,
+                isCustom = preferences.activeForegroundColor() != null,
+                onColorChange = { color -> onUpdate { it.withForegroundColor(color.toArgb()) } },
+                onReset = { onUpdate { it.withForegroundColor(null) } }
+            )
+            ColorSettingRow(
+                label = stringResource(R.string.color_surface),
+                color = preferences.activeSurfaceColor()?.let { Color(it) } ?: base.primaryContainer,
+                isCustom = preferences.activeSurfaceColor() != null,
+                onColorChange = { color -> onUpdate { it.withSurfaceColor(color.toArgb()) } },
+                onReset = { onUpdate { it.withSurfaceColor(null) } }
+            )
+            ColorSettingRow(
+                label = stringResource(R.string.color_outline),
+                color = preferences.activeOutlineColor()?.let { Color(it) } ?: base.outline,
+                isCustom = preferences.activeOutlineColor() != null,
+                onColorChange = { color -> onUpdate { it.withOutlineColor(color.toArgb()) } },
+                onReset = { onUpdate { it.withOutlineColor(null) } }
+            )
+
+            OutlinedButton(
+                onClick = {
+                    onUpdate { it.withAccentColor(null).withBackgroundColor(null).withForegroundColor(null)
+                        .withSurfaceColor(null).withOutlineColor(null)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+            ) {
+                Text(stringResource(R.string.reset_colors))
+            }
 
             // Below the style picker, not above it -- the background is
             // independent per style (bar vs. disc keep their own copies, see
@@ -953,14 +1103,37 @@ fun CustomizationScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                // The noise/sheen layer's own dedicated color
+                                // and transparency -- independent of the
+                                // panel's own tint (set above, via the
+                                // Background color) and of the blur, which
+                                // frosts this layer along with everything
+                                // else rather than controlling how strong it
+                                // is on its own.
+                                ColorSettingRow(
+                                    label = stringResource(R.string.glass_noise_color),
+                                    color = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
+                                    isCustom = preferences.glassNoiseColor != null,
+                                    onColorChange = { color -> onUpdate { it.copy(glassNoiseColor = color.toArgb()) } },
+                                    onReset = { onUpdate { it.copy(glassNoiseColor = null) } }
+                                )
+                                SliderSetting(
+                                    label = stringResource(R.string.glass_noise_alpha),
+                                    valueLabel = "${(preferences.glassNoiseAlpha * 100).roundToInt()}%",
+                                    value = preferences.glassNoiseAlpha,
+                                    valueRange = GLASS_NOISE_ALPHA_MIN..GLASS_NOISE_ALPHA_MAX,
+                                    onValueChange = { value ->
+                                        onUpdate { it.copy(glassNoiseAlpha = value) }
+                                    }
+                                )
                             }
 
                         PopupBackground.Atmosphere ->
                             // Same reasoning as Translucent's own knobs above:
-                            // one shared setting for the effect itself. How
-                            // opaque it is isn't among them either, same as
-                            // Glass: that comes off the Background color's
-                            // own alpha too.
+                            // one shared setting for the effect itself. Its
+                            // opacity isn't among them -- unlike Glass, an
+                            // Atmosphere panel always stays fully opaque
+                            // (see UiPreferences.paintedPanelAlpha).
                             Column {
                                 SliderSetting(
                                     label = stringResource(R.string.atmosphere_grain_intensity),
@@ -969,6 +1142,15 @@ fun CustomizationScreen(
                                     valueRange = ATMOSPHERE_GRAIN_MIN..ATMOSPHERE_GRAIN_MAX,
                                     onValueChange = { value ->
                                         onUpdate { it.copy(atmosphereGrainIntensity = value) }
+                                    }
+                                )
+                                SliderSetting(
+                                    label = stringResource(R.string.atmosphere_grain_size),
+                                    valueLabel = "${(preferences.atmosphereGrainSize * 100).roundToInt()}%",
+                                    value = preferences.atmosphereGrainSize,
+                                    valueRange = ATMOSPHERE_GRAIN_SIZE_MIN..ATMOSPHERE_GRAIN_SIZE_MAX,
+                                    onValueChange = { value ->
+                                        onUpdate { it.copy(atmosphereGrainSize = value) }
                                     }
                                 )
                                 Text(
@@ -983,28 +1165,44 @@ fun CustomizationScreen(
             }
 
             SectionHeader(stringResource(R.string.popup_position))
-
-            AnchorGrid(
-                selected = preferences.popupAnchor,
-                onSelect = { anchor -> onUpdate { it.copy(popupAnchor = anchor) } }
+            Text(
+                text = stringResource(R.string.popup_position_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // The grid and its adjacent simplified preview sit side by side,
+            // the same 16dp gutter the whole screen already uses on every
+            // other side (the parent Column's own horizontal padding) --
+            // left edge to grid, grid to preview, preview to right edge, all
+            // equal. The grid's own cells are grown tall enough (see
+            // ANCHOR_CELL_HEIGHT) that the two elements read as one block at
+            // the same height.
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                AnchorGrid(
+                    selected = preferences.activeAnchor(),
+                    onSelect = { anchor -> onUpdate { it.withAnchor(anchor) } },
+                    cellHeight = ANCHOR_CELL_HEIGHT
+                )
+                PositionPreview(preferences)
+            }
 
             SliderSetting(
                 label = stringResource(R.string.offset_horizontal),
-                valueLabel = "${preferences.popupOffsetX} dp",
-                value = preferences.popupOffsetX.toFloat(),
+                valueLabel = "${preferences.activeOffsetX()} dp",
+                value = preferences.activeOffsetX().toFloat(),
                 valueRange = 0f..POPUP_OFFSET_X_MAX_DP.toFloat(),
                 onValueChange = { value ->
-                    onUpdate { it.copy(popupOffsetX = value.roundToInt()) }
+                    onUpdate { it.withOffsetX(value.roundToInt()) }
                 }
             )
             SliderSetting(
                 label = stringResource(R.string.offset_vertical),
-                valueLabel = "${preferences.popupOffsetY} dp",
-                value = preferences.popupOffsetY.toFloat(),
+                valueLabel = "${preferences.activeOffsetY()} dp",
+                value = preferences.activeOffsetY().toFloat(),
                 valueRange = 0f..400f,
                 onValueChange = { value ->
-                    onUpdate { it.copy(popupOffsetY = value.roundToInt()) }
+                    onUpdate { it.withOffsetY(value.roundToInt()) }
                 }
             )
 
@@ -1231,15 +1429,24 @@ fun CustomizationScreen(
                         tween(Motion.MorphMillis, easing = Motion.Emphasized)
                     ) + fadeOut(tween(160))
                 ) {
-                    SliderSetting(
-                        label = stringResource(R.string.disc_tick_corner),
-                        valueLabel = "${preferences.discTickCornerPercent}%",
-                        value = preferences.discTickCornerPercent.toFloat(),
-                        valueRange = 0f..DISC_TICK_CORNER_MAX.toFloat(),
-                        onValueChange = { value ->
-                            onUpdate { it.copy(discTickCornerPercent = value.roundToInt()) }
-                        }
-                    )
+                    Column {
+                        SliderSetting(
+                            label = stringResource(R.string.disc_tick_corner),
+                            valueLabel = "${preferences.discTickCornerPercent}%",
+                            value = preferences.discTickCornerPercent.toFloat(),
+                            valueRange = 0f..DISC_TICK_CORNER_MAX.toFloat(),
+                            onValueChange = { value ->
+                                onUpdate { it.copy(discTickCornerPercent = value.roundToInt()) }
+                            }
+                        )
+                        ToggleSetting(
+                            label = stringResource(R.string.disc_tick_rotating_knob),
+                            checked = preferences.discTickRotatingKnob,
+                            onCheckedChange = { checked ->
+                                onUpdate { it.copy(discTickRotatingKnob = checked) }
+                            }
+                        )
+                    }
                 }
                 Text(
                     text = stringResource(R.string.disc_hint),
@@ -1264,9 +1471,15 @@ fun CustomizationScreen(
                         val defaults = UiPreferences()
                         it.copy(
                             popupStyle = defaults.popupStyle,
-                            popupAnchor = defaults.popupAnchor,
-                            popupOffsetX = defaults.popupOffsetX,
-                            popupOffsetY = defaults.popupOffsetY,
+                            verticalBarAnchor = defaults.verticalBarAnchor,
+                            verticalBarOffsetX = defaults.verticalBarOffsetX,
+                            verticalBarOffsetY = defaults.verticalBarOffsetY,
+                            horizontalBarAnchor = defaults.horizontalBarAnchor,
+                            horizontalBarOffsetX = defaults.horizontalBarOffsetX,
+                            horizontalBarOffsetY = defaults.horizontalBarOffsetY,
+                            discAnchor = defaults.discAnchor,
+                            discOffsetX = defaults.discOffsetX,
+                            discOffsetY = defaults.discOffsetY,
                             popupScale = defaults.popupScale,
                             discPopupScale = defaults.discPopupScale,
                             popupCornerRadius = defaults.popupCornerRadius,
@@ -1283,6 +1496,9 @@ fun CustomizationScreen(
                             glassLightAngle = defaults.glassLightAngle,
                             glassLightWidth = defaults.glassLightWidth,
                             atmosphereGrainIntensity = defaults.atmosphereGrainIntensity,
+                            atmosphereGrainSize = defaults.atmosphereGrainSize,
+                            glassNoiseColor = defaults.glassNoiseColor,
+                            glassNoiseAlpha = defaults.glassNoiseAlpha,
                             expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,
                             discPopupShowValue = defaults.discPopupShowValue,
@@ -1293,6 +1509,7 @@ fun CustomizationScreen(
                             discPopupShowRingerButton = defaults.discPopupShowRingerButton,
                             discShowDots = defaults.discShowDots,
                             discTickCornerPercent = defaults.discTickCornerPercent,
+                            discTickRotatingKnob = defaults.discTickRotatingKnob,
                             discRingRoundEnds = defaults.discRingRoundEnds,
                             popupShowShadow = defaults.popupShowShadow,
                             discPopupShowShadow = defaults.discPopupShowShadow,

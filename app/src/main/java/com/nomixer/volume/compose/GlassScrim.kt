@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
+import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -67,6 +68,8 @@ import kotlin.math.sin
  */
 private const val NOISE_SHADER_SRC = """
     uniform float2 resolution;
+    uniform float3 noiseColor;
+    uniform float noiseAlphaScale;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
@@ -86,8 +89,11 @@ private const val NOISE_SHADER_SRC = """
         // Even across the whole sheet on purpose: this used to carry its own
         // top-left-to-bottom-right sheen, a second light direction that had
         // nothing to do with the beam and quietly worked against it.
-        float a = 0.05 + n * 0.22;
-        return half4(1.0, 1.0, 1.0, a);
+        // noiseAlphaScale is the dedicated transparency slider's own
+        // multiplier -- 0 removes the layer, 1 keeps the per-cell alpha this
+        // always varied between.
+        float a = (0.05 + n * 0.22) * noiseAlphaScale;
+        return half4(noiseColor, a);
     }
 """
 
@@ -182,27 +188,36 @@ fun glassEdgeLightBrush(
 )
 
 // Compiling AGSL is far too expensive to redo on every frame of a volume
-// drag, and the shader only ever depends on the surface's own size -- so the
-// last one is kept and handed back until something asks for a different size.
-// Single-window app, only ever touched from the UI thread.
-private var noiseBrushSize: Size? = null
+// drag, so the last one is kept and handed back until something asks for a
+// different size, color or alpha (the shader's only inputs besides the
+// fixed per-cell hash). Single-window app, only ever touched from the UI
+// thread.
+private var noiseBrushKey: Triple<Size, Color, Float>? = null
 private var noiseBrush: Brush? = null
 private var noiseBrushBroken = false
 
 /**
  * The AGSL grain/sheen layer, sized to [size] -- draw it right on top of
- * the tint and [glassBeamBrush]. Null if [RuntimeShader] can't be built on
- * this device (a bad driver, an AGSL feature it doesn't actually support
- * despite the API level) -- a caller must treat that as "skip the grain",
- * never let it take the base tint down with it, which a construction
- * failure reaching all the way up into a shared draw call used to do.
+ * the tint and [glassBeamBrush]. [color] and [alphaScale] are the dedicated
+ * color picker and transparency slider for this layer alone (0 removes it
+ * entirely, 1 keeps the shader's own per-cell alpha at full strength). Null
+ * if [RuntimeShader] can't be built on this device (a bad driver, an AGSL
+ * feature it doesn't actually support despite the API level) -- a caller
+ * must treat that as "skip the grain", never let it take the base tint down
+ * with it, which a construction failure reaching all the way up into a
+ * shared draw call used to do.
  */
-fun glassNoiseBrush(size: Size): Brush? {
+fun glassNoiseBrush(
+    size: Size,
+    color: Color = Color.White,
+    alphaScale: Float = GLASS_NOISE_ALPHA_DEFAULT
+): Brush? {
     if (noiseBrushBroken) {
         return null
     }
+    val key = Triple(size, color, alphaScale)
     val cached = noiseBrush
-    if (cached != null && noiseBrushSize == size) {
+    if (cached != null && noiseBrushKey == key) {
         return cached
     }
 
@@ -210,9 +225,11 @@ fun glassNoiseBrush(size: Size): Brush? {
         val brush = ShaderBrush(
             RuntimeShader(NOISE_SHADER_SRC).apply {
                 setFloatUniform("resolution", size.width, size.height)
+                setFloatUniform("noiseColor", color.red, color.green, color.blue)
+                setFloatUniform("noiseAlphaScale", alphaScale.coerceIn(0f, 1f))
             }
         )
-        noiseBrushSize = size
+        noiseBrushKey = key
         noiseBrush = brush
         brush
     } catch (e: Throwable) {
@@ -248,7 +265,9 @@ fun GlassBackground(
     modifier: Modifier = Modifier,
     blurRadius: Dp = 0.dp,
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
-    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    noiseColor: Color = Color.White,
+    noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT
 ) {
     Box(
         modifier
@@ -281,7 +300,7 @@ fun GlassBackground(
                     // it -- that shared fate is exactly what made the whole
                     // panel invisible instead of just plainer than intended.
                     try {
-                        glassNoiseBrush(size)?.let { drawRect(it) }
+                        glassNoiseBrush(size, noiseColor, noiseAlpha)?.let { drawRect(it) }
                     } catch (e: Throwable) {
                         Log.w("GlassScrim", "Glass noise draw failed", e)
                     }
@@ -358,7 +377,9 @@ fun GlassRingBackground(
     modifier: Modifier = Modifier,
     blurRadius: Dp = 0.dp,
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
-    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    noiseColor: Color = Color.White,
+    noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT
 ) {
     val shape = remember(ringRadius, ringWidth) { RingShape(ringRadius, ringWidth) }
     Box(
@@ -381,7 +402,7 @@ fun GlassRingBackground(
                     drawRect(baseColor)
                     drawRect(beam)
                     try {
-                        glassNoiseBrush(size)?.let { drawRect(it) }
+                        glassNoiseBrush(size, noiseColor, noiseAlpha)?.let { drawRect(it) }
                     } catch (e: Throwable) {
                         Log.w("GlassScrim", "Glass ring noise draw failed", e)
                     }

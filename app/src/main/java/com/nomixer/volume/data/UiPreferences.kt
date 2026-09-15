@@ -51,14 +51,41 @@ const val GLASS_LIGHT_WIDTH_DEFAULT = 0.45f
 const val GLASS_DEFAULT_ALPHA = 0.42f
 
 /**
+ * Bottom and top of the glass noise layer's own transparency slider (see
+ * [UiPreferences.glassNoiseAlpha]) -- a multiplier over the per-cell alpha
+ * the shader already varies, so 0 removes the grain layer entirely and 1 is
+ * as strong as the shader's own noise ever gets.
+ */
+const val GLASS_NOISE_ALPHA_MIN = 0f
+const val GLASS_NOISE_ALPHA_MAX = 1f
+const val GLASS_NOISE_ALPHA_DEFAULT = 1f
+
+/**
  * Bottom and top of the Atmosphere grain's own intensity slider (see
- * [UiPreferences.atmosphereGrainIntensity]) -- how strongly the grain shows,
- * not how opaque the panel is. That comes off the Background color's own
- * alpha now, the same as Glass (see [glassAlpha]).
+ * [UiPreferences.atmosphereGrainIntensity]) -- how strongly the grain shows.
+ * Unlike Glass, an Atmosphere panel is always fully opaque (see
+ * [paintedPanelAlpha]) -- the Background color's alpha never applies to it.
  */
 const val ATMOSPHERE_GRAIN_MIN = 0f
 const val ATMOSPHERE_GRAIN_MAX = 1f
 const val ATMOSPHERE_GRAIN_DEFAULT = 0.7f
+
+/**
+ * Bottom and top of the Atmosphere grain's own cell-size slider (see
+ * [UiPreferences.atmosphereGrainSize]) -- how large each grain fleck reads
+ * on screen, independent of [atmosphereGrainIntensity] (which only controls
+ * contrast, not size). 0 is the finest grain the shader can still resolve as
+ * grain rather than a smooth wash; 1 is coarse, individually visible flecks.
+ */
+const val ATMOSPHERE_GRAIN_SIZE_MIN = 0f
+const val ATMOSPHERE_GRAIN_SIZE_MAX = 1f
+
+/**
+ * Default grain size -- coarser than the shader's original fixed cell
+ * scale (1.7x the turned coordinates), which read as too fine to register
+ * as grain at a glance rather than as texture.
+ */
+const val ATMOSPHERE_GRAIN_SIZE_DEFAULT = 0.55f
 
 /**
  * [UiPreferences.glassBlurStrength]'s own 0..1 range, scaled up to an
@@ -165,21 +192,51 @@ enum class PopupCenterContent {
  * means "use the built-in Nothing OS palette for the current theme mode",
  * so a user who never opens the customization screen keeps the stock look
  * and an explicit choice survives theme switches.
+ *
+ * Position (anchor + offsets) and colors keep three fully independent
+ * copies -- one per [PopupStyle] -- rather than one shared set: picking a
+ * spot and a palette for the vertical bar never moves or recolors the
+ * horizontal bar or the disc. See [activeAnchor]/[withAnchor] and friends
+ * below for the getters/setters that resolve which copy is the one
+ * actually in effect, purely from [popupStyle] -- the same pattern the
+ * bar-vs-disc appearance settings further down already use, just three-way
+ * instead of two.
  */
 @Serializable
 data class UiPreferences(
     val themeMode: ThemeMode = ThemeMode.System,
-    val accentColor: Int? = null,
-    val backgroundColor: Int? = null,
-    val foregroundColor: Int? = null,
-    val surfaceColor: Int? = null,
-    val outlineColor: Int? = null,
+
+    val verticalBarAnchor: PopupAnchor = PopupAnchor.CenterEnd,
+    /** Distance from the anchor edge, in dp. */
+    val verticalBarOffsetX: Int = 16,
+    val verticalBarOffsetY: Int = 0,
+    val verticalBarAccentColor: Int? = null,
+    val verticalBarBackgroundColor: Int? = null,
+    val verticalBarForegroundColor: Int? = null,
+    val verticalBarSurfaceColor: Int? = null,
+    val verticalBarOutlineColor: Int? = null,
+
+    /** Same as the verticalBar* fields above, but the horizontal bar's own independent copy. */
+    val horizontalBarAnchor: PopupAnchor = PopupAnchor.CenterEnd,
+    val horizontalBarOffsetX: Int = 16,
+    val horizontalBarOffsetY: Int = 0,
+    val horizontalBarAccentColor: Int? = null,
+    val horizontalBarBackgroundColor: Int? = null,
+    val horizontalBarForegroundColor: Int? = null,
+    val horizontalBarSurfaceColor: Int? = null,
+    val horizontalBarOutlineColor: Int? = null,
+
+    /** Same as the verticalBar* fields above, but the disc's own independent copy. */
+    val discAnchor: PopupAnchor = PopupAnchor.CenterEnd,
+    val discOffsetX: Int = 16,
+    val discOffsetY: Int = 0,
+    val discAccentColor: Int? = null,
+    val discBackgroundColor: Int? = null,
+    val discForegroundColor: Int? = null,
+    val discSurfaceColor: Int? = null,
+    val discOutlineColor: Int? = null,
 
     val popupStyle: PopupStyle = PopupStyle.VerticalBar,
-    val popupAnchor: PopupAnchor = PopupAnchor.CenterEnd,
-    /** Distance from the anchor edge, in dp. */
-    val popupOffsetX: Int = 16,
-    val popupOffsetY: Int = 0,
     /** Multiplier on the popup's natural size, 0.6x - 1.6x, for the bar styles. */
     val popupScale: Float = 1f,
     /** Same as [popupScale], but the disc's own independent value. */
@@ -299,12 +356,146 @@ data class UiPreferences(
      * no texture at all) to 1 (the full grain) -- one shared value for every
      * style, same reasoning as [glassLightAngle]: it tunes the effect
      * itself, not anything about a particular collapsed look. Not the
-     * panel's own opacity, which -- like Glass's -- comes off the
-     * Background color's own alpha instead (see [glassAlpha]). See
-     * [ATMOSPHERE_GRAIN_MIN]/`_MAX`.
+     * panel's own opacity: unlike Glass, Atmosphere is always fully opaque
+     * (see [paintedPanelAlpha]). See [ATMOSPHERE_GRAIN_MIN]/`_MAX`.
      */
-    val atmosphereGrainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT
+    val atmosphereGrainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
+    /**
+     * How large each grain fleck reads, 0 (the finest the shader can still
+     * resolve) to 1 (coarse, individually visible flecks) -- independent of
+     * [atmosphereGrainIntensity], which only controls contrast between
+     * flecks, not their size. Same one-shared-value reasoning as
+     * [glassLightAngle]. See [ATMOSPHERE_GRAIN_SIZE_MIN]/`_MAX`.
+     */
+    val atmosphereGrainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT,
+    /**
+     * The glass noise layer's own color -- `null` keeps it white, the
+     * shader's original color. Independent of every other color role here:
+     * this tints only the frosted grain sheen, never the tint underneath it
+     * (see [glassAlpha] and [activeBackgroundColor]).
+     */
+    val glassNoiseColor: Int? = null,
+    /**
+     * How strong the glass noise layer is, 0 (removed entirely) to 1 (as
+     * strong as the shader's own per-cell alpha ever gets) -- a dedicated
+     * transparency control for that layer alone, independent of
+     * [glassBlurStrength] and the panel's own tint opacity ([glassAlpha]).
+     * See [GLASS_NOISE_ALPHA_MIN]/`_MAX`.
+     */
+    val glassNoiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT,
+    /**
+     * How the disc's tick ring shows the current level: `false` (default)
+     * grows a landmark tick (with two shorter neighbours) at a fixed slot
+     * near the fill's leading edge, same as ever. `true` instead turns the
+     * *whole* ring of ticks together, like a real knob being turned, with
+     * one fixed tick always riding the fill's leading edge -- see
+     * [com.nomixer.volume.compose.VolumeDisc]'s own tick-drawing code for
+     * both.
+     */
+    val discTickRotatingKnob: Boolean = false
 )
+
+/**
+ * Position (anchor + both offsets) and every color role, resolved purely
+ * from [UiPreferences.popupStyle] -- each of the three styles keeps its own
+ * independent copy (see [UiPreferences]'s own doc comment), unlike the
+ * two-way bar/disc split every other per-style setting further down uses.
+ */
+fun UiPreferences.activeAnchor(): PopupAnchor = when (popupStyle) {
+    PopupStyle.VerticalBar -> verticalBarAnchor
+    PopupStyle.HorizontalBar -> horizontalBarAnchor
+    PopupStyle.Disc -> discAnchor
+}
+
+fun UiPreferences.withAnchor(value: PopupAnchor): UiPreferences = when (popupStyle) {
+    PopupStyle.VerticalBar -> copy(verticalBarAnchor = value)
+    PopupStyle.HorizontalBar -> copy(horizontalBarAnchor = value)
+    PopupStyle.Disc -> copy(discAnchor = value)
+}
+
+fun UiPreferences.activeOffsetX(): Int = when (popupStyle) {
+    PopupStyle.VerticalBar -> verticalBarOffsetX
+    PopupStyle.HorizontalBar -> horizontalBarOffsetX
+    PopupStyle.Disc -> discOffsetX
+}
+
+fun UiPreferences.withOffsetX(value: Int): UiPreferences = when (popupStyle) {
+    PopupStyle.VerticalBar -> copy(verticalBarOffsetX = value)
+    PopupStyle.HorizontalBar -> copy(horizontalBarOffsetX = value)
+    PopupStyle.Disc -> copy(discOffsetX = value)
+}
+
+fun UiPreferences.activeOffsetY(): Int = when (popupStyle) {
+    PopupStyle.VerticalBar -> verticalBarOffsetY
+    PopupStyle.HorizontalBar -> horizontalBarOffsetY
+    PopupStyle.Disc -> discOffsetY
+}
+
+fun UiPreferences.withOffsetY(value: Int): UiPreferences = when (popupStyle) {
+    PopupStyle.VerticalBar -> copy(verticalBarOffsetY = value)
+    PopupStyle.HorizontalBar -> copy(horizontalBarOffsetY = value)
+    PopupStyle.Disc -> copy(discOffsetY = value)
+}
+
+fun UiPreferences.activeAccentColor(): Int? = when (popupStyle) {
+    PopupStyle.VerticalBar -> verticalBarAccentColor
+    PopupStyle.HorizontalBar -> horizontalBarAccentColor
+    PopupStyle.Disc -> discAccentColor
+}
+
+fun UiPreferences.withAccentColor(value: Int?): UiPreferences = when (popupStyle) {
+    PopupStyle.VerticalBar -> copy(verticalBarAccentColor = value)
+    PopupStyle.HorizontalBar -> copy(horizontalBarAccentColor = value)
+    PopupStyle.Disc -> copy(discAccentColor = value)
+}
+
+fun UiPreferences.activeBackgroundColor(): Int? = when (popupStyle) {
+    PopupStyle.VerticalBar -> verticalBarBackgroundColor
+    PopupStyle.HorizontalBar -> horizontalBarBackgroundColor
+    PopupStyle.Disc -> discBackgroundColor
+}
+
+fun UiPreferences.withBackgroundColor(value: Int?): UiPreferences = when (popupStyle) {
+    PopupStyle.VerticalBar -> copy(verticalBarBackgroundColor = value)
+    PopupStyle.HorizontalBar -> copy(horizontalBarBackgroundColor = value)
+    PopupStyle.Disc -> copy(discBackgroundColor = value)
+}
+
+fun UiPreferences.activeForegroundColor(): Int? = when (popupStyle) {
+    PopupStyle.VerticalBar -> verticalBarForegroundColor
+    PopupStyle.HorizontalBar -> horizontalBarForegroundColor
+    PopupStyle.Disc -> discForegroundColor
+}
+
+fun UiPreferences.withForegroundColor(value: Int?): UiPreferences = when (popupStyle) {
+    PopupStyle.VerticalBar -> copy(verticalBarForegroundColor = value)
+    PopupStyle.HorizontalBar -> copy(horizontalBarForegroundColor = value)
+    PopupStyle.Disc -> copy(discForegroundColor = value)
+}
+
+fun UiPreferences.activeSurfaceColor(): Int? = when (popupStyle) {
+    PopupStyle.VerticalBar -> verticalBarSurfaceColor
+    PopupStyle.HorizontalBar -> horizontalBarSurfaceColor
+    PopupStyle.Disc -> discSurfaceColor
+}
+
+fun UiPreferences.withSurfaceColor(value: Int?): UiPreferences = when (popupStyle) {
+    PopupStyle.VerticalBar -> copy(verticalBarSurfaceColor = value)
+    PopupStyle.HorizontalBar -> copy(horizontalBarSurfaceColor = value)
+    PopupStyle.Disc -> copy(discSurfaceColor = value)
+}
+
+fun UiPreferences.activeOutlineColor(): Int? = when (popupStyle) {
+    PopupStyle.VerticalBar -> verticalBarOutlineColor
+    PopupStyle.HorizontalBar -> horizontalBarOutlineColor
+    PopupStyle.Disc -> discOutlineColor
+}
+
+fun UiPreferences.withOutlineColor(value: Int?): UiPreferences = when (popupStyle) {
+    PopupStyle.VerticalBar -> copy(verticalBarOutlineColor = value)
+    PopupStyle.HorizontalBar -> copy(horizontalBarOutlineColor = value)
+    PopupStyle.Disc -> copy(discOutlineColor = value)
+}
 
 /**
  * The bar styles and the disc keep fully independent copies of the same
@@ -382,16 +573,17 @@ fun UiPreferences.withShowShadow(value: Boolean): UiPreferences =
     if (popupStyle == PopupStyle.Disc) copy(discPopupShowShadow = value) else copy(popupShowShadow = value)
 
 /**
- * How opaque a Glass or Atmosphere panel is: the alpha of the user's own
- * [backgroundColor], straight off that color picker's own opacity slider,
+ * How opaque a Glass panel is: the alpha of the user's own (per-style)
+ * Background color, straight off that color picker's own opacity slider,
  * so the one control that already sets the panel's color sets how much of
  * it there is too -- all the way down to fully transparent at 0%, the same
  * as any other color role here. [GLASS_DEFAULT_ALPHA] until they pick a
- * color of their own -- an untouched install keeps both effects the sheet
- * they have always been.
+ * color of their own -- an untouched install keeps the sheet it has always
+ * been. Atmosphere never reads this: it's always fully opaque (see
+ * [paintedPanelAlpha]).
  */
 fun UiPreferences.glassAlpha(): Float =
-    backgroundColor?.let { argb -> ((argb ushr 24) and 0xFF) / 255f } ?: GLASS_DEFAULT_ALPHA
+    activeBackgroundColor()?.let { argb -> ((argb ushr 24) and 0xFF) / 255f } ?: GLASS_DEFAULT_ALPHA
 
 /**
  * Alpha of the panel the popup paints for itself.
@@ -399,21 +591,23 @@ fun UiPreferences.glassAlpha(): Float =
  * Solid: exactly [UiPreferences.popupBackgroundOpacity], the only mode that
  * slider affects.
  *
- * Glass and Atmosphere: [glassAlpha] alike -- painted the same way on every
- * device and power state (see [com.nomixer.volume.compose.GlassBackground]
- * and [com.nomixer.volume.compose.AtmosphereBackground]). Unlike the old
- * system-blur fallback this used to be, there's no capability check here at
- * all: neither effect's opacity ever depends on whether the platform feels
- * like granting blur -- and Atmosphere used to ignore the Background
- * color's alpha entirely, reading a separate "grain opacity" slider of its
- * own instead, which is why setting that color's opacity to 0% never made
- * an Atmosphere panel actually disappear.
+ * Glass: [glassAlpha] -- the Background color's own alpha, painted the same
+ * way on every device and power state (see
+ * [com.nomixer.volume.compose.GlassBackground]). Unlike the old system-blur
+ * fallback this used to be, there's no capability check here at all: its
+ * opacity never depends on whether the platform feels like granting blur.
+ *
+ * Atmosphere: always fully opaque, ignoring the Background color's alpha
+ * (and [popupBackgroundOpacity]) entirely -- a settling field of grain read
+ * as an unfinished, half-see-through smear at anything less than 100%,
+ * unlike Glass's own gradient/blur, which still reads as glass at any
+ * opacity.
  */
 fun UiPreferences.paintedPanelAlpha(): Float =
     when (activeBackground()) {
         PopupBackground.Solid -> activeBackgroundOpacity()
         PopupBackground.Translucent -> glassAlpha()
-        PopupBackground.Atmosphere -> glassAlpha()
+        PopupBackground.Atmosphere -> 1f
     }
 
 /** Peak alpha of the popup's own shadow, at its brightest point. Deliberately light. */
