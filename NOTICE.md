@@ -1277,5 +1277,39 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   keep independent copies), so it only makes sense once the style it
   belongs to has actually been picked.
 
+## 2026-09-15 — 1.0.48
+
+- Atmosphere now ignores the Background color's own transparency entirely
+  and is always fully opaque -- a settling field of grain read as an
+  unfinished, half-see-through smear at anything less than 100%, unlike
+  Glass's own gradient/blur, which still reads as glass at any opacity.
+  Added a dedicated grain-size slider alongside the existing intensity one:
+  the shader's fixed cell scale read as too fine to register as grain at a
+  glance, and the new default is coarser.
+- Glass grows a real dedicated noise/sheen layer now, with its own color
+  picker and transparency slider, independent of the panel's own tint and
+  the blur strength.
+- The disc's tick ring is always a complete 360° wheel, whatever the
+  screen edge cuts off a laterally-anchored disc -- it used to remap the
+  whole ring onto just the arc still visible, which read as the wheel
+  itself shrinking rather than a knob mounted partway behind a bezel.
+  Restored the "rotating knob" tick animation (the whole ring turns
+  together, one tick riding the fill's leading edge) as a switch next to
+  the current fixed-slot, growing-landmark one.
+- Removed the theme (dark/light/system) selector from the customization
+  screen.
+- Position (anchor + both offsets) and every color role are now three
+  fully independent sets, one per popup style, instead of one shared set
+  across all three.
+- The top preview now renders the real popup at real scale, live-updating
+  -- and along the way fixed a real gap: the old preview never actually
+  painted Glass or Atmosphere behind the bar styles, only a plain shadowed
+  box, so those two effects were invisible there even though the disc's
+  own preview already showed them correctly. The old phone-silhouette
+  position mockup moved down next to the anchor grid, whose cells now grow
+  tall enough to match its height.
+- In landscape, the popup nudges itself clear of the display's camera
+  cutout when it would otherwise land partly behind it.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
