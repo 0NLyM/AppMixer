@@ -1172,30 +1172,38 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   -- it now gets the same soft shadow the bar-style panel already wraps
   itself in, controlled by the same existing Shadow switch.
 
-## 2026-09-14 — 1.0.45
+## 2026-09-15 — 1.0.45
 
-- Added Atmosphere as a third choice alongside Translucent and Solid for
-  every background-effect selector (bar styles, the expanded mixer, and
-  the disc's own ring): a burst of colored grain, seeded from the panel's
-  own base color via a small AGSL shader, that flickers for about half a
+- Added Atmosphere as a third choice alongside Glass and Solid for every
+  background-effect selector (bar styles, the expanded mixer, and the
+  disc's own ring): a burst of colored grain, seeded from the panel's own
+  base color via a small AGSL shader, that flickers for about half a
   second and then holds perfectly still behind the sliders -- closer to
-  how Nothing OS's own wallpaper generator resolves a field of static
-  into one fixed image than a looping animation or a flat cut to a still.
-  Unlike Translucent's glass it needs no real screen capture and no real
-  blur, so there's no accessibility-capability or hardware-acceleration
-  dependency for it to fail against -- just the panel's own color. Its
-  opacity has its own dedicated slider, the same way Translucent's glass
-  and Solid's fill each have theirs.
-
-## 2026-09-14 — 1.0.46
-
-- Added a "Glass tint" color picker under Translucent's own controls: the
-  glass scrim's tint hue can now be set independently of the theme's
-  background color, while the existing Glass opacity slider keeps
-  controlling how strong that tint reads. Left unset (the default), the
-  glass keeps tinting from the theme background exactly as before. Solid's
-  flat fill and Atmosphere's grain are untouched -- both still always read
-  the theme's background color directly.
+  how Nothing OS's own wallpaper generator resolves a field of static into
+  one fixed image than a looping animation or a flat cut to a still. It
+  needs no screen capture and no real blur, so there's no
+  accessibility-capability or hardware-acceleration dependency for it to
+  fail against -- just the panel's own color -- and its opacity has a
+  dedicated slider of its own.
+- The glass panel is now lit by a single beam of light rather than two
+  unrelated gradients: the sheet thins (so lightens) where the beam
+  crosses it, and the rim catches that same beam at exactly the two points
+  it runs off the shape's edge. Both halves read off one axis, which is
+  what makes it look lit rather than merely shaded, and two new sliders
+  under the Glass selector turn that beam and set how broad it is.
+- Renamed the Translucent background style to **Glass**, and moved the bar
+  background section directly below the colors section.
+- The glass tint's opacity now comes from the Background color's own alpha,
+  set with that color picker's opacity slider, instead of a separate Glass
+  opacity slider that duplicated it -- one control for both the color and
+  how much of it there is. Untouched installs keep the same sheet they had.
+- Removed the "Refract the screen" option along with the whole screenshot
+  backdrop pipeline behind it (including the service's `canTakeScreenshot`
+  capability declaration, now that nothing asks for a screenshot). The
+  platform refused that capture outright on at least one real device and
+  the option did nothing there; the glass now stands on its own tint,
+  grain, blur and rim light, which is what it had really been doing all
+  along. The Blur slider no longer hides behind that switch.
 
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

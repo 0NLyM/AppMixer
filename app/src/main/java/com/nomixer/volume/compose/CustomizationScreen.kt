@@ -77,8 +77,10 @@ import com.nomixer.volume.data.ATMOSPHERE_ALPHA_MAX
 import com.nomixer.volume.data.ATMOSPHERE_ALPHA_MIN
 import com.nomixer.volume.data.GLASS_BLUR_MAX
 import com.nomixer.volume.data.GLASS_BLUR_MIN
-import com.nomixer.volume.data.GLASS_SCRIM_ALPHA_MAX
-import com.nomixer.volume.data.GLASS_SCRIM_ALPHA_MIN
+import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MAX
+import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MIN
+import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MAX
+import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MIN
 import com.nomixer.volume.data.POPUP_BACKGROUND_OPACITY_MIN
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
@@ -596,21 +598,16 @@ private fun CollapsedPopupPreviewContent(preferences: UiPreferences, previewScal
                         Color.Transparent
                     },
                     trackBackingColor = if (showBackground) {
-                        // Mirrors CollapsedVolumePopup's own panelColor: a
-                        // custom glassTintColor only ever replaces the
-                        // Translucent tint's hue, never Solid's or
-                        // Atmosphere's.
-                        val baseHue = if (preferences.activeBackground() == PopupBackground.Translucent) {
-                            preferences.glassTintColor?.let { Color(it) } ?: MaterialTheme.colorScheme.background
-                        } else {
-                            MaterialTheme.colorScheme.background
-                        }
-                        baseHue.copy(alpha = preferences.paintedPanelAlpha())
+                        MaterialTheme.colorScheme.background.copy(
+                            alpha = preferences.paintedPanelAlpha()
+                        )
                     } else {
                         Color.Transparent
                     },
                     trackBackingGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent,
                     trackBackingAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere,
+                    lightAngle = preferences.glassLightAngle,
+                    lightWidth = preferences.glassLightWidth,
                     icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
                     label = if (showValue && !besideButton) previewValueText else null,
                     centerContent = if (showRingerButton) {
@@ -825,6 +822,132 @@ fun CustomizationScreen(
                 Text(stringResource(R.string.reset_colors))
             }
 
+            SectionHeader(
+                if (preferences.popupStyle == PopupStyle.Disc) {
+                    stringResource(R.string.popup_background)
+                } else {
+                    stringResource(R.string.popup_background_bar)
+                }
+            )
+            Text(
+                text = stringResource(R.string.popup_background_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            ToggleSetting(
+                label = if (preferences.popupStyle == PopupStyle.Disc) {
+                    stringResource(R.string.popup_show_background)
+                } else {
+                    stringResource(R.string.popup_show_background_bar)
+                },
+                checked = preferences.activeShowBackground(),
+                onCheckedChange = { checked ->
+                    onUpdate { it.withShowBackground(checked) }
+                }
+            )
+
+            AnimatedVisibility(
+                visible = preferences.activeShowBackground(),
+                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeIn(tween(Motion.MorphMillis)),
+                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                    fadeOut(tween(160))
+            ) {
+              Column {
+                ChipRow(
+                    options = listOf(
+                        PopupBackground.Translucent to stringResource(R.string.background_translucent),
+                        PopupBackground.Solid to stringResource(R.string.background_solid),
+                        PopupBackground.Atmosphere to stringResource(R.string.background_atmosphere)
+                    ),
+                    selected = preferences.activeBackground(),
+                    onSelect = { background -> onUpdate { it.withBackground(background) } }
+                )
+
+                AnimatedContent(
+                    targetState = preferences.activeBackground(),
+                    transitionSpec = {
+                        fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
+                    },
+                    label = "backgroundControls"
+                ) { activeBackground ->
+                    when (activeBackground) {
+                        PopupBackground.Solid -> SliderSetting(
+                            label = stringResource(R.string.popup_opacity),
+                            valueLabel = "${(preferences.activeBackgroundOpacity() * 100).roundToInt()}%",
+                            value = preferences.activeBackgroundOpacity(),
+                            valueRange = POPUP_BACKGROUND_OPACITY_MIN..1f,
+                            onValueChange = { value ->
+                                onUpdate { it.withBackgroundOpacity(value) }
+                            }
+                        )
+
+                        PopupBackground.Translucent ->
+                            // The glass sheet -- one shared set of knobs for
+                            // every style, since they tune the effect itself
+                            // rather than anything about a particular
+                            // collapsed look. How opaque it is isn't among
+                            // them: that comes off the Background color's own
+                            // alpha, set with that picker's opacity slider.
+                            Column {
+                                SliderSetting(
+                                    label = stringResource(R.string.glass_blur_strength),
+                                    valueLabel = "${(preferences.glassBlurStrength * 100).roundToInt()}%",
+                                    value = preferences.glassBlurStrength,
+                                    valueRange = GLASS_BLUR_MIN..GLASS_BLUR_MAX,
+                                    onValueChange = { value ->
+                                        onUpdate { it.copy(glassBlurStrength = value) }
+                                    }
+                                )
+                                SliderSetting(
+                                    label = stringResource(R.string.glass_light_angle),
+                                    valueLabel = "${preferences.glassLightAngle.roundToInt()}°",
+                                    value = preferences.glassLightAngle,
+                                    valueRange = GLASS_LIGHT_ANGLE_MIN..GLASS_LIGHT_ANGLE_MAX,
+                                    onValueChange = { value ->
+                                        onUpdate { it.copy(glassLightAngle = value) }
+                                    }
+                                )
+                                SliderSetting(
+                                    label = stringResource(R.string.glass_light_width),
+                                    valueLabel = "${(preferences.glassLightWidth * 100).roundToInt()}%",
+                                    value = preferences.glassLightWidth,
+                                    valueRange = GLASS_LIGHT_WIDTH_MIN..GLASS_LIGHT_WIDTH_MAX,
+                                    onValueChange = { value ->
+                                        onUpdate { it.copy(glassLightWidth = value) }
+                                    }
+                                )
+                                Text(
+                                    text = stringResource(R.string.glass_light_description),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                        PopupBackground.Atmosphere ->
+                            // Same reasoning as Translucent's own knobs above:
+                            // one shared setting for the effect itself.
+                            Column {
+                                SliderSetting(
+                                    label = stringResource(R.string.atmosphere_opacity),
+                                    valueLabel = "${(preferences.atmosphereBaseAlpha * 100).roundToInt()}%",
+                                    value = preferences.atmosphereBaseAlpha,
+                                    valueRange = ATMOSPHERE_ALPHA_MIN..ATMOSPHERE_ALPHA_MAX,
+                                    onValueChange = { value ->
+                                        onUpdate { it.copy(atmosphereBaseAlpha = value) }
+                                    }
+                                )
+                                Text(
+                                    text = stringResource(R.string.atmosphere_description),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                    }
+                }
+              }
+            }
+
             SectionHeader(stringResource(R.string.popup))
 
             Text(
@@ -952,151 +1075,6 @@ fun CustomizationScreen(
                     )
                 }
             }
-            SectionHeader(
-                if (preferences.popupStyle == PopupStyle.Disc) {
-                    stringResource(R.string.popup_background)
-                } else {
-                    stringResource(R.string.popup_background_bar)
-                }
-            )
-            Text(
-                text = stringResource(R.string.popup_background_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            ToggleSetting(
-                label = if (preferences.popupStyle == PopupStyle.Disc) {
-                    stringResource(R.string.popup_show_background)
-                } else {
-                    stringResource(R.string.popup_show_background_bar)
-                },
-                checked = preferences.activeShowBackground(),
-                onCheckedChange = { checked ->
-                    onUpdate { it.withShowBackground(checked) }
-                }
-            )
-
-            AnimatedVisibility(
-                visible = preferences.activeShowBackground(),
-                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                    fadeIn(tween(Motion.MorphMillis)),
-                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                    fadeOut(tween(160))
-            ) {
-              Column {
-                ChipRow(
-                    options = listOf(
-                        PopupBackground.Translucent to stringResource(R.string.background_translucent),
-                        PopupBackground.Solid to stringResource(R.string.background_solid),
-                        PopupBackground.Atmosphere to stringResource(R.string.background_atmosphere)
-                    ),
-                    selected = preferences.activeBackground(),
-                    onSelect = { background -> onUpdate { it.withBackground(background) } }
-                )
-
-                AnimatedContent(
-                    targetState = preferences.activeBackground(),
-                    transitionSpec = {
-                        fadeIn(tween(180)).togetherWith(fadeOut(tween(120)))
-                    },
-                    label = "backgroundControls"
-                ) { activeBackground ->
-                    when (activeBackground) {
-                        PopupBackground.Solid -> SliderSetting(
-                            label = stringResource(R.string.popup_opacity),
-                            valueLabel = "${(preferences.activeBackgroundOpacity() * 100).roundToInt()}%",
-                            value = preferences.activeBackgroundOpacity(),
-                            valueRange = POPUP_BACKGROUND_OPACITY_MIN..1f,
-                            onValueChange = { value ->
-                                onUpdate { it.withBackgroundOpacity(value) }
-                            }
-                        )
-
-                        PopupBackground.Translucent ->
-                            // Translucent is the glass scrim -- one shared set of
-                            // knobs for every style, since they tune the effect
-                            // itself rather than anything about a particular
-                            // collapsed look.
-                            Column {
-                                SliderSetting(
-                                    label = stringResource(R.string.glass_scrim_opacity),
-                                    valueLabel = "${(preferences.glassScrimBaseAlpha * 100).roundToInt()}%",
-                                    value = preferences.glassScrimBaseAlpha,
-                                    valueRange = GLASS_SCRIM_ALPHA_MIN..GLASS_SCRIM_ALPHA_MAX,
-                                    onValueChange = { value ->
-                                        onUpdate { it.copy(glassScrimBaseAlpha = value) }
-                                    }
-                                )
-                                ColorSettingRow(
-                                    label = stringResource(R.string.glass_tint_color),
-                                    color = preferences.glassTintColor?.let { Color(it) } ?: base.background,
-                                    isCustom = preferences.glassTintColor != null,
-                                    // Full alpha always -- the Glass opacity
-                                    // slider above is what actually controls
-                                    // how opaque the tint reads, so a picked
-                                    // color's own alpha would otherwise be a
-                                    // second, silently-overridden opacity
-                                    // shown right next to that slider.
-                                    onColorChange = { color ->
-                                        onUpdate { it.copy(glassTintColor = color.copy(alpha = 1f).toArgb()) }
-                                    },
-                                    onReset = { onUpdate { it.copy(glassTintColor = null) } }
-                                )
-                                ToggleSetting(
-                                    label = stringResource(R.string.glass_capture_backdrop),
-                                    checked = preferences.glassCaptureBackdrop,
-                                    onCheckedChange = { checked ->
-                                        onUpdate { it.copy(glassCaptureBackdrop = checked) }
-                                    }
-                                )
-                                Text(
-                                    text = stringResource(R.string.glass_capture_backdrop_description),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                AnimatedVisibility(
-                                    visible = preferences.glassCaptureBackdrop,
-                                    enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                                        fadeIn(tween(Motion.MorphMillis)),
-                                    exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                                        fadeOut(tween(160))
-                                ) {
-                                    SliderSetting(
-                                        label = stringResource(R.string.glass_blur_strength),
-                                        valueLabel = "${(preferences.glassBlurStrength * 100).roundToInt()}%",
-                                        value = preferences.glassBlurStrength,
-                                        valueRange = GLASS_BLUR_MIN..GLASS_BLUR_MAX,
-                                        onValueChange = { value ->
-                                            onUpdate { it.copy(glassBlurStrength = value) }
-                                        }
-                                    )
-                                }
-                            }
-
-                        PopupBackground.Atmosphere ->
-                            // Same reasoning as Translucent's own knobs above:
-                            // one shared setting for the effect itself.
-                            Column {
-                                SliderSetting(
-                                    label = stringResource(R.string.atmosphere_opacity),
-                                    valueLabel = "${(preferences.atmosphereBaseAlpha * 100).roundToInt()}%",
-                                    value = preferences.atmosphereBaseAlpha,
-                                    valueRange = ATMOSPHERE_ALPHA_MIN..ATMOSPHERE_ALPHA_MAX,
-                                    onValueChange = { value ->
-                                        onUpdate { it.copy(atmosphereBaseAlpha = value) }
-                                    }
-                                )
-                                Text(
-                                    text = stringResource(R.string.atmosphere_description),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                    }
-                }
-              }
-            }
-
             SectionHeader(stringResource(R.string.popup_content))
             Text(
                 text = stringResource(R.string.popup_content_description),
@@ -1291,10 +1269,9 @@ fun CustomizationScreen(
                             discPopupBackground = defaults.discPopupBackground,
                             popupBackgroundOpacity = defaults.popupBackgroundOpacity,
                             discPopupBackgroundOpacity = defaults.discPopupBackgroundOpacity,
-                            glassScrimBaseAlpha = defaults.glassScrimBaseAlpha,
-                            glassCaptureBackdrop = defaults.glassCaptureBackdrop,
                             glassBlurStrength = defaults.glassBlurStrength,
-                            glassTintColor = defaults.glassTintColor,
+                            glassLightAngle = defaults.glassLightAngle,
+                            glassLightWidth = defaults.glassLightWidth,
                             atmosphereBaseAlpha = defaults.atmosphereBaseAlpha,
                             expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,

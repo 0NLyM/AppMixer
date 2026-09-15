@@ -28,12 +28,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.DISC_INSET
+import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
+import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
@@ -101,21 +100,26 @@ fun VolumeDisc(
      */
     trackBackingColor: Color = Color.Transparent,
     /**
-     * Paints [trackBackingColor] as the full glass effect (blurred backdrop
-     * + gradient + grain, see [drawGlassRing]) instead of a flat fill -- the
-     * caller sets this for Translucent mode, never for Solid's own flat
-     * opacity.
+     * Paints [trackBackingColor] as the full glass effect (beam-lit tint +
+     * grain + rim light, see [drawGlassRing]) instead of a flat fill -- the
+     * caller sets this for Glass mode, never for Solid's own flat opacity.
      */
     trackBackingGlass: Boolean = false,
-    /** The blurred still of the screen behind the ring; see [GlassBackdrop]. Ignored unless [trackBackingGlass]. */
-    glassBackdrop: GlassBackdrop? = null,
     /**
      * Paints [trackBackingColor] as the Atmosphere grain (see
      * [drawAtmosphereRing]) instead of a flat fill -- mutually exclusive
-     * with [trackBackingGlass], same as the Solid/Translucent/Atmosphere
-     * choice it mirrors.
+     * with [trackBackingGlass], same as the Solid/Glass/Atmosphere choice it
+     * mirrors.
      */
     trackBackingAtmosphere: Boolean = false,
+    /**
+     * Which way the light crossing the ring runs, and how broad its lit band
+     * is -- the same single beam the flat panels are lit by (see
+     * [glassEdgeLightBrush]), so a disc and a bar-style panel agree on where
+     * the light is coming from.
+     */
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
     icon: ImageVector? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
@@ -169,16 +173,9 @@ fun VolumeDisc(
     var dragging by remember { mutableStateOf(false) }
     val fill = remember { Animatable(targetFraction) }
 
-    // Where the ring's own Canvas sits, so the glass backdrop underneath the
-    // track can be lined up with the part of the screen it's actually
-    // covering. Only read when there's a backdrop to place at all.
-    val hostView = LocalView.current
-    var canvasInWindow by remember { mutableStateOf(Offset.Zero) }
-
-    // Unconditional even though only Atmosphere mode ever uses it -- same
-    // reasoning as canvasInWindow above, and it costs nothing while unused:
-    // a settled seed that never changes again once its own brief coroutine
-    // finishes.
+    // Unconditional even though only Atmosphere mode ever uses it, and it
+    // costs nothing while unused: a settled seed that never changes again
+    // once its own brief coroutine finishes.
     val atmosphereSeed = rememberAtmosphereSeed()
 
     LaunchedEffect(targetFraction, dragging) {
@@ -196,7 +193,6 @@ fun VolumeDisc(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
-                .onGloballyPositioned { canvasInWindow = it.positionInWindow() }
                 .pointerInput(range) {
                     var startValue = 0f
                     var startY = 0f
@@ -286,23 +282,19 @@ fun VolumeDisc(
             }
 
             // Backing confined to the ring's own track, never anything
-            // wider -- so Solid's tint and Translucent's blur reveal can
-            // only ever show up inside the same annulus the white track
-            // already occupies, and everything else (the shadow-fade
-            // sliver, the margin beyond it) stays genuinely see-through.
+            // wider -- so Solid's tint and Glass's own lit sheet can only
+            // ever show up inside the same annulus the white track already
+            // occupies, and everything else (the shadow-fade sliver, the
+            // margin beyond it) stays genuinely see-through.
             if (trackBackingColor.alpha > 0f) {
                 if (trackBackingGlass) {
                     drawGlassRing(
                         baseColor = trackBackingColor,
-                        backdrop = glassBackdrop,
-                        screenOrigin = if (glassBackdrop == null) {
-                            Offset.Zero
-                        } else {
-                            hostView.screenOrigin(canvasInWindow)
-                        },
                         center = center,
                         ringRadius = ringRadius,
-                        ringWidth = ringWidth
+                        ringWidth = ringWidth,
+                        lightAngle = lightAngle,
+                        lightWidth = lightWidth
                     )
                 } else if (trackBackingAtmosphere) {
                     drawAtmosphereRing(
@@ -310,7 +302,9 @@ fun VolumeDisc(
                         seed = atmosphereSeed,
                         center = center,
                         ringRadius = ringRadius,
-                        ringWidth = ringWidth
+                        ringWidth = ringWidth,
+                        lightAngle = lightAngle,
+                        lightWidth = lightWidth
                     )
                 } else {
                     drawArc(

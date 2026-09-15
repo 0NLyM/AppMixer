@@ -167,15 +167,6 @@ internal fun Modifier.expandOnSwipe(
 fun CollapsedVolumePopup(
     audioManager: AudioManager,
     preferences: UiPreferences,
-    /**
-     * The blurred still of the screen behind the popup that its glass
-     * panels refract, captured just before the overlay went up (see
-     * [com.nomixer.volume.Service]) -- null when
-     * [com.nomixer.volume.data.UiPreferences.glassCaptureBackdrop] is off or
-     * the capture didn't land, in which case the glass is a plain tinted
-     * sheet with nothing showing through.
-     */
-    glassBackdrop: GlassBackdrop? = null,
     onExpand: () -> Unit,
     onInteract: () -> Unit
 ) {
@@ -333,15 +324,9 @@ fun CollapsedVolumePopup(
         targetValue = if (!showBackground) {
             Color.Transparent
         } else {
-            // Translucent's own tint hue can be overridden independently of
-            // the theme's background color (see UiPreferences.glassTintColor);
-            // Solid and Atmosphere both always read the theme color directly.
-            val baseHue = if (panelGlass) {
-                preferences.glassTintColor?.let { Color(it) } ?: MaterialTheme.colorScheme.background
-            } else {
-                MaterialTheme.colorScheme.background
-            }
-            baseHue.copy(alpha = preferences.paintedPanelAlpha())
+            MaterialTheme.colorScheme.background.copy(
+                alpha = preferences.paintedPanelAlpha()
+            )
         },
         animationSpec = Motion.ColorShift,
         label = "popupPanel"
@@ -405,8 +390,9 @@ fun CollapsedVolumePopup(
             GlassBackground(
                 shape = panelShape,
                 baseColor = panelColor,
-                backdrop = glassBackdrop,
                 blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
+                lightAngle = preferences.glassLightAngle,
+                lightWidth = preferences.glassLightWidth,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -614,8 +600,9 @@ fun CollapsedVolumePopup(
                         // nowhere else.
                         trackBackingColor = panelColor,
                         trackBackingGlass = panelGlass,
-                        glassBackdrop = glassBackdrop,
                         trackBackingAtmosphere = panelAtmosphere,
+                        lightAngle = preferences.glassLightAngle,
+                        lightWidth = preferences.glassLightWidth,
                         icon = if (showIcon) volumeIcon else null,
                         label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer
@@ -662,7 +649,14 @@ fun CollapsedVolumePopup(
             Box(
                 Modifier
                     .matchParentSize()
-                    .border(1.dp, glassEdgeLightBrush(), panelShape)
+                    .border(
+                        1.dp,
+                        glassEdgeLightBrush(
+                            preferences.glassLightAngle,
+                            preferences.glassLightWidth
+                        ),
+                        panelShape
+                    )
             )
         }
     }

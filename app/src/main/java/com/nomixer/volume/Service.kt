@@ -3,9 +3,6 @@ package com.nomixer.volume
 import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityService.ScreenshotResult
-import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.animation.Animator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
@@ -13,14 +10,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
-import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -50,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.unit.dp
@@ -64,7 +58,6 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.SystemVolumePanel
-import com.nomixer.volume.compose.GlassBackdrop
 import com.nomixer.volume.compose.AtmosphereBackground
 import com.nomixer.volume.compose.GlassBackground
 import com.nomixer.volume.compose.VolumeChangeObserver
@@ -72,7 +65,6 @@ import com.nomixer.volume.compose.glassEdgeLightBrush
 import com.nomixer.volume.compose.PANEL_SHADOW_ELEVATION_DP
 import com.nomixer.volume.compose.softShadow
 import com.nomixer.volume.data.shadowAlpha
-import com.nomixer.volume.data.DiagnosticLog
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
@@ -120,16 +112,6 @@ class Service : AccessibilityService() {
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
         private const val AUTO_REPEAT_INITIAL_DELAY = 500L
-
-        /**
-         * How far the glass backdrop's own capture is scaled down, as a
-         * number of successive halvings, across the blur slider's range --
-         * so the weakest setting still softens the screen a little (a
-         * perfectly sharp backdrop wouldn't read as glass at all) and the
-         * strongest is a heavy frost rather than an unrecognisable smear.
-         */
-        private const val GLASS_BLUR_MIN_HALVINGS = 2f
-        private const val GLASS_BLUR_MAX_HALVINGS = 5f
 
         /**
          * Floor between "Shizuku isn't connected" toasts, so holding a
@@ -201,190 +183,6 @@ class Service : AccessibilityService() {
 
     private var lifecycle: LifecycleRegistry? = null
 
-    /**
-     * The blurred still of the screen the glass panels refract, captured
-     * just before the overlay goes up (see [captureGlassBackdrop]). Null
-     * while the capture is switched off, or before the first one lands --
-     * the panels are plain tinted glass until then.
-     */
-    private var glassBackdropState by mutableStateOf<GlassBackdrop?>(null)
-
-    /**
-     * Asks the platform for a still of the current screen -- through this
-     * accessibility service's own screenshot capability
-     * (`android:canTakeScreenshot` in accessibility_service_config.xml: no
-     * MediaProjection, no extra user-facing permission dialog) -- and turns
-     * it into the glass panels' blurred backdrop.
-     *
-     * Called from [showView] *before* the overlay window is added, which is
-     * the whole trick: the popup can't appear in its own backdrop, so the
-     * glass shows what's genuinely behind it rather than a feedback loop of
-     * previous frames of itself. One capture per appearance -- nothing is
-     * sampled while the popup is up.
-     *
-     * A failure (capability not granted yet, a secure window on screen, the
-     * system refusing) never breaks anything -- the panels carry on as the
-     * plain tinted glass they are without a backdrop -- but it does say why,
-     * via [warnGlassCapture]: an option that silently does nothing is
-     * indistinguishable from one that isn't working.
-     */
-    private fun captureGlassBackdrop() {
-        val preferences = manager.uiPreferences
-        val captureEnabled = preferences.glassCaptureBackdrop
-        val showBackground = preferences.activeShowBackground()
-        val isTranslucent = preferences.activeBackground() == PopupBackground.Translucent
-        if (!captureEnabled || !showBackground || !isTranslucent) {
-            glassBackdropState = null
-            // The one branch of this whole path that used to return with
-            // nothing recorded at all -- logged so a blank glass panel
-            // never looks unexplained: this is why nothing was even
-            // attempted, as opposed to an attempt the platform refused.
-            warnGlassCapture(
-                "not requesting a capture -- refract=$captureEnabled, " +
-                    "showBackground=$showBackground, translucent=$isTranslucent",
-                isError = false
-            )
-            return
-        }
-
-        // Not gated on serviceInfo?.capabilities here any more: that
-        // pre-check turned out to be guesswork about exactly when Android
-        // re-grants a capability added to accessibility_service_config.xml,
-        // and the guess (toggling some service switch) was wrong for at
-        // least one real device/launcher combination that doesn't expose
-        // the switch it assumed. Asking the platform directly instead, via
-        // the actual takeScreenshot() call below, and surfacing whatever it
-        // says -- success or its own specific error code -- is ground
-        // truth instead of a second-hand guess about how to react to it.
-        val capabilities = serviceInfo?.capabilities ?: 0
-        val screenshotBitSet =
-            capabilities and AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT != 0
-        DiagnosticLog.log(
-            "Glass",
-            "requesting capture; capabilities=0x${capabilities.toString(16)} " +
-                "(canTakeScreenshot bit ${if (screenshotBitSet) "set" else "not set"})"
-        )
-
-        val blurStrength = preferences.glassBlurStrength
-        try {
-            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
-                override fun onSuccess(result: ScreenshotResult) {
-                    val backdrop = try {
-                        buildGlassBackdrop(result, blurStrength)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Can't turn the screen capture into a backdrop", e)
-                        null
-                    }
-                    if (backdrop == null) {
-                        warnGlassCapture("captured OK but came back unreadable")
-                        return
-                    }
-                    glassBackdropState = backdrop
-                    // Loud on purpose, success included, not just failure:
-                    // the capability pre-check this replaced was guessing
-                    // at what a failure meant, so for now every outcome is
-                    // recorded until this is confirmed solid across more
-                    // devices.
-                    warnGlassCapture(
-                        "captured OK: ${backdrop.image.width}x${backdrop.image.height}" +
-                            " (scale ${backdrop.scale})",
-                        isError = false
-                    )
-                }
-
-                override fun onFailure(errorCode: Int) {
-                    // Names per AccessibilityService's own TakeScreenshotCallback
-                    // docs -- shown alongside the raw number since the exact
-                    // failure reason is the one piece of ground truth neither
-                    // of us has had yet.
-                    val meaning = when (errorCode) {
-                        0 -> "internal error"
-                        1 -> "no accessibility access -- capability not granted"
-                        2 -> "called again too soon (rate limited)"
-                        3 -> "invalid display"
-                        else -> "unknown"
-                    }
-                    warnGlassCapture("takeScreenshot failed: error $errorCode ($meaning)")
-                }
-            })
-        } catch (e: Exception) {
-            warnGlassCapture(
-                "takeScreenshot() threw ${e.javaClass.name}: ${e.message ?: "(no message)"}"
-            )
-        }
-    }
-
-    /**
-     * Records exactly what happened with the glass backdrop capture --
-     * success included, for now (see the call site in [captureGlassBackdrop]):
-     * a guess about what a failure meant already turned out wrong once, so
-     * this round surfaces the platform's own ground truth in full, in both
-     * directions. Goes to [DiagnosticLog] rather than a Toast: a Toast on
-     * one real device turned out to truncate at two lines, cutting these
-     * messages off right where their one actually useful token (an
-     * exception's own class name) started. The log screen (reachable from
-     * MainActivity's own top bar) shows every entry in full and lets it be
-     * copied out whole.
-     */
-    private fun warnGlassCapture(reason: String, isError: Boolean = true) {
-        DiagnosticLog.log(if (isError) "Glass✗" else "Glass✓", reason)
-    }
-
-    /**
-     * Scales [result] right down -- which is the blur itself, since shrinking
-     * averages neighbouring pixels together -- by halving it [blurStrength]'s
-     * own number of times. Successive halvings, rather than one big jump
-     * straight to the final size, so the averaging actually reaches across
-     * the whole neighbourhood instead of point-sampling it.
-     */
-    private fun buildGlassBackdrop(result: ScreenshotResult, blurStrength: Float): GlassBackdrop? {
-        val hardwareBitmap = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
-        // Hardware bitmaps can't be scaled (nothing may draw one into a
-        // software canvas), so this one copy at full size is unavoidable --
-        // then it's dropped immediately, before any of the halving below.
-        // Read back before releasing the buffer it came from, rather than
-        // trusting the wrapper to have taken its own reference.
-        val fullSize = hardwareBitmap?.copy(Bitmap.Config.ARGB_8888, false)
-        hardwareBitmap?.recycle()
-        result.hardwareBuffer.close()
-        if (fullSize == null) {
-            return null
-        }
-
-        val fullWidth = fullSize.width
-        if (fullWidth <= 0 || fullSize.height <= 0) {
-            fullSize.recycle()
-            return null
-        }
-
-        val halvings = (GLASS_BLUR_MIN_HALVINGS +
-            blurStrength.coerceIn(0f, 1f) * (GLASS_BLUR_MAX_HALVINGS - GLASS_BLUR_MIN_HALVINGS))
-            .roundToInt()
-        // Explicitly typed, and each new bitmap forced non-null: a captured
-        // var reassigned inside a closure doesn't keep a smart cast, which
-        // read every later use of it below as Bitmap.createScaledBitmap's
-        // own nullable return type.
-        var scaled: Bitmap = fullSize
-        repeat(halvings) {
-            val next = checkNotNull(
-                Bitmap.createScaledBitmap(
-                    scaled,
-                    (scaled.width / 2).coerceAtLeast(1),
-                    (scaled.height / 2).coerceAtLeast(1),
-                    true
-                )
-            )
-            scaled.recycle()
-            scaled = next
-        }
-
-        // Not recycled: this one is handed straight to Compose to draw.
-        return GlassBackdrop(
-            image = scaled.asImageBitmap(),
-            scale = scaled.width.toFloat() / fullWidth
-        )
-    }
-
     private fun createView(): View {
         val owner = object : SavedStateRegistryOwner {
             private val lifecycleRegistry = LifecycleRegistry(this)
@@ -450,18 +248,9 @@ class Service : AccessibilityService() {
                         targetValue = if (!showBackground) {
                             Color.Transparent
                         } else {
-                            // Translucent's own tint hue can be overridden
-                            // independently of the theme's background color
-                            // (see UiPreferences.glassTintColor); Solid and
-                            // Atmosphere both always read the theme color
-                            // directly -- same as CollapsedVolumePopup's own
-                            // panelColor.
-                            val baseHue = if (panelGlass) {
-                                preferences.glassTintColor?.let { Color(it) } ?: MaterialTheme.colorScheme.background
-                            } else {
-                                MaterialTheme.colorScheme.background
-                            }
-                            baseHue.copy(alpha = preferences.paintedPanelAlpha())
+                            MaterialTheme.colorScheme.background.copy(
+                                alpha = preferences.paintedPanelAlpha()
+                            )
                         },
                         animationSpec = Motion.ColorShift,
                         label = "mixerPanel"
@@ -553,8 +342,9 @@ class Service : AccessibilityService() {
                                         GlassBackground(
                                             shape = mixerShape,
                                             baseColor = panelColor,
-                                            backdrop = glassBackdropState,
                                             blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
+                                            lightAngle = preferences.glassLightAngle,
+                                            lightWidth = preferences.glassLightWidth,
                                             modifier = Modifier.matchParentSize()
                                         )
                                     }
@@ -602,7 +392,14 @@ class Service : AccessibilityService() {
                                         Box(
                                             Modifier
                                                 .matchParentSize()
-                                                .border(1.dp, glassEdgeLightBrush(), mixerShape)
+                                                .border(
+                                                    1.dp,
+                                                    glassEdgeLightBrush(
+                                                        preferences.glassLightAngle,
+                                                        preferences.glassLightWidth
+                                                    ),
+                                                    mixerShape
+                                                )
                                         )
                                     }
                                 }
@@ -610,7 +407,6 @@ class Service : AccessibilityService() {
                                 CollapsedVolumePopup(
                                     audioManager = manager.audioManager,
                                     preferences = preferences,
-                                    glassBackdrop = glassBackdropState,
                                     onExpand = {
                                         expanded = true
                                         // The window is about to resize for
@@ -844,9 +640,6 @@ class Service : AccessibilityService() {
     private fun showView() {
         if (view == null) {
             Log.i(TAG, "add view")
-            // Strictly before the window goes up, so the glass refracts
-            // what's genuinely behind the popup rather than the popup itself.
-            captureGlassBackdrop()
             // The view doesn't respond to input events if reused
             view = createView()
             layoutParams.alpha = 0f

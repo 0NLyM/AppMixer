@@ -2,13 +2,8 @@ package com.nomixer.volume.compose
 
 import android.graphics.RuntimeShader
 import android.util.Log
-import android.view.View
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -18,10 +13,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
@@ -29,58 +24,42 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
+import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
+import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
- * Glassmorphism for Translucent mode's panel -- the single rendering path
- * used everywhere it paints a background (bar styles, the expanded mixer,
- * the disc's own ring track), never touching the platform's cross-window
- * blur and so never subject to it being switched off (battery saver, thermal
+ * Glassmorphism for Glass mode's panel -- the single rendering path used
+ * everywhere it paints a background (bar styles, the expanded mixer, the
+ * disc's own ring track), never touching the platform's cross-window blur
+ * and so never subject to it being switched off (battery saver, thermal
  * throttling, a device that just doesn't do it -- see NOTICE.md).
  *
- * The real thing needs the actual content behind the panel, blurred. Since
- * the system won't blur it for us, [GlassBackdrop] carries a copy of it:
- * a still of the screen taken the instant before the overlay appears (by
- * [com.nomixer.volume.Service], through this accessibility service's own
- * screenshot capability) and scaled right down, which *is* the blur --
- * shrinking averages neighbouring pixels together, and drawing the small
- * image back up to panel size with bilinear filtering spreads that average
- * smoothly across it. No per-frame capture, no shader pass over the
- * underlying content, and it stays put while the popup is up.
+ * Everything here hangs off one idea: a single beam of light crossing the
+ * panel at [GLASS_LIGHT_ANGLE_DEFAULT] (and as wide as
+ * [GLASS_LIGHT_WIDTH_DEFAULT]), both user-adjustable. The sheet is thinnest
+ * -- so lightest -- where that beam lands and thickens away from it, and the
+ * rim catches the same beam at the same two points it crosses the shape's
+ * own edge. Tint and rim reading off one shared axis is what makes it look
+ * lit rather than merely shaded: a gradient running one way with a rim lit
+ * the other is the giveaway that neither is really a light.
  *
  * Painted in order, behind the panel's own content:
- * 1. The blurred backdrop, lined up so it shows exactly the part of the
- *    screen the panel is sitting on top of -- the actual glass. Absent (no
- *    capture yet, or the user switched it off, or the platform simply
- *    refuses it -- see NOTICE.md) the rest still stands on its own as a
- *    tinted scrim, just not one that refracts anything.
- * 2. A diagonal gradient of the panel's own base color, brighter at one
- *    corner and dimmer at the other, frosting the backdrop and giving the
- *    sheet an uneven sheen instead of a flat wash.
- * 3. A subtle AGSL grain, the way real frosted glass never tints perfectly
- *    evenly -- a couple of ops per pixel, sampling nothing.
- * 4. Everything above, optionally run through a real blur
- *    ([GlassBackground]'s own `blurRadius`) -- frosting it further whether
- *    or not a real backdrop landed, since blurring the grain alone already
- *    reads as glass.
- * 5. A soft diagonal light along the shape's own edge ([glassEdgeLightBrush]),
- *    brighter at two opposite corners, the way light actually catches the
- *    rim of real glass instead of a single flat border color.
+ * 1. The beam-lit tint ([glassScrimBrush]), a sheet of the panel's own base
+ *    color that thins where the light crosses it.
+ * 2. A subtle AGSL grain ([glassNoiseBrush]), the way real frosted glass
+ *    never tints perfectly evenly -- a couple of ops per pixel, sampling
+ *    nothing.
+ * 3. Both of the above, optionally run through a real blur
+ *    ([GlassBackground]'s own `blurRadius`) -- blurring the grain alone
+ *    already reads as frost.
+ * 4. The same beam again along the shape's own edge ([glassEdgeLightBrush]),
+ *    brightest exactly where the lit band of the tint reaches the rim.
  */
-class GlassBackdrop(
-    /** The screen still, already scaled down -- that downscale is the blur. */
-    val image: ImageBitmap,
-    /** Backdrop pixels per physical screen pixel, i.e. how far down it was scaled. */
-    val scale: Float
-)
-
 private const val NOISE_SHADER_SRC = """
     uniform float2 resolution;
 
@@ -93,29 +72,80 @@ private const val NOISE_SHADER_SRC = """
     }
 """
 
-/** The tinted gradient layer alone -- see [glassNoiseBrush] for the grain on top of it. */
-fun glassScrimBrush(baseColor: Color): Brush = Brush.linearGradient(
-    colorStops = arrayOf(
-        0f to baseColor.copy(alpha = (baseColor.alpha * 1.7f).coerceAtMost(1f)),
-        0.5f to baseColor,
-        1f to baseColor.copy(alpha = baseColor.alpha * 0.5f)
-    )
-)
+/**
+ * A gradient laid along the light beam's own axis rather than the panel's
+ * diagonal, so [glassScrimBrush] and [glassEdgeLightBrush] can be turned
+ * together and stay one beam. Resolved per draw ([createShader] is handed
+ * the real size) because the axis depends on the shape it crosses, which a
+ * fixed-offset [Brush.linearGradient] can't know.
+ */
+private class BeamBrush(
+    private val angleDegrees: Float,
+    private val colors: List<Color>,
+    private val stops: List<Float>
+) : ShaderBrush() {
+    override fun createShader(size: Size): Shader {
+        val radians = Math.toRadians(angleDegrees.toDouble())
+        val dx = cos(radians).toFloat()
+        val dy = sin(radians).toFloat()
+        val center = Offset(size.width / 2f, size.height / 2f)
+        // Half the panel's own extent measured along the beam, so the
+        // gradient spans it exactly however far it's been turned.
+        val half = (abs(size.width * dx) + abs(size.height * dy)) / 2f
+        val reach = Offset(dx * half, dy * half)
+        return LinearGradientShader(center - reach, center + reach, colors, stops)
+    }
+}
 
 /**
- * A soft diagonal highlight for the glass edge, brightest at the two
- * opposite corners a light source and its own reflection would actually
- * catch and dimmest exactly between them -- real depth instead of the flat,
- * uniform rim a single border color reads as.
+ * Where the beam sits along its own axis: dead center, with [width] setting
+ * how much of the panel the lit band covers before it falls back off to
+ * nothing at either end.
  */
-fun glassEdgeLightBrush(strength: Float = 1f): Brush = Brush.linearGradient(
-    colorStops = arrayOf(
-        0f to Color.White.copy(alpha = 0.35f * strength),
-        0.18f to Color.White.copy(alpha = 0.10f * strength),
-        0.5f to Color.White.copy(alpha = 0.02f * strength),
-        0.82f to Color.White.copy(alpha = 0.10f * strength),
-        1f to Color.White.copy(alpha = 0.35f * strength)
+private fun beamStops(width: Float): List<Float> {
+    val half = 0.06f + 0.42f * width.coerceIn(0f, 1f)
+    return listOf(0f, 0.5f - half, 0.5f, 0.5f + half, 1f)
+}
+
+/**
+ * The tinted sheet: thinnest (so lightest) right along the beam, thickening
+ * either side of it. See [glassNoiseBrush] for the grain on top of it, and
+ * [glassEdgeLightBrush] for the same beam caught at the rim.
+ */
+fun glassScrimBrush(
+    baseColor: Color,
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
+): Brush {
+    val unlit = baseColor.copy(alpha = (baseColor.alpha * 1.6f).coerceAtMost(1f))
+    val lit = baseColor.copy(alpha = baseColor.alpha * 0.45f)
+    return BeamBrush(
+        angleDegrees = lightAngle,
+        colors = listOf(unlit, baseColor, lit, baseColor, unlit),
+        stops = beamStops(lightWidth)
     )
+}
+
+/**
+ * The rim light: the same beam as [glassScrimBrush], on the same axis and
+ * with the same band, so the edge is brightest exactly where the tint's own
+ * lit band runs off it -- one light crossing the glass rather than two
+ * unrelated gradients.
+ */
+fun glassEdgeLightBrush(
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    strength: Float = 1f
+): Brush = BeamBrush(
+    angleDegrees = lightAngle,
+    colors = listOf(
+        Color.White.copy(alpha = 0.02f * strength),
+        Color.White.copy(alpha = 0.12f * strength),
+        Color.White.copy(alpha = 0.38f * strength),
+        Color.White.copy(alpha = 0.12f * strength),
+        Color.White.copy(alpha = 0.02f * strength)
+    ),
+    stops = beamStops(lightWidth)
 )
 
 // Compiling AGSL is far too expensive to redo on every frame of a volume
@@ -159,59 +189,8 @@ fun glassNoiseBrush(size: Size): Brush? {
     }
 }
 
-// Reused rather than allocated per draw, same reasoning (and same single
-// thread) as the shader cache above.
-private val screenLocation = IntArray(2)
-
 /**
- * Where a point [positionInWindow] into this view's own window actually
- * lands on the physical screen -- what a [GlassBackdrop] (a still of that
- * whole screen) has to be indexed by.
- *
- * Read at draw time rather than cached alongside the layout position: the
- * overlay window gets *moved* after its first layout (see Service.kt's
- * clampToScreenOnceLaidOut), which shifts everything in it across the screen
- * without changing any child's position within the window, so a screen
- * position worked out once at layout time would silently go stale.
- */
-internal fun View.screenOrigin(positionInWindow: Offset): Offset {
-    getLocationOnScreen(screenLocation)
-    return Offset(screenLocation[0] + positionInWindow.x, screenLocation[1] + positionInWindow.y)
-}
-
-/**
- * Draws the part of [backdrop] that lies behind this surface, stretched back
- * up to fill it -- [screenOrigin] is this surface's own top-left on the
- * physical screen.
- */
-internal fun DrawScope.drawGlassBackdrop(backdrop: GlassBackdrop, screenOrigin: Offset) {
-    val image = backdrop.image
-    if (image.width <= 0 || image.height <= 0) {
-        return
-    }
-
-    val srcX = (screenOrigin.x * backdrop.scale).roundToInt().coerceIn(0, image.width - 1)
-    val srcY = (screenOrigin.y * backdrop.scale).roundToInt().coerceIn(0, image.height - 1)
-    drawImage(
-        image = image,
-        srcOffset = IntOffset(srcX, srcY),
-        srcSize = IntSize(
-            (size.width * backdrop.scale).roundToInt().coerceIn(1, image.width - srcX),
-            (size.height * backdrop.scale).roundToInt().coerceIn(1, image.height - srcY)
-        ),
-        dstOffset = IntOffset.Zero,
-        dstSize = IntSize(
-            size.width.roundToInt().coerceAtLeast(1),
-            size.height.roundToInt().coerceAtLeast(1)
-        ),
-        // Bilinear, so the scaled-down still spreads smoothly back across the
-        // panel instead of showing as the blocks it actually is.
-        filterQuality = FilterQuality.Low
-    )
-}
-
-/**
- * The glass panel's background alone -- backdrop, tint and grain, optionally
+ * The glass panel's background alone -- beam-lit tint and grain, optionally
  * blurred -- as a plain empty [Box] meant to sit *behind* a panel's real
  * content in the same [Box] stack (see CollapsedVolumePopup.kt and
  * Service.kt's own call sites), rather than as a [Modifier] chained onto
@@ -226,22 +205,20 @@ internal fun DrawScope.drawGlassBackdrop(backdrop: GlassBackdrop, screenOrigin: 
  *
  * Pair with [glassEdgeLightBrush] via [Modifier.border] for the rim light,
  * drawn as its own sibling *above* both this and the real content so it
- * isn't blurred either.
+ * isn't blurred either -- passing it the same [lightAngle] and [lightWidth]
+ * given here, which is what keeps the two halves of the effect one beam.
  */
 @Composable
 fun GlassBackground(
     shape: Shape,
     baseColor: Color,
     modifier: Modifier = Modifier,
-    backdrop: GlassBackdrop? = null,
-    blurRadius: Dp = 0.dp
+    blurRadius: Dp = 0.dp,
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
 ) {
-    val view = LocalView.current
-    var panelInWindow by remember { mutableStateOf(Offset.Zero) }
-
     Box(
         modifier
-            .onGloballyPositioned { panelInWindow = it.positionInWindow() }
             .clip(shape)
             .then(
                 if (blurRadius > 0.dp) {
@@ -255,21 +232,13 @@ fun GlassBackground(
                 }
             )
             .drawWithCache {
-                val tint = glassScrimBrush(baseColor)
+                val tint = glassScrimBrush(baseColor, lightAngle, lightWidth)
                 onDrawBehind {
-                    // Each layer wrapped separately: a bad backdrop frame or
-                    // a broken noise shader (see glassNoiseBrush) must never
-                    // take the plain tint fill down with it -- that shared
-                    // fate is exactly what made the whole panel invisible
-                    // instead of just plainer than intended.
-                    try {
-                        if (backdrop != null) {
-                            drawGlassBackdrop(backdrop, view.screenOrigin(panelInWindow))
-                        }
-                    } catch (e: Throwable) {
-                        Log.w("GlassScrim", "Glass backdrop draw failed", e)
-                    }
                     drawRect(tint)
+                    // Wrapped on its own: a broken noise shader (see
+                    // glassNoiseBrush) must never take the tint down with
+                    // it -- that shared fate is exactly what made the whole
+                    // panel invisible instead of just plainer than intended.
                     try {
                         glassNoiseBrush(size)?.let { drawRect(it) }
                     } catch (e: Throwable) {
@@ -281,22 +250,21 @@ fun GlassBackground(
 }
 
 /**
- * The same backdrop, tint, grain and edge light as [GlassBackground], but
+ * The same beam-lit tint, grain and edge light as [GlassBackground], but
  * confined to a ring -- for [VolumeDisc]'s own track, painted straight into
  * its Canvas rather than through a Compose layout node. No adjustable blur
  * here, unlike [GlassBackground]: a real blur needs a genuinely separate
  * graphics layer (see that function's own doc comment), and the ring is
  * drawn as one call among several sharing VolumeDisc's single Canvas, not a
- * node of its own. [screenOrigin] is that Canvas' own top-left on the
- * physical screen.
+ * node of its own.
  */
 fun DrawScope.drawGlassRing(
     baseColor: Color,
-    backdrop: GlassBackdrop?,
-    screenOrigin: Offset,
     center: Offset,
     ringRadius: Float,
-    ringWidth: Float
+    ringWidth: Float,
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
 ) {
     val outerRadius = ringRadius + ringWidth / 2f
     val innerRadius = (ringRadius - ringWidth / 2f).coerceAtLeast(0f)
@@ -323,24 +291,20 @@ fun DrawScope.drawGlassRing(
     }
 
     clipPath(ring) {
-        // Same isolation as GlassBackground: the plain tint must show even
-        // if the backdrop or the noise shader fails.
-        try {
-            if (backdrop != null) {
-                drawGlassBackdrop(backdrop, screenOrigin)
-            }
-        } catch (e: Throwable) {
-            Log.w("GlassScrim", "Glass ring backdrop draw failed", e)
-        }
-        drawRect(glassScrimBrush(baseColor))
+        drawRect(glassScrimBrush(baseColor, lightAngle, lightWidth))
+        // Same isolation as GlassBackground: the tint must show even if the
+        // noise shader fails.
         try {
             glassNoiseBrush(size)?.let { drawRect(it) }
         } catch (e: Throwable) {
             Log.w("GlassScrim", "Glass ring noise draw failed", e)
         }
-        // Same edge light as the flat panels (glassEdgeLightBrush): stroking
-        // the same two-circle path used for the clip above catches both the
-        // ring's outer and inner rim in one call.
-        drawPath(ring, brush = glassEdgeLightBrush(), style = Stroke(width = 1.5.dp.toPx()))
+        // Stroking the same two-circle path used for the clip above catches
+        // both the ring's outer and inner rim in one call.
+        drawPath(
+            ring,
+            brush = glassEdgeLightBrush(lightAngle, lightWidth),
+            style = Stroke(width = 1.5.dp.toPx())
+        )
     }
 }

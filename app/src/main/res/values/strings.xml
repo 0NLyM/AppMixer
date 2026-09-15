@@ -68,11 +68,10 @@
     <string name="slider_corner">Slider corner radius</string>
     <string name="button_corner">Button corner radius</string>
     <string name="popup_opacity">Background opacity</string>
-    <string name="glass_scrim_opacity">Glass opacity</string>
-    <string name="glass_capture_backdrop">Refract the screen</string>
-    <string name="glass_capture_backdrop_description">Takes a still of the screen the instant before the popup appears and blurs it behind the glass, so the panel really does refract what it\'s sitting on. Uses this accessibility service\'s own screenshot capability — no extra permission prompt, nothing captured while the popup is up, nothing kept once it goes away. Turned off, the glass is a plain tinted sheet.</string>
     <string name="glass_blur_strength">Blur</string>
-    <string name="glass_tint_color">Glass tint</string>
+    <string name="glass_light_angle">Light rotation</string>
+    <string name="glass_light_width">Light width</string>
+    <string name="glass_light_description">One beam of light crossing the glass: the sheet thins where it lands and the rim catches it at the same two points, so both read as the same light.</string>
     <string name="atmosphere_opacity">Grain opacity</string>
     <string name="atmosphere_description">A burst of colored grain, seeded from the panel\'s own base color, that flickers for a moment and settles into one fixed pattern behind the sliders.</string>
     <string name="show_value">Show level</string>
@@ -87,10 +86,10 @@
     <string name="disc_hint">Anchored to a screen edge the disc reveals itself from that edge inward as the horizontal offset grows, up to a full circle; anchored to the middle column it\'s always a full circle. Drag up or down to change the volume.</string>
     <string name="popup_background">Background</string>
     <string name="popup_background_bar">Bar background</string>
-    <string name="popup_background_description">Whether the panel is frosted (system blur) or a plain fill, and how strong that effect is. Never changes the disc\'s own ring colors.</string>
+    <string name="popup_background_description">Whether the panel is lit glass, generated grain or a plain fill, and how strong that effect is. Glass takes its color — and how opaque it is — from the Background color above. Never changes the disc\'s own ring colors.</string>
     <string name="popup_show_background">Show background</string>
     <string name="popup_show_background_bar">Show bar background</string>
-    <string name="background_translucent">Translucent</string>
+    <string name="background_translucent">Glass</string>
     <string name="background_solid">Solid</string>
     <string name="background_atmosphere">Atmosphere</string>
     <string name="popup_content">Content</string>

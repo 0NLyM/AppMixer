@@ -25,22 +25,22 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.unit.dp
+import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
+import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import kotlin.random.Random
 
 /**
  * The Atmosphere background: a Nothing-OS-flavoured alternative to
- * [GlassBackground]'s glass and a flat Solid fill. Rather than anything
- * sampled from behind the panel (the real screen refraction [GlassBackdrop]
- * chases, when the platform allows it at all), this generates its own
+ * [GlassBackground]'s lit glass and a flat Solid fill. It generates its own
  * texture straight from the panel's own base color -- a burst of grain that
  * flickers for [ATMOSPHERE_SETTLE_MILLIS] and then holds perfectly still,
  * the way Nothing's own wallpaper generator resolves a field of static into
  * one fixed image instead of animating forever or simply cutting to a still.
  *
  * No real blur or separate graphics layer needed here, unlike
- * [GlassBackground]: there's no backdrop to keep out of the panel's own
- * content, only a colored noise field painted straight into whatever shape
- * is asked for, so both the flat panels and [VolumeDisc]'s own ring (see
+ * [GlassBackground]: there's nothing to keep out of the panel's own content,
+ * only a colored noise field painted straight into whatever shape is asked
+ * for, so both the flat panels and [VolumeDisc]'s own ring (see
  * [drawAtmosphereRing]) can just draw it directly.
  */
 private const val ATMOSPHERE_SHADER_SRC = """
@@ -177,7 +177,9 @@ fun DrawScope.drawAtmosphereRing(
     seed: Float,
     center: Offset,
     ringRadius: Float,
-    ringWidth: Float
+    ringWidth: Float,
+    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
 ) {
     val outerRadius = ringRadius + ringWidth / 2f
     val innerRadius = (ringRadius - ringWidth / 2f).coerceAtLeast(0f)
@@ -208,7 +210,12 @@ fun DrawScope.drawAtmosphereRing(
         } else {
             drawRect(baseColor)
         }
-        // Same finishing touch as drawGlassRing's own rim.
-        drawPath(ring, brush = glassEdgeLightBrush(), style = Stroke(width = 1.5.dp.toPx()))
+        // Same finishing touch as drawGlassRing's own rim, lit by the same
+        // beam so switching between the two effects doesn't move the light.
+        drawPath(
+            ring,
+            brush = glassEdgeLightBrush(lightAngle, lightWidth),
+            style = Stroke(width = 1.5.dp.toPx())
+        )
     }
 }

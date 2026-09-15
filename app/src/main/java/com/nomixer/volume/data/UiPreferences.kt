@@ -18,11 +18,37 @@ const val BUTTON_CORNER_RADIUS_MAX = 50
  */
 const val POPUP_BACKGROUND_OPACITY_MIN = 0.01f
 
-/** Bottom and top of the glass panel's own tuning sliders (see [UiPreferences.glassScrimBaseAlpha] and friends). */
-const val GLASS_SCRIM_ALPHA_MIN = 0.05f
-const val GLASS_SCRIM_ALPHA_MAX = 0.9f
+/** Bottom and top of the glass panel's own blur slider (see [UiPreferences.glassBlurStrength]). */
 const val GLASS_BLUR_MIN = 0f
 const val GLASS_BLUR_MAX = 1f
+
+/**
+ * Range of the glass light beam's own sliders -- a full turn for the
+ * rotation, and anything from a tight streak to a wash right across the
+ * panel for the width. See [UiPreferences.glassLightAngle]/[UiPreferences.glassLightWidth].
+ */
+const val GLASS_LIGHT_ANGLE_MIN = 0f
+const val GLASS_LIGHT_ANGLE_MAX = 360f
+const val GLASS_LIGHT_WIDTH_MIN = 0f
+const val GLASS_LIGHT_WIDTH_MAX = 1f
+
+/**
+ * Where that beam starts out: across the panel from its top-right, about
+ * half of it lit. Kept here rather than only as the field defaults below
+ * because the brushes that draw the beam default to the same values when
+ * nobody hands them a preference (see
+ * [com.nomixer.volume.compose.glassEdgeLightBrush]).
+ */
+const val GLASS_LIGHT_ANGLE_DEFAULT = 135f
+const val GLASS_LIGHT_WIDTH_DEFAULT = 0.45f
+
+/**
+ * How opaque the glass tint is when the user hasn't picked a Background
+ * color of their own -- once they have, that color's own alpha (set with
+ * the color picker's opacity slider) is what drives it. See
+ * [UiPreferences.glassAlpha].
+ */
+const val GLASS_DEFAULT_ALPHA = 0.42f
 
 /** Bottom and top of the Atmosphere panel's own opacity slider (see [UiPreferences.atmosphereBaseAlpha]). */
 const val ATMOSPHERE_ALPHA_MIN = 0.15f
@@ -91,7 +117,12 @@ enum class ThemeMode {
 
 /** How the popup's single background panel is drawn. */
 enum class PopupBackground {
-    /** A lightweight always-on glass scrim -- see [glassScrimBaseAlpha] and friends. */
+    /**
+     * A lightweight always-on glass scrim, lit by one adjustable beam --
+     * see [UiPreferences.glassLightAngle] and friends. Shown as "Glass";
+     * the name stays Translucent so existing stored preferences keep
+     * resolving to it.
+     */
     Translucent,
 
     /** One opaque panel in the theme's background color. */
@@ -170,9 +201,9 @@ data class UiPreferences(
     /** Same as [popupShowBackground], but the disc's own independent switch. */
     val discPopupShowBackground: Boolean = true,
     /**
-     * Panel opacity, 0f - 1f, in Solid mode, for the bar styles. Translucent
-     * uses the glass scrim's own [UiPreferences.glassScrimBaseAlpha]
-     * instead. See [discPopupBackgroundOpacity] for the disc's own
+     * Panel opacity, 0f - 1f, in Solid mode, for the bar styles. Glass uses
+     * the Background color's own alpha ([glassAlpha]) instead. See
+     * [discPopupBackgroundOpacity] for the disc's own
      * independent value --
      * neither one touches the disc's own ring/track colors, which stay
      * whatever the palette says, nor the separate painted shadow
@@ -234,53 +265,31 @@ data class UiPreferences(
      */
     val expandedMixerCentered: Boolean = false,
     /**
-     * Base opacity (before any adaptive tint) of Translucent mode's glass
-     * scrim -- one shared value for every style, not a per-style setting,
-     * since it's tuning the *effect* rather than anything about a
-     * particular collapsed look. See [GLASS_SCRIM_ALPHA_MIN]/`_MAX`.
-     */
-    val glassScrimBaseAlpha: Float = 0.42f,
-    /**
-     * Whether the glass actually refracts the screen behind it: a still of
-     * that screen is taken the instant before the popup appears (through
-     * this accessibility service's own screenshot capability -- no
-     * MediaProjection, no consent dialog), scaled right down to blur it, and
-     * shown through the panel. Nothing is captured while the popup is up,
-     * nothing is kept once it goes away, and the still never leaves the
-     * device.
-     *
-     * Without it the panel is still a glass sheet -- tint, sheen, grain,
-     * lit rim -- but a tinted one, with nothing of the real screen coming
-     * through, since the platform's own cross-window blur can't be relied on
-     * to do that job (see NOTICE.md).
-     */
-    val glassCaptureBackdrop: Boolean = true,
-    /**
-     * Tint hue for Translucent mode's glass scrim -- `null` uses the theme's
-     * own background color, same as it always has. Set, this replaces just
-     * the color the glass is tinted; [glassScrimBaseAlpha] still owns how
-     * opaque that tint is, so a picked color's own alpha is discarded. Never
-     * touches Solid's flat fill or Atmosphere's grain, both of which keep
-     * reading the theme's background color directly.
-     */
-    val glassTintColor: Int? = null,
-    /**
-     * How strongly the glass panel is frosted, 0 (crisp) to 1 (a heavy
-     * soft frost) -- two things at once, so the one slider always reads as
-     * "how blurry": how hard the captured backdrop still (if any) is
-     * scaled down before being drawn back up to panel size (the downscale
-     * *is* that part of the blur, and it's meaningless on its own while
-     * [glassCaptureBackdrop] is off or the capture didn't land), and the
-     * radius of a real [android.graphics.RenderEffect] blur run over the
-     * whole glass layer -- tint and grain included -- which softens the
-     * panel into a proper frost whether or not a backdrop is behind it at
-     * all. See [GLASS_BLUR_RADIUS_MAX_DP] for that second part's own range.
+     * How strongly the glass panel is frosted, 0 (crisp) to 1 (a heavy soft
+     * frost): the radius of a real [android.graphics.RenderEffect] blur run
+     * over the whole glass layer, tint and grain alike. See
+     * [GLASS_BLUR_RADIUS_MAX_DP] for the dp range it scales up to.
      */
     val glassBlurStrength: Float = 0.6f,
     /**
+     * Which way the single beam of light that lights the glass runs, in
+     * degrees -- one shared value for every style, not a per-style setting,
+     * since it's tuning the *effect* rather than anything about a particular
+     * collapsed look. Both halves of the effect read it (the tint's own lit
+     * band and the rim light), which is what keeps them one beam rather than
+     * two unrelated gradients. See [GLASS_LIGHT_ANGLE_MIN]/`_MAX`.
+     */
+    val glassLightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
+    /**
+     * How broad that beam is, 0 (a tight streak) to 1 (a wash right across
+     * the panel). Same sharing as [glassLightAngle]. See
+     * [GLASS_LIGHT_WIDTH_MIN]/`_MAX`.
+     */
+    val glassLightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    /**
      * Opacity of the Atmosphere panel's own grain -- one shared value for
-     * every style, same reasoning as [glassScrimBaseAlpha]: it tunes the
-     * effect itself, not anything about a particular collapsed look. See
+     * every style, same reasoning as [glassLightAngle]: it tunes the effect
+     * itself, not anything about a particular collapsed look. See
      * [ATMOSPHERE_ALPHA_MIN]/`_MAX`.
      */
     val atmosphereBaseAlpha: Float = 0.55f
@@ -362,21 +371,31 @@ fun UiPreferences.withShowShadow(value: Boolean): UiPreferences =
     if (popupStyle == PopupStyle.Disc) copy(discPopupShowShadow = value) else copy(popupShowShadow = value)
 
 /**
+ * How opaque the glass tint is: the alpha of the user's own
+ * [backgroundColor], straight off that color picker's own opacity slider,
+ * so the one control that already sets the panel's color sets how much of
+ * it there is too. [GLASS_DEFAULT_ALPHA] until they pick a color of their
+ * own -- an untouched install keeps the glass the sheet it has always been.
+ */
+fun UiPreferences.glassAlpha(): Float =
+    backgroundColor?.let { argb -> ((argb ushr 24) and 0xFF) / 255f } ?: GLASS_DEFAULT_ALPHA
+
+/**
  * Alpha of the panel the popup paints for itself.
  *
  * Solid: exactly [UiPreferences.popupBackgroundOpacity], the only mode that
  * slider affects.
  *
- * Translucent: [glassScrimBaseAlpha] -- the glass scrim's own base opacity,
- * painted the same way on every device and power state (see
- * [com.nomixer.volume.compose.GlassBackground]). Unlike the old system-blur
- * fallback this used to be, there's no capability check here at all: the
- * scrim never depends on whether the platform feels like granting blur.
+ * Glass: [glassAlpha] -- painted the same way on every device and power
+ * state (see [com.nomixer.volume.compose.GlassBackground]). Unlike the old
+ * system-blur fallback this used to be, there's no capability check here at
+ * all: the scrim never depends on whether the platform feels like granting
+ * blur.
  */
 fun UiPreferences.paintedPanelAlpha(): Float =
     when (activeBackground()) {
         PopupBackground.Solid -> activeBackgroundOpacity()
-        PopupBackground.Translucent -> glassScrimBaseAlpha
+        PopupBackground.Translucent -> glassAlpha()
         PopupBackground.Atmosphere -> atmosphereBaseAlpha
     }
 
