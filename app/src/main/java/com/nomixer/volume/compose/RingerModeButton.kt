@@ -20,8 +20,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.NotificationsOff
-import androidx.compose.material.icons.filled.RingVolume
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,11 +50,16 @@ import com.nomixer.volume.ui.theme.Motion
 
 private const val TAG = "NoMixer.RingerMode"
 
-/** Icon and description for a ringer mode. */
+/**
+ * Icon and description for a ringer mode -- the same speaker glyph family
+ * [rememberVolumeIcon] uses for the main volume icon (waves for ringing,
+ * a slash for silent), rather than a bell/phone one, so the switch reads
+ * as the same "sound on/off" language as the rest of the popup.
+ */
 private fun ringerFace(mode: Int): Pair<ImageVector, Int> = when (mode) {
     AudioManager.RINGER_MODE_VIBRATE -> Icons.Default.Vibration to R.string.ringer_vibrate
-    AudioManager.RINGER_MODE_SILENT -> Icons.Default.NotificationsOff to R.string.ringer_silent
-    else -> Icons.Default.RingVolume to R.string.ringer_normal
+    AudioManager.RINGER_MODE_SILENT -> Icons.AutoMirrored.Filled.VolumeOff to R.string.ringer_silent
+    else -> Icons.AutoMirrored.Filled.VolumeUp to R.string.ringer_normal
 }
 
 /**
@@ -181,23 +186,27 @@ fun RingerModeButton(
                     else -> AudioManager.RINGER_MODE_NORMAL
                 }
 
-                // Set locally the instant the tap lands, rather than waiting
-                // on the system call and then re-reading audioManager's own
-                // ringer mode: proxied through Shizuku, that read can still
-                // reflect the *old* mode by the time setRingerMode returns
-                // -- the change reaches this process's AudioManager a beat
-                // later, over the ringer-mode-changed broadcast -- which
-                // read as the switch ignoring the tap even when the change
-                // went through a moment later. The broadcast still corrects
-                // this if something else changed the mode in the meantime.
-                ringerMode = next
-
+                // Applied before ringerMode is ever touched, not written
+                // optimistically first and corrected after: a write here
+                // followed immediately by a corrective write back (on
+                // refusal) both land within this same, fully synchronous
+                // click handler, before Compose gets a single frame to
+                // recompose in between -- so only the *last* value of the
+                // two ever actually painted, and a refused change looked
+                // exactly like the tap had done nothing at all, every
+                // single time it was refused. Reading the real outcome
+                // first and writing state exactly once means what's shown
+                // always matches what the system actually did.
+                //
                 // Silent needs Do Not Disturb access, which the proxy gets
-                // through Shizuku. If even that is refused the mode is left
-                // alone rather than bounced back to ringing -- the old
-                // fallback is what made the switch look like a two-position
-                // one, skipping silent entirely.
-                if (!audioProxy.setRingerMode(next)) {
+                // through Shizuku if the plain call refuses it. If even
+                // that is refused the mode is left alone rather than
+                // bounced back to ringing -- the old fallback is what made
+                // the switch look like a two-position one, skipping silent
+                // entirely.
+                if (audioProxy.setRingerMode(next)) {
+                    ringerMode = next
+                } else {
                     Log.w(TAG, "Ringer mode $next was refused")
                     ringerMode = audioManager.ringerMode
                 }
