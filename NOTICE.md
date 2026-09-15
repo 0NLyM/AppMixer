@@ -1311,5 +1311,44 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
 - In landscape, the popup nudges itself clear of the display's camera
   cutout when it would otherwise land partly behind it.
 
+## 2026-09-15 — 1.0.49
+
+- Fixed the collapsed-bar preview being visibly different from the real
+  popup: it was missing the ringer switch and the panel's own padding
+  entirely, and used hand-picked panel/slider dimensions instead of the
+  real popup's own geometry (button size, slider width/height, inner
+  padding) -- rebuilt both bar branches structurally identical to
+  `CollapsedVolumePopup`, and gave the expanded-mixer preview the panel
+  shadow it was missing too.
+- Fixed the disc's longest tick not tracking the actual level: it read the
+  level as a fraction of the full 360° sweep, but the fill arc itself
+  remaps onto a shorter visible arc once the disc is laterally cut near a
+  screen edge -- so on any clipped disc the tick pointed nowhere near
+  where the fill actually was. Both the landmark tick and the
+  rotating-knob rotation now read the same angle the fill arc itself uses.
+- Redesigned the Glass noise layer as sparse, jittered, round flecks with
+  real empty gaps between them, instead of covering every cell with some
+  alpha (which read as a wall-to-wall pixelated wash and barely changed
+  under blur) -- the tint/beam underneath now reads through cleanly, and
+  blurring the layer actually melts it into a convincing frosted haze.
+- Centered the anchor grid + position preview row as one block instead of
+  hugging the left edge, with breathing room from the surrounding text.
+- Replaced the panel's own platform elevation shadow (heavier on one side
+  than the other) with a real Gaussian-blurred halo -- a solid copy of the
+  panel's shape, blurred, painted behind it -- so depth reads evenly all
+  the way around the outer edge. Applied to the collapsed bar panel, the
+  expanded mixer, and both preview equivalents.
+- Fixed the ringer switch silently doing nothing when a mode change was
+  refused: the tap wrote the new mode optimistically, then wrote it back
+  on refusal, both within the same synchronous click handler and before
+  Compose ever got a frame to show the first value -- so a refused change
+  looked exactly like the tap had done nothing, every time. It now calls
+  `setRingerMode` first and writes state exactly once, from the real
+  result. Also declares `MODIFY_AUDIO_SETTINGS`, missing for the
+  unprivileged ring/vibrate path that doesn't need Shizuku at all.
+- Swapped the ringer switch's ring/silent icons from the bell-shaped pair
+  to the same speaker-with-waves/speaker-with-slash glyphs the main volume
+  icon already uses, so both read as the same "sound on/off" language.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
