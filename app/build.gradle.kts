@@ -122,6 +122,7 @@ dependencies {
 
     implementation(libs.androidaop.core)
     implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.palette.ktx)
     implementation(libs.androidx.profileinstaller)
     implementation(libs.kotlinx.serialization.json)
     "baselineProfile"(project(":baselineprofile"))

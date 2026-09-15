@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
+import androidx.palette.graphics.Palette
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -182,6 +184,66 @@ class Service : AccessibilityService() {
     }
 
     private var lifecycle: LifecycleRegistry? = null
+
+    /**
+     * The Atmosphere grain's own two colors, sampled just before the popup
+     * goes up (see [showView]) from whatever app is underneath it -- null
+     * while nothing's been sampled yet, or the last sample came back empty.
+     */
+    private var atmosphereColorsState by mutableStateOf<Pair<Color, Color>?>(null)
+
+    // Icon lookup and Palette extraction cost real work the first time a
+    // given app is sampled (resource I/O, then quantizing the bitmap), but
+    // an app's icon doesn't change between one volume press and the next, so
+    // every later popup over the same app is a map lookup. Bounded in
+    // practice by how many distinct apps this device ever brings to the
+    // foreground in one process lifetime -- a few dozen at most.
+    private val atmosphereColorCache = mutableMapOf<String, Pair<Color, Color>>()
+
+    /**
+     * The two colors [captureGlassBackdrop]'s replacement -- Atmosphere --
+     * paints its grain from, read off the launcher icon of whatever app is
+     * running underneath the popup rather than the popup's own panel color.
+     *
+     * Real per-pixel sampling of the screen the popup is about to sit on top
+     * of would need exactly the screenshot capability the platform refuses
+     * outright on some devices (the whole reason 1.0.45 tore that path out),
+     * and a first pass at this used the *wallpaper's* own colors instead --
+     * reachable everywhere, but wrong whenever an app other than the
+     * launcher is on screen, which is most of the time a volume popup
+     * actually appears. An app's icon is a reasonable middle ground: no
+     * permission beyond what this accessibility service already holds,
+     * works over any app rather than only the home screen, and -- unlike a
+     * screen region -- is a single asset this app already has to decode
+     * (`PackageManager.getApplicationIcon`) and can cache once per package.
+     *
+     * `rootInActiveWindow` is the same accessibility API [onKeyEvent] already
+     * reads to find the foreground app for jump-to-slider; null there (no
+     * resolvable foreground window, or its package can't be resolved to an
+     * icon at all) means Atmosphere falls back to the panel's own tint, same
+     * as it did before any of this.
+     */
+    private fun sampleForegroundAppColors(): Pair<Color, Color>? {
+        val packageName = rootInActiveWindow?.packageName?.toString() ?: return null
+        atmosphereColorCache[packageName]?.let { return it }
+
+        val colors = try {
+            val icon = packageManager.getApplicationIcon(packageName)
+            val bitmap = icon.toBitmap()
+            val palette = Palette.from(bitmap).generate()
+            val dominant = palette.dominantSwatch?.rgb ?: return null
+            val second = palette.vibrantSwatch?.rgb
+                ?: palette.mutedSwatch?.rgb
+                ?: dominant
+            Color(dominant) to Color(second)
+        } catch (e: Exception) {
+            Log.w(TAG, "Can't derive Atmosphere colors from $packageName's icon", e)
+            return null
+        }
+
+        atmosphereColorCache[packageName] = colors
+        return colors
+    }
 
     private fun createView(): View {
         val owner = object : SavedStateRegistryOwner {
@@ -351,6 +413,7 @@ class Service : AccessibilityService() {
                                         AtmosphereBackground(
                                             shape = mixerShape,
                                             baseColor = panelColor,
+                                            colors = atmosphereColorsState,
                                             modifier = Modifier.matchParentSize()
                                         )
                                     }
@@ -406,6 +469,7 @@ class Service : AccessibilityService() {
                                 CollapsedVolumePopup(
                                     audioManager = manager.audioManager,
                                     preferences = preferences,
+                                    atmosphereColors = atmosphereColorsState,
                                     onExpand = {
                                         expanded = true
                                         // The window is about to resize for
@@ -639,6 +703,10 @@ class Service : AccessibilityService() {
     private fun showView() {
         if (view == null) {
             Log.i(TAG, "add view")
+            // Strictly before the view is built, so it's whatever app the
+            // user was actually looking at that Atmosphere's grain is made
+            // of, not this popup's own window once it's already up.
+            atmosphereColorsState = sampleForegroundAppColors()
             // The view doesn't respond to input events if reused
             view = createView()
             layoutParams.alpha = 0f

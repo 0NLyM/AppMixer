@@ -1,6 +1,5 @@
 package com.nomixer.volume.compose
 
-import android.app.WallpaperManager
 import android.graphics.RuntimeShader
 import android.util.Log
 import androidx.compose.animation.core.Animatable
@@ -25,7 +24,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
@@ -40,13 +38,19 @@ import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
  * earlier pass reshuffled the noise every frame instead, which read as
  * static going in every direction at once rather than one thing moving.
  *
- * Its two colors come from the wallpaper underneath
- * ([rememberAtmosphereColors]) when the platform will hand them over, so the
- * grain is made of what's actually behind the popup rather than the panel's
- * own tint. That is as close to "sample the pixels under the slider" as this
- * app can get without the screenshot capability the platform refuses on some
- * devices (see NOTICE.md); when the colors aren't available it falls back to
- * the panel color and nothing else changes.
+ * Its two colors are handed in by the caller ([colors], both here and in
+ * [drawAtmosphereRing]) rather than sampled by this file at all -- see
+ * [com.nomixer.volume.Service.sampleForegroundAppColors] for where they
+ * actually come from: the launcher icon of whatever app is underneath the
+ * popup, read via [android.content.pm.PackageManager], run through
+ * [androidx.palette.graphics.Palette]. That's the closest thing to "the
+ * colors behind the slider" reachable on every device: real per-pixel
+ * sampling needs the screenshot capability the platform refuses outright on
+ * some of them (see NOTICE.md's 1.0.45 entry), and the wallpaper's own
+ * colors (tried first, in 1.0.46's initial pass) only describe the home
+ * screen, not whatever app actually happens to be open. `null` -- no
+ * foreground app resolved, no icon, no swatches -- falls back to the panel's
+ * own tint and nothing else changes.
  *
  * No real blur or separate graphics layer needed here, unlike
  * [GlassBackground]: there's nothing to keep out of the panel's own content,
@@ -122,18 +126,20 @@ private fun atmosphereShaderOrNull(): RuntimeShader? {
 }
 
 /**
- * The grain brush for the current draw call, made of [colors] and turned by
- * [rotation] -- null if the shader can't run on this device at all, in which
- * case a caller should just fall back to a flat fill rather than leaving the
- * panel unpainted.
+ * The grain brush for the current draw call, made of [colors] (falling back
+ * to a single flat [fallback] color when there's nothing better -- see this
+ * file's own doc comment) and turned by [rotation]. Null if the shader can't
+ * run on this device at all, in which case a caller should just fall back to
+ * a flat fill rather than leaving the panel unpainted.
  */
 private fun DrawScope.atmosphereBrush(
-    colors: Pair<Color, Color>,
+    colors: Pair<Color, Color>?,
+    fallback: Color,
     rotation: Float
 ): Brush? {
     val shader = atmosphereShaderOrNull() ?: return null
     return try {
-        val (first, second) = colors
+        val (first, second) = colors ?: (fallback to fallback)
         shader.setFloatUniform("resolution", size.width, size.height)
         shader.setFloatUniform("rotation", rotation)
         shader.setFloatUniform("colorA", first.red, first.green, first.blue)
@@ -169,42 +175,6 @@ internal fun rememberAtmosphereSpin(): Animatable<Float, AnimationVector1D> {
 }
 
 /**
- * The two colors the grain is made of, read from the wallpaper sitting
- * behind the popup, with [fallback] standing in whenever the platform won't
- * say (no wallpaper colors yet, a live wallpaper that reports none, or a
- * policy that refuses the call outright -- all of which are ordinary, so
- * none of them are treated as errors).
- *
- * Read once per panel: wallpaper colors don't change while a volume popup is
- * on screen, and re-reading them per frame would put a binder call in the
- * draw path.
- */
-@Composable
-internal fun rememberAtmosphereColors(fallback: Color): Pair<Color, Color> {
-    val context = LocalContext.current
-    // Keyed on the context alone, never on [fallback]: that one is an
-    // animated color, so keying on it would put a binder call on every frame
-    // of a background fade.
-    val sampled = remember(context) { wallpaperColors(context) }
-    return sampled ?: (fallback to fallback)
-}
-
-private fun wallpaperColors(context: android.content.Context): Pair<Color, Color>? {
-    val colors = try {
-        WallpaperManager.getInstance(context)?.getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
-    } catch (e: Throwable) {
-        Log.w("GlassScrim", "Wallpaper colors unavailable, tinting Atmosphere from the panel instead", e)
-        null
-    } ?: return null
-
-    val primary = Color(colors.primaryColor.toArgb())
-    val secondary = colors.secondaryColor?.let { Color(it.toArgb()) }
-        ?: colors.tertiaryColor?.let { Color(it.toArgb()) }
-        ?: primary
-    return primary to secondary
-}
-
-/**
  * The Atmosphere panel's own background -- a plain empty [Box], meant to sit
  * behind a panel's real content the same way [GlassBackground] does (see
  * that function's own doc comment for why: CollapsedVolumePopup.kt and
@@ -215,16 +185,16 @@ private fun wallpaperColors(context: android.content.Context): Pair<Color, Color
 fun AtmosphereBackground(
     shape: Shape,
     baseColor: Color,
+    colors: Pair<Color, Color>?,
     modifier: Modifier = Modifier
 ) {
     val spin = rememberAtmosphereSpin()
-    val colors = rememberAtmosphereColors(baseColor.copy(alpha = 1f))
 
     Box(
         modifier
             .clip(shape)
             .drawBehind {
-                val brush = atmosphereBrush(colors, spin.value)
+                val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), spin.value)
                 if (brush != null) {
                     drawRect(brush, alpha = baseColor.alpha)
                 } else {
@@ -238,12 +208,13 @@ fun AtmosphereBackground(
  * The same grain as [AtmosphereBackground], confined to a ring -- for
  * [VolumeDisc]'s own track, painted straight into its Canvas rather than
  * through a Compose layout node, same reasoning as [drawGlassRing]'s own doc
- * comment. [rotation] and [colors] are read straight from the caller's own
- * draw phase (see [rememberAtmosphereSpin] and [rememberAtmosphereColors]).
+ * comment. [rotation] is read straight from the caller's own draw phase (see
+ * [rememberAtmosphereSpin]); [colors] is handed in the same way as
+ * [AtmosphereBackground]'s own (see this file's top comment).
  */
 fun DrawScope.drawAtmosphereRing(
     baseColor: Color,
-    colors: Pair<Color, Color>,
+    colors: Pair<Color, Color>?,
     rotation: Float,
     center: Offset,
     ringRadius: Float,
@@ -274,7 +245,7 @@ fun DrawScope.drawAtmosphereRing(
     }
 
     clipPath(ring) {
-        val brush = atmosphereBrush(colors, rotation)
+        val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), rotation)
         if (brush != null) {
             drawRect(brush, alpha = baseColor.alpha)
         } else {

@@ -167,6 +167,14 @@ internal fun Modifier.expandOnSwipe(
 fun CollapsedVolumePopup(
     audioManager: AudioManager,
     preferences: UiPreferences,
+    /**
+     * The Atmosphere grain's own two colors, sampled from whatever app is
+     * underneath the popup (see
+     * [com.nomixer.volume.Service.sampleForegroundAppColors]) -- `null`
+     * falls back to the panel's own tint, same as [AtmosphereBackground]'s
+     * own default.
+     */
+    atmosphereColors: Pair<Color, Color>? = null,
     onExpand: () -> Unit,
     onInteract: () -> Unit
 ) {
@@ -403,6 +411,7 @@ fun CollapsedVolumePopup(
             AtmosphereBackground(
                 shape = panelShape,
                 baseColor = panelColor,
+                colors = atmosphereColors,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -604,6 +613,7 @@ fun CollapsedVolumePopup(
                         trackBackingColor = panelColor,
                         trackBackingGlass = panelGlass,
                         trackBackingAtmosphere = panelAtmosphere,
+                        atmosphereColors = atmosphereColors,
                         lightAngle = preferences.glassLightAngle,
                         lightWidth = preferences.glassLightWidth,
                         icon = if (showIcon) volumeIcon else null,

@@ -113,6 +113,16 @@ fun VolumeDisc(
      */
     trackBackingAtmosphere: Boolean = false,
     /**
+     * The Atmosphere grain's own two colors, sampled from whatever app is
+     * underneath the popup (see
+     * [com.nomixer.volume.Service.sampleForegroundAppColors]) -- `null`
+     * (there's no foreground app to sample, or this is a preview screen with
+     * no accessibility service behind it at all) falls back to
+     * [trackBackingColor] itself, same as [drawAtmosphereRing]'s own
+     * fallback. Ignored unless [trackBackingAtmosphere].
+     */
+    atmosphereColors: Pair<Color, Color>? = null,
+    /**
      * Which way the light crossing the ring runs, and how broad its lit band
      * is -- the same single beam the flat panels are lit by (see
      * [glassEdgeLightBrush]), so a disc and a bar-style panel agree on where
@@ -173,11 +183,9 @@ fun VolumeDisc(
     var dragging by remember { mutableStateOf(false) }
     val fill = remember { Animatable(targetFraction) }
 
-    // Unconditional even though only Atmosphere mode ever uses them, and
-    // they cost nothing while unused: one turn that finishes and then holds,
-    // and one wallpaper read that happens once.
+    // Unconditional even though only Atmosphere mode ever uses it, and it
+    // costs nothing while unused: one turn that finishes and then holds.
     val atmosphereSpin = rememberAtmosphereSpin()
-    val atmosphereColors = rememberAtmosphereColors(trackBackingColor.copy(alpha = 1f))
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {

@@ -1228,13 +1228,22 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   and rotates through about 120 degrees as the popup appears, decelerating
   into stillness, instead of reshuffling itself every frame -- which read as
   static going in all directions at once rather than as one thing moving.
-- Atmosphere's two colors now come from the wallpaper behind the popup
-  (`WallpaperManager.getWallpaperColors`) rather than the panel's own tint,
-  falling back to the tint when the platform won't report them. This is as
-  close to sampling the pixels under the popup as is possible without the
-  screenshot capability the platform refuses on some devices (see the 1.0.45
-  entry): wallpaper colors need no permission, but they describe the
-  wallpaper rather than whatever app happens to be on screen.
+- Atmosphere's two colors now come from the launcher icon of whatever app is
+  actually running underneath the popup, rather than the panel's own tint.
+  An in-app screenshot of that app is not reachable at all -- a window can
+  only ever draw or capture its own pixels, never another app's, which are
+  composited together by the system only once both reach the display -- and
+  real per-pixel sampling would in any case need exactly the screenshot
+  capability the platform refuses outright on some devices (see the 1.0.45
+  entry). An initial pass used the wallpaper's own colors instead, reachable
+  everywhere but wrong whenever an app other than the launcher is on screen
+  -- true most of the time a volume popup actually appears. The app's own
+  icon (`PackageManager.getApplicationIcon`, read via the same
+  `rootInActiveWindow` this accessibility service already uses to find the
+  foreground app, run through `androidx.palette`) needs no extra permission,
+  works over any app rather than only the home screen, and is cached per
+  package so only the first popup over a given app pays for the lookup.
+  Falls back to the panel's own tint whenever no foreground app resolves.
 
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
