@@ -1350,5 +1350,22 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   to the same speaker-with-waves/speaker-with-slash glyphs the main volume
   icon already uses, so both read as the same "sound on/off" language.
 
+## 2026-09-17 — 1.0.50
+
+- Root-caused the ringer switch regression by comparing it against the Do
+  Not Disturb toggle, which has worked throughout: `AudioManagerProxy`
+  used to try a plain, unprivileged call first and only escalate to
+  Shizuku on refusal, verifying the outcome with an immediate readback and
+  returning a boolean for the caller to branch on. That branching -- absent
+  from the working `NotificationManagerProxy`, which just has one
+  always-elevated setter and getter -- was the recurring site of every
+  previous "fix the ringer switch" attempt (an optimistic write later
+  corrected in the same synchronous click handler, then a coroutine
+  dispatch that made the switch animate without actually changing the
+  mode, then a revert back to the original bug). `AudioManagerProxy` now
+  mirrors `NotificationManagerProxy` exactly, and the ringer switch's click
+  handler mirrors the Do Not Disturb toggle's: call the setter, read the
+  real mode back through the same proxy, write local state exactly once.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
