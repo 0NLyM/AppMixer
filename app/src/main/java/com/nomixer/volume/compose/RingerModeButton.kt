@@ -1,7 +1,6 @@
 package com.nomixer.volume.compose
 
 import android.media.AudioManager
-import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.keyframes
@@ -47,8 +46,6 @@ import com.nomixer.volume.R
 import com.nomixer.volume.system.AudioManagerProxy
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
 import com.nomixer.volume.ui.theme.Motion
-
-private const val TAG = "NoMixer.RingerMode"
 
 /**
  * Icon and description for a ringer mode -- the same speaker glyph family
@@ -186,30 +183,19 @@ fun RingerModeButton(
                     else -> AudioManager.RINGER_MODE_NORMAL
                 }
 
-                // Applied before ringerMode is ever touched, not written
-                // optimistically first and corrected after: a write here
-                // followed immediately by a corrective write back (on
-                // refusal) both land within this same, fully synchronous
-                // click handler, before Compose gets a single frame to
-                // recompose in between -- so only the *last* value of the
-                // two ever actually painted, and a refused change looked
-                // exactly like the tap had done nothing at all, every
-                // single time it was refused. Reading the real outcome
-                // first and writing state exactly once means what's shown
-                // always matches what the system actually did.
-                //
-                // Silent needs Do Not Disturb access, which the proxy gets
-                // through Shizuku if the plain call refuses it. If even
-                // that is refused the mode is left alone rather than
-                // bounced back to ringing -- the old fallback is what made
-                // the switch look like a two-position one, skipping silent
-                // entirely.
-                if (audioProxy.setRingerMode(next)) {
-                    ringerMode = next
-                } else {
-                    Log.w(TAG, "Ringer mode $next was refused")
-                    ringerMode = audioManager.ringerMode
-                }
+                // Same shape as the working Do Not Disturb toggle right next
+                // to this button (RingFooter in SystemVolumePanel.kt): call
+                // the proxy's setter, then read the real mode back through
+                // the same proxy, and write local state exactly once from
+                // that read. No optimistic write, no plain-call-first
+                // fallback with its own verified boolean, no coroutine --
+                // every previous version of this handler that deviated from
+                // this exact shape (an optimistic write later corrected in
+                // the same synchronous callback, a background dispatch of
+                // the system call) is what made the switch either show no
+                // feedback on refusal or stop actually changing the mode.
+                audioProxy.setRingerMode(next)
+                ringerMode = audioProxy.getRingerMode()
 
                 onChange?.invoke()
             },
