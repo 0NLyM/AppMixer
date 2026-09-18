@@ -1381,5 +1381,26 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   button's own readback right after already shows the true, unchanged
   state, so it fails visibly but safely instead of taking the app down.
 
+## 2026-09-18 — 1.0.52
+
+- Found the actual cause of the ringer switch's remaining flakiness in the
+  Disc style, reported as: works going ring to vibrate, does nothing going
+  vibrate to silent, crashes going silent to ring. All three are the same
+  conflict: the ringer switch sits in the disc's own hollow middle,
+  sharing that screen region with the disc's vertical-drag-to-set-volume
+  gesture. Touch-slop detection for that drag doesn't require an
+  unconsumed touch, so ordinary finger jitter during a tap on the switch
+  could still be picked up as a drag starting there -- which either
+  swallowed the switch's own tap, or fired a phantom media-volume change
+  through a raw, unguarded call that could throw the very same Do Not
+  Disturb-gated crash the ringer switch itself was fixed for last release.
+  The disc's drag gesture now checks where a touch starts before ever
+  tracking it: one starting inside the switch's hole is never treated as
+  a disc drag, for the whole gesture, leaving the switch's tap uncontested.
+- Also wrapped the two other places that change stream volume directly
+  (the collapsed popup's media slider, the expanded mixer's per-stream
+  sliders) in the same catch used for the ringer switch, as a backstop
+  against this same refusal on other paths.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
