@@ -1431,5 +1431,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   on this platform, the settings screen only lists apps that declare it.
   Declared it now.
 
+## 2026-09-18 — 1.0.55
+
+- Reverted the disc's drag gesture to its plain, original form. The
+  gesture-conflict theory behind last week's change was wrong: the
+  ringer switch's real problem across every popup style, not just the
+  disc, was the missing Do Not Disturb permission, already fixed. The
+  rewritten gesture broke ordinary dragging on the disc itself, so it's
+  gone.
+- Confirmed silent genuinely can't be reached without the platform's own
+  Do Not Disturb turning on with it: since Android 7, a silent ringer
+  and Do Not Disturb's "Total Silence" are the same state in the
+  framework, for any app or method that sets it, not something this app
+  adds on top. Nothing to fix here -- 1.0.54's behavior is correct.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
