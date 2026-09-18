@@ -1,6 +1,10 @@
 package com.nomixer.volume.compose
 
+import android.app.NotificationManager
+import android.content.Intent
 import android.media.AudioManager
+import android.provider.Settings
+import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.keyframes
@@ -43,9 +47,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.R
-import com.nomixer.volume.system.AudioManagerProxy
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
 import com.nomixer.volume.ui.theme.Motion
+
+private const val TAG = "NoMixer.RingerMode"
 
 /**
  * Icon and description for a ringer mode -- the same speaker glyph family
@@ -79,7 +84,9 @@ fun RingerModeButton(
     onChange: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val audioProxy = remember(context) { AudioManagerProxy(context) }
+    val notificationManager = remember(context) {
+        context.getSystemService(NotificationManager::class.java)!!
+    }
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
 
     SystemBroadcastEffect(AudioManager.RINGER_MODE_CHANGED_ACTION) {
@@ -183,19 +190,41 @@ fun RingerModeButton(
                     else -> AudioManager.RINGER_MODE_NORMAL
                 }
 
-                // Same shape as the working Do Not Disturb toggle right next
-                // to this button (RingFooter in SystemVolumePanel.kt): call
-                // the proxy's setter, then read the real mode back through
-                // the same proxy, and write local state exactly once from
-                // that read. No optimistic write, no plain-call-first
-                // fallback with its own verified boolean, no coroutine --
-                // every previous version of this handler that deviated from
-                // this exact shape (an optimistic write later corrected in
-                // the same synchronous callback, a background dispatch of
-                // the system call) is what made the switch either show no
-                // feedback on refusal or stop actually changing the mode.
-                audioProxy.setRingerMode(next)
-                ringerMode = audioProxy.getRingerMode()
+                // Reaching silent needs Do Not Disturb access granted to
+                // this app specifically: AudioService.setRingerModeExternal
+                // gates it on the *calling package*'s own grant, not on the
+                // caller's UID, so no amount of Shizuku elevation can ever
+                // satisfy it -- confirmed by an actual crash log, refused
+                // even through a fully elevated binder call. Routing this
+                // through Shizuku at all (an earlier version of this
+                // button did) was chasing a workaround for a check Shizuku
+                // was never going to get past.
+                //
+                // The other route that "worked" before was flipping system
+                // Do Not Disturb on to satisfy this check as a side effect
+                // -- but real Do Not Disturb also silences media and
+                // notifications, which is a much bigger change than this
+                // switch is meant to make. Granting Do Not Disturb *access*
+                // (not turning Do Not Disturb *on*) is the one Android API
+                // that lets an app set its own ringer mode to silent with
+                // no other side effect at all, so that's what's asked for
+                // here, once, the same way any app that offers a silent
+                // ringer switch has to.
+                if (next == AudioManager.RINGER_MODE_SILENT && !notificationManager.isNotificationPolicyAccessGranted) {
+                    context.startActivity(
+                        Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                    onChange?.invoke()
+                    return@clickable
+                }
+
+                try {
+                    audioManager.ringerMode = next
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Ringer mode change to $next refused", e)
+                }
+                ringerMode = audioManager.ringerMode
 
                 onChange?.invoke()
             },
