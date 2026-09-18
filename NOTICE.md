@@ -1421,5 +1421,15 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   `AudioManagerProxy`, which existed only to route this one call through
   Shizuku, is gone -- nothing needs it any more.
 
+## 2026-09-18 — 1.0.54
+
+- Fixed NoMixer not appearing in the Do Not Disturb access settings screen
+  at all, so the permission request from last release opened the right
+  screen but left nothing to grant it to. The manifest never declared
+  `android.permission.ACCESS_NOTIFICATION_POLICY` -- the one apps are
+  supposed to hold to use the Do Not Disturb access APIs -- and at least
+  on this platform, the settings screen only lists apps that declare it.
+  Declared it now.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
