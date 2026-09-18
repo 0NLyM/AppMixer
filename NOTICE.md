@@ -1402,5 +1402,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   sliders) in the same catch used for the ringer switch, as a backstop
   against this same refusal on other paths.
 
+## 2026-09-18 — 1.0.53
+
+- Found the real reason silent was unreachable: on this platform,
+  `AudioManager.setRingerMode` gates silent behind Do Not Disturb access
+  granted to the *app's own package* -- not the caller's UID, which is why
+  routing the call through Shizuku (every earlier attempt, including last
+  release's) could never satisfy it, elevated or not. That same gate also
+  explains why no volume could be changed at all while already silent, on
+  any slider, not just the disc -- it isn't a gesture problem. Reaching
+  silent no longer touches Shizuku: the switch now asks Android for real
+  Do Not Disturb *access* the standard way (a one-time system settings
+  screen), which is a permission grant only, with no side effect -- unlike
+  actually turning Do Not Disturb *on*, which the app used to lean on
+  instead and which silences media and notifications along with the
+  ringer. Once granted, the switch and every volume slider work normally
+  in every ringer mode, including silent, with no other setting touched.
+  `AudioManagerProxy`, which existed only to route this one call through
+  Shizuku, is gone -- nothing needs it any more.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
