@@ -30,9 +30,16 @@ private const val TAG = "NoMixer.AudioProxy"
  * on. That branching -- absent from [NotificationManagerProxy], whose own
  * Do Not Disturb toggle has worked throughout -- is what several rounds of
  * "fix the ringer switch" changes kept circling around without ever
- * actually landing. This proxy now mirrors [NotificationManagerProxy]
- * exactly: one elevated setter, one elevated getter, no verification, no
- * fallback ladder. The caller reads the real mode back itself afterwards.
+ * actually landing. This proxy mirrors [NotificationManagerProxy]'s shape
+ * (one elevated setter, one elevated getter, the caller reads the real mode
+ * back itself afterwards) but, unlike it, still has to swallow a refusal:
+ * `AudioService.setRingerModeExternal` gates the change against Do Not
+ * Disturb access for the *calling package*, a check some platform versions
+ * apply regardless of the elevated caller's own UID, so Shizuku doesn't
+ * reliably buy it the way it does for [NotificationManagerProxy]'s
+ * interruption-filter call. Without a catch here that refusal is an
+ * uncaught `SecurityException` on the UI thread -- a real crash this
+ * button produced, not a hypothetical one.
  */
 class AudioManagerProxy private constructor(context: Context) {
     companion object {
@@ -76,7 +83,14 @@ class AudioManagerProxy private constructor(context: Context) {
     @EnableBinderProxy
     fun setRingerMode(mode: Int) {
         ensureWrapped()
-        audioManager.ringerMode = mode
+        try {
+            audioManager.ringerMode = mode
+        } catch (e: SecurityException) {
+            // Refused even elevated -- leave the mode alone rather than
+            // crash. The caller reads the real (unchanged) mode back right
+            // after this returns, so the button still shows the truth.
+            Log.w(TAG, "Ringer mode change to $mode refused", e)
+        }
     }
 
     @EnableBinderProxy
