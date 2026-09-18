@@ -1,10 +1,7 @@
 package com.nomixer.volume.compose
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.verticalDrag
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -274,50 +271,27 @@ fun VolumeDisc(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
-                .pointerInput(range, ringRadiusPx, ringWidthPx) {
-                    // A touch that starts in the hole (where centerContent,
-                    // typically the ringer switch, lives) must never be
-                    // picked up as a drag on the ring at all: detectDrag-
-                    // style gesture recognition consumes every subsequent
-                    // move once it recognizes touch slop, *regardless of
-                    // where the gesture started*, which cancels the
-                    // button's own clickable mid-tap and made it either eat
-                    // the tap or, worse, land a phantom drag on this disc's
-                    // own value while the button was the one being pressed.
-                    // Checking the down position against the hole's radius
-                    // before ever entering slop detection keeps a touch
-                    // that starts there off this pointerInput entirely, for
-                    // the whole gesture -- the button's sibling clickable
-                    // handles it uncontested.
-                    val holeRadiusPx = ringRadiusPx - ringWidthPx / 2f
+                .pointerInput(range) {
+                    var startValue = 0f
+                    var startY = 0f
 
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val center = Offset(size.width / 2f, size.height / 2f)
-                        if ((down.position - center).getDistance() < holeRadiusPx) {
-                            return@awaitEachGesture
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            startValue = latestValue
+                            startY = offset.y
+                            dragging = true
+                        },
+                        onDragEnd = { dragging = false },
+                        onDragCancel = { dragging = false }
+                    ) { change, _ ->
+                        // Dragging up raises the volume.
+                        val dragAmount = startY - change.position.y
+                        val newValue = startValue + (dragAmount / size.height.toFloat()) * range
+                        val coercedNewValue =
+                            newValue.coerceIn(valueRange.start, valueRange.endInclusive)
+                        if (coercedNewValue != latestValue) {
+                            onValueChange(coercedNewValue)
                         }
-
-                        val drag = awaitVerticalTouchSlopOrCancellation(down.id) { change, _ ->
-                            change.consume()
-                        } ?: return@awaitEachGesture
-
-                        dragging = true
-                        val startValue = latestValue
-                        val startY = drag.position.y
-
-                        verticalDrag(drag.id) { change ->
-                            // Dragging up raises the volume.
-                            val dragAmount = startY - change.position.y
-                            val newValue = startValue + (dragAmount / size.height.toFloat()) * range
-                            val coercedNewValue =
-                                newValue.coerceIn(valueRange.start, valueRange.endInclusive)
-                            if (coercedNewValue != latestValue) {
-                                onValueChange(coercedNewValue)
-                            }
-                            change.consume()
-                        }
-                        dragging = false
                     }
                 }
                 .then(gestureModifier)
