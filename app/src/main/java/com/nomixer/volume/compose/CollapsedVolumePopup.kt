@@ -1,6 +1,7 @@
 package com.nomixer.volume.compose
 
 import android.media.AudioManager
+import android.util.Log
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -67,6 +68,8 @@ import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+private const val TAG = "NoMixer.CollapsedPopup"
 
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
@@ -251,7 +254,18 @@ fun CollapsedVolumePopup(
         }
 
         volume = coerced
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, coerced, 0)
+        try {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, coerced, 0)
+        } catch (e: SecurityException) {
+            // Some platform versions gate any stream volume change behind
+            // Do Not Disturb access while the ringer is in a restrictive
+            // mode, same as setRingerMode itself -- refused rather than
+            // crash. A refusal never raises VOLUME_CHANGED_ACTION to
+            // correct the optimistic write above on its own, so read the
+            // real value back directly.
+            Log.w(TAG, "Stream volume change to $coerced refused", e)
+            volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        }
         onInteract()
     }
 

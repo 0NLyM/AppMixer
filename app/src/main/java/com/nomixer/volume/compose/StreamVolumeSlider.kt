@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Typography
 
+private const val TAG = "NoMixer.StreamSlider"
+
 /** Same elevation the expanded mixer's per-element shadows use elsewhere. */
 private val STREAM_SLIDER_SHADOW_ELEVATION_DP = 8.dp
 
@@ -172,7 +174,18 @@ fun StreamVolumeSlider(
                 }
 
                 volume = target
-                audioManager.setStreamVolume(streamType, target, 0)
+                try {
+                    audioManager.setStreamVolume(streamType, target, 0)
+                } catch (e: SecurityException) {
+                    // Some platform versions gate any stream volume change
+                    // behind Do Not Disturb access while the ringer is in a
+                    // restrictive mode -- refused rather than crash. No
+                    // VOLUME_CHANGED_ACTION follows a refusal, so read the
+                    // real value back directly instead of leaving `volume`
+                    // pointed at the attempted one.
+                    Log.w(TAG, "Stream volume change to $target refused", e)
+                    volume = audioManager.getStreamVolume(streamType)
+                }
                 onChange?.invoke()
             },
         ) {
