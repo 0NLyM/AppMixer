@@ -1367,5 +1367,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   handler mirrors the Do Not Disturb toggle's: call the setter, read the
   real mode back through the same proxy, write local state exactly once.
 
+## 2026-09-18 — 1.0.51
+
+- Fixed a crash on tapping the ringer switch (reported from a Nothing
+  Phone on Android 17): the previous release's elevated `setRingerMode`
+  call had no exception handling, so a `SecurityException` ("Not allowed
+  to change Do Not Disturb state") from the audio service crashed the app
+  outright instead of just refusing the change. On this platform version
+  that check is gated on the calling package, not bypassed by Shizuku's
+  elevated UID the way the Do Not Disturb toggle's own call is -- so the
+  refusal is real and can still happen even fully elevated. The call is
+  now wrapped in a try/catch that leaves the mode alone on refusal; the
+  button's own readback right after already shows the true, unchanged
+  state, so it fails visibly but safely instead of taking the app down.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
