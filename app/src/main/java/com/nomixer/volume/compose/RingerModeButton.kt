@@ -1,9 +1,6 @@
 package com.nomixer.volume.compose
 
-import android.app.NotificationManager
-import android.content.Intent
 import android.media.AudioManager
-import android.provider.Settings
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
@@ -41,7 +38,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -49,6 +45,9 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.R
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
 import com.nomixer.volume.ui.theme.Motion
+import org.joor.Reflect
+import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuRemoteProcess
 
 private const val TAG = "NoMixer.RingerMode"
 
@@ -83,10 +82,6 @@ fun RingerModeButton(
     size: Dp = 48.dp,
     onChange: (() -> Unit)? = null
 ) {
-    val context = LocalContext.current
-    val notificationManager = remember(context) {
-        context.getSystemService(NotificationManager::class.java)!!
-    }
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
 
     SystemBroadcastEffect(AudioManager.RINGER_MODE_CHANGED_ACTION) {
@@ -189,40 +184,32 @@ fun RingerModeButton(
                     AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
                     else -> AudioManager.RINGER_MODE_NORMAL
                 }
-
-                // Reaching silent needs Do Not Disturb access granted to
-                // this app specifically: AudioService.setRingerModeExternal
-                // gates it on the *calling package*'s own grant, not on the
-                // caller's UID, so no amount of Shizuku elevation can ever
-                // satisfy it -- confirmed by an actual crash log, refused
-                // even through a fully elevated binder call. Routing this
-                // through Shizuku at all (an earlier version of this
-                // button did) was chasing a workaround for a check Shizuku
-                // was never going to get past.
-                //
-                // The other route that "worked" before was flipping system
-                // Do Not Disturb on to satisfy this check as a side effect
-                // -- but real Do Not Disturb also silences media and
-                // notifications, which is a much bigger change than this
-                // switch is meant to make. Granting Do Not Disturb *access*
-                // (not turning Do Not Disturb *on*) is the one Android API
-                // that lets an app set its own ringer mode to silent with
-                // no other side effect at all, so that's what's asked for
-                // here, once, the same way any app that offers a silent
-                // ringer switch has to.
-                if (next == AudioManager.RINGER_MODE_SILENT && !notificationManager.isNotificationPolicyAccessGranted) {
-                    context.startActivity(
-                        Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                    onChange?.invoke()
-                    return@clickable
+                val nextName = when (next) {
+                    AudioManager.RINGER_MODE_VIBRATE -> "VIBRATE"
+                    AudioManager.RINGER_MODE_SILENT -> "SILENT"
+                    else -> "NORMAL"
                 }
 
+                // AudioManager.setRingerMode's public Binder entry point
+                // (setRingerModeExternal) both gates silent behind Do Not
+                // Disturb access and, once granted, brings real system Do
+                // Not Disturb along with it as a platform-level side effect
+                // -- the two are the same state on that path, confirmed by
+                // testing: granting the permission and calling it did
+                // reach silent, but visibly turned Do Not Disturb on too.
+                // `cmd audio set-ringer-mode`, the same shell command `adb
+                // shell` runs, goes through a different internal entry
+                // point in AudioService that carries neither of those:
+                // no permission needed, and no Do Not Disturb side effect.
+                // Run as a Shizuku shell process, the same way
+                // MainActivity already grants itself permissions.
                 try {
-                    audioManager.ringerMode = next
-                } catch (e: SecurityException) {
-                    Log.w(TAG, "Ringer mode change to $next refused", e)
+                    val process = Reflect.onClass(Shizuku::class.java).call(
+                        "newProcess", arrayOf("cmd", "audio", "set-ringer-mode", nextName), null, null
+                    ).get<ShizukuRemoteProcess>()
+                    process.waitFor()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Ringer mode change to $nextName refused", e)
                 }
                 ringerMode = audioManager.ringerMode
 
