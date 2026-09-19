@@ -5,7 +5,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -280,11 +279,6 @@ fun NoMixerTheme(
             colorScheme = scheme.animated(),
             typography = Typography,
             shapes = NoMixerShapes,
-            // Expressive rather than the default standard scheme: it's what
-            // makes the theme's own fast/default spatial and effects tiers
-            // (see Motion.kt) read as springs with actual character instead
-            // of muted, barely-there ones.
-            motionScheme = MotionScheme.expressive(),
             content = content
         )
     }
@@ -302,9 +296,6 @@ fun PopupColors(preferences: UiPreferences, content: @Composable () -> Unit) {
         colorScheme = MaterialTheme.colorScheme.withOverrides(preferences).animated(),
         typography = MaterialTheme.typography,
         shapes = MaterialTheme.shapes,
-        // A nested MaterialTheme call otherwise resets to the standard
-        // scheme instead of inheriting the ambient one.
-        motionScheme = MaterialTheme.motionScheme,
         content = content
     )
 }

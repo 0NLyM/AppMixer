@@ -8,7 +8,6 @@ import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
@@ -59,8 +58,7 @@ object Motion {
 
     /**
      * Position, size, rotation or shape reacting to a thumb, a tick, or any
-     * other micro-interaction -- the quickest tier of the theme's own
-     * [MotionScheme][androidx.compose.material3.MotionScheme], interruptible
+     * other micro-interaction -- quick and a little loose, interruptible
      * mid-flight like every [androidx.compose.animation.core.Animatable]
      * spring. Collapses to an instant snap under reduced motion, since a
      * moving thumb is exactly the kind of motion that setting asks for less
@@ -68,7 +66,7 @@ object Motion {
      */
     @Composable
     fun <T> fastSpatialSpec(): FiniteAnimationSpec<T> =
-        if (reducedMotion) snap() else MaterialTheme.motionScheme.fastSpatialSpec()
+        if (reducedMotion) snap() else spring(dampingRatio = 0.6f, stiffness = 1400f)
 
     /**
      * The slower, more deliberate spatial tier -- the popup morphing into
@@ -77,20 +75,19 @@ object Motion {
      */
     @Composable
     fun <T> defaultSpatialSpec(): FiniteAnimationSpec<T> =
-        if (reducedMotion) snap() else MaterialTheme.motionScheme.defaultSpatialSpec()
+        if (reducedMotion) snap() else spring(dampingRatio = 0.8f, stiffness = 500f)
 
     /**
-     * Color or alpha settling into a new value -- never a spatial spring,
-     * which is tuned to overshoot and settle the way a moving position does;
-     * a color that overshoots reads as a flash of the wrong color, not as
-     * personality. Left animated even under reduced motion: a crossfade
-     * carries no positional travel for that setting to object to.
+     * Color or alpha settling into a new value -- critically damped, never
+     * overshooting the way a spatial spring is tuned to; a color that
+     * overshoots reads as a flash of the wrong color, not as personality.
+     * Left animated even under reduced motion: a crossfade carries no
+     * positional travel for that setting to object to.
      */
     @Composable
-    fun <T> fastEffectsSpec(): FiniteAnimationSpec<T> = MaterialTheme.motionScheme.fastEffectsSpec()
+    fun <T> fastEffectsSpec(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 3800f)
 
     /** The slower effects tier, for a panel or overlay's own color settling. */
     @Composable
-    fun <T> defaultEffectsSpec(): FiniteAnimationSpec<T> =
-        MaterialTheme.motionScheme.defaultEffectsSpec()
+    fun <T> defaultEffectsSpec(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 1600f)
 }
