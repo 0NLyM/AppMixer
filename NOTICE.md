@@ -1466,5 +1466,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   `ACCESS_NOTIFICATION_POLICY` manifest declaration from two releases
   ago, both made unnecessary by the above.
 
+## 2026-09-19 — 1.0.57
+
+- Every slider (the bars, the disc, the ringer switch, the expand/collapse
+  morph) now settles with the platform's own interruptible springs
+  instead of a fixed duration, and carries the finger's own release
+  velocity into that spring instead of restarting from zero -- a flick
+  keeps moving like it was actually flicked, and a new drag interrupts
+  mid-settle without snapping first. Color transitions across the same
+  surfaces (ringer switch, toggle buttons, volume icon, popup, mixer
+  panel, theme crossfade) move through the same spec family, which
+  collapses to an instant snap under the platform's "Remove animations"
+  accessibility setting instead of ignoring it.
+- Added real haptic feedback: a tick on every discretized step of a
+  drag (scaled to how big a step it just crossed), a firmer pulse at
+  each slider's ends, and a distinct pulse for mute/unmute and for the
+  ringer switch's own mode changes and the popup's expand-swipe
+  threshold. Silent when the device has no vibrator, and respects the
+  user's own haptics setting.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
