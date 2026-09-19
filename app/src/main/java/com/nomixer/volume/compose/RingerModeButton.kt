@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,6 +42,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.R
+import com.nomixer.volume.haptics.SliderHaptics
+import com.nomixer.volume.haptics.rememberSliderHaptics
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
 import com.nomixer.volume.ui.theme.Motion
 import org.joor.Reflect
@@ -80,6 +81,7 @@ fun RingerModeButton(
     audioManager: AudioManager,
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
+    haptics: SliderHaptics = rememberSliderHaptics(),
     onChange: (() -> Unit)? = null
 ) {
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
@@ -104,12 +106,12 @@ fun RingerModeButton(
 
     val containerColor by animateColorAsState(
         targetValue = targetContainer,
-        animationSpec = Motion.ColorShift,
+        animationSpec = Motion.fastEffectsSpec(),
         label = "ringerContainer"
     )
     val contentColor by animateColorAsState(
         targetValue = targetContent,
-        animationSpec = Motion.ColorShift,
+        animationSpec = Motion.fastEffectsSpec(),
         label = "ringerContent"
     )
 
@@ -128,39 +130,48 @@ fun RingerModeButton(
         }
 
         when (ringerMode) {
-            AudioManager.RINGER_MODE_VIBRATE -> swing.animateTo(
-                targetValue = 0f,
-                animationSpec = keyframes {
-                    durationMillis = 340
-                    0f at 0
-                    1f at 45
-                    -0.85f at 100
-                    0.6f at 155
-                    -0.4f at 210
-                    0.18f at 270
-                }
-            )
+            AudioManager.RINGER_MODE_VIBRATE -> {
+                haptics.tick(intensity = 0.7f)
+                swing.animateTo(
+                    targetValue = 0f,
+                    animationSpec = keyframes {
+                        durationMillis = 340
+                        0f at 0
+                        1f at 45
+                        -0.85f at 100
+                        0.6f at 155
+                        -0.4f at 210
+                        0.18f at 270
+                    }
+                )
+            }
 
-            AudioManager.RINGER_MODE_SILENT -> dip.animateTo(
-                targetValue = 1f,
-                animationSpec = keyframes {
-                    durationMillis = 300
-                    1f at 0
-                    0.84f at 110
-                    1.03f at 220
-                }
-            )
+            AudioManager.RINGER_MODE_SILENT -> {
+                haptics.mute(true)
+                dip.animateTo(
+                    targetValue = 1f,
+                    animationSpec = keyframes {
+                        durationMillis = 300
+                        1f at 0
+                        0.84f at 110
+                        1.03f at 220
+                    }
+                )
+            }
 
-            else -> swing.animateTo(
-                targetValue = 0f,
-                animationSpec = keyframes {
-                    durationMillis = 460
-                    0f at 0
-                    1f at 110
-                    -0.7f at 230
-                    0.3f at 350
-                }
-            )
+            else -> {
+                haptics.mute(false)
+                swing.animateTo(
+                    targetValue = 0f,
+                    animationSpec = keyframes {
+                        durationMillis = 460
+                        0f at 0
+                        1f at 110
+                        -0.7f at 230
+                        0.3f at 350
+                    }
+                )
+            }
         }
     }
 
@@ -217,11 +228,16 @@ fun RingerModeButton(
             },
         contentAlignment = Alignment.Center
     ) {
+        // Computed here, in composable scope, rather than inside
+        // transitionSpec below -- that lambda isn't itself composable, so it
+        // can't call Motion's own spec accessors directly.
+        val iconFade = Motion.fastEffectsSpec<Float>()
+        val iconScale = Motion.fastSpatialSpec<Float>()
         AnimatedContent(
             targetState = ringerMode,
             transitionSpec = {
-                (fadeIn(tween(180)) + scaleIn(tween(220), initialScale = 0.65f))
-                    .togetherWith(fadeOut(tween(120)) + scaleOut(tween(160), targetScale = 0.65f))
+                (fadeIn(iconFade) + scaleIn(iconScale, initialScale = 0.65f))
+                    .togetherWith(fadeOut(iconFade) + scaleOut(iconScale, targetScale = 0.65f))
             },
             label = "ringerIcon"
         ) { mode ->

@@ -1,11 +1,15 @@
 package com.nomixer.volume.ui.theme
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.SpringSpec
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -42,4 +46,51 @@ object Motion {
 
     /** How far behind the moving fill edge the dot glow trails, in dots. */
     const val DotTrail = 3f
+
+    /**
+     * The platform's own "Remove animations" accessibility switch, read the
+     * same way [ValueAnimator] itself does: it collapses the system's
+     * animator duration scale to zero, so a spring that would otherwise
+     * travel is better off not travelling at all rather than crawling at
+     * the same shape in slow motion.
+     */
+    private val reducedMotion: Boolean
+        get() = !ValueAnimator.areAnimatorsEnabled()
+
+    /**
+     * Position, size, rotation or shape reacting to a thumb, a tick, or any
+     * other micro-interaction -- the quickest tier of the theme's own
+     * [MotionScheme][androidx.compose.material3.MotionScheme], interruptible
+     * mid-flight like every [androidx.compose.animation.core.Animatable]
+     * spring. Collapses to an instant snap under reduced motion, since a
+     * moving thumb is exactly the kind of motion that setting asks for less
+     * of.
+     */
+    @Composable
+    fun <T> fastSpatialSpec(): FiniteAnimationSpec<T> =
+        if (reducedMotion) snap() else MaterialTheme.motionScheme.fastSpatialSpec()
+
+    /**
+     * The slower, more deliberate spatial tier -- the popup morphing into
+     * the full mixer and back, or any other panel-scale move rather than a
+     * small element's own micro-interaction.
+     */
+    @Composable
+    fun <T> defaultSpatialSpec(): FiniteAnimationSpec<T> =
+        if (reducedMotion) snap() else MaterialTheme.motionScheme.defaultSpatialSpec()
+
+    /**
+     * Color or alpha settling into a new value -- never a spatial spring,
+     * which is tuned to overshoot and settle the way a moving position does;
+     * a color that overshoots reads as a flash of the wrong color, not as
+     * personality. Left animated even under reduced motion: a crossfade
+     * carries no positional travel for that setting to object to.
+     */
+    @Composable
+    fun <T> fastEffectsSpec(): FiniteAnimationSpec<T> = MaterialTheme.motionScheme.fastEffectsSpec()
+
+    /** The slower effects tier, for a panel or overlay's own color settling. */
+    @Composable
+    fun <T> defaultEffectsSpec(): FiniteAnimationSpec<T> =
+        MaterialTheme.motionScheme.defaultEffectsSpec()
 }

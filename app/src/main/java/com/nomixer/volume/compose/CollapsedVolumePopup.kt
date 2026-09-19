@@ -65,6 +65,8 @@ import com.nomixer.volume.data.activeShowValue
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
+import com.nomixer.volume.haptics.SliderHaptics
+import com.nomixer.volume.haptics.rememberSliderHaptics
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -167,6 +169,7 @@ private fun PopupAnchor.expandDirection(): Int = when (this) {
 internal fun Modifier.expandOnSwipe(
     verticalAxis: Boolean,
     direction: Int,
+    haptics: SliderHaptics,
     onExpand: () -> Unit
 ): Modifier = pointerInput(verticalAxis, direction) {
     val threshold = 48.dp.toPx()
@@ -181,6 +184,7 @@ internal fun Modifier.expandOnSwipe(
 
         if (!fired && goingTheRightWay && abs(travelled) >= threshold) {
             fired = true
+            haptics.edge()
             onExpand()
         }
     }
@@ -395,7 +399,7 @@ fun CollapsedVolumePopup(
                 alpha = preferences.paintedPanelAlpha()
             )
         },
-        animationSpec = Motion.ColorShift,
+        animationSpec = Motion.defaultEffectsSpec(),
         label = "popupPanel"
     )
     val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
@@ -412,7 +416,7 @@ fun CollapsedVolumePopup(
     // how a switched-on shadow ended up looking switched off.
     val shadow by animateColorAsState(
         targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
-        animationSpec = Motion.ColorShift,
+        animationSpec = Motion.defaultEffectsSpec(),
         label = "popupShadow"
     )
     val buttonShape = RoundedCornerShape(percent = preferences.activeButtonCornerRadius().coerceIn(0, 50))
@@ -424,6 +428,8 @@ fun CollapsedVolumePopup(
     // pointerInput can intermittently steal a child's tap before it resolves
     // as a click. It now lives on just the slider component in each branch
     // below, so the button is a plain sibling outside the gesture's reach.
+    val haptics = rememberSliderHaptics()
+
     val expandSwipeModifier = Modifier.expandOnSwipe(
         // The horizontal bar spends the horizontal axis on volume, so its
         // expand gesture moves up or down instead.
@@ -433,6 +439,7 @@ fun CollapsedVolumePopup(
         } else {
             preferences.activeAnchor().expandDirection()
         },
+        haptics = haptics,
         onExpand = onExpand
     )
 

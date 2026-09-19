@@ -5,6 +5,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -203,33 +204,26 @@ private fun ColorScheme.animated(): ColorScheme {
     // Locals are prefixed rather than named after the roles they animate:
     // `val primary by animateColorAsState(primary, ...)` would be a
     // declaration referring to itself.
-    val animatedPrimary by animateColorAsState(primary, Motion.ColorShift, label = "primary")
-    val animatedOnPrimary by animateColorAsState(
-        onPrimary, Motion.ColorShift, label = "onPrimary"
-    )
+    val colorSpec = Motion.defaultEffectsSpec<Color>()
+    val animatedPrimary by animateColorAsState(primary, colorSpec, label = "primary")
+    val animatedOnPrimary by animateColorAsState(onPrimary, colorSpec, label = "onPrimary")
     val animatedPrimaryContainer by animateColorAsState(
-        primaryContainer, Motion.ColorShift, label = "primaryContainer"
+        primaryContainer, colorSpec, label = "primaryContainer"
     )
     val animatedOnPrimaryContainer by animateColorAsState(
-        onPrimaryContainer, Motion.ColorShift, label = "onPrimaryContainer"
+        onPrimaryContainer, colorSpec, label = "onPrimaryContainer"
     )
-    val animatedBackground by animateColorAsState(
-        background, Motion.ColorShift, label = "background"
-    )
+    val animatedBackground by animateColorAsState(background, colorSpec, label = "background")
     val animatedOnBackground by animateColorAsState(
-        onBackground, Motion.ColorShift, label = "onBackground"
+        onBackground, colorSpec, label = "onBackground"
     )
-    val animatedSurface by animateColorAsState(surface, Motion.ColorShift, label = "surface")
-    val animatedOnSurface by animateColorAsState(
-        onSurface, Motion.ColorShift, label = "onSurface"
-    )
-    val animatedTertiary by animateColorAsState(tertiary, Motion.ColorShift, label = "tertiary")
-    val animatedOnTertiary by animateColorAsState(
-        onTertiary, Motion.ColorShift, label = "onTertiary"
-    )
-    val animatedOutline by animateColorAsState(outline, Motion.ColorShift, label = "outline")
+    val animatedSurface by animateColorAsState(surface, colorSpec, label = "surface")
+    val animatedOnSurface by animateColorAsState(onSurface, colorSpec, label = "onSurface")
+    val animatedTertiary by animateColorAsState(tertiary, colorSpec, label = "tertiary")
+    val animatedOnTertiary by animateColorAsState(onTertiary, colorSpec, label = "onTertiary")
+    val animatedOutline by animateColorAsState(outline, colorSpec, label = "outline")
     val animatedOutlineVariant by animateColorAsState(
-        outlineVariant, Motion.ColorShift, label = "outlineVariant"
+        outlineVariant, colorSpec, label = "outlineVariant"
     )
 
     return copy(
@@ -286,6 +280,11 @@ fun NoMixerTheme(
             colorScheme = scheme.animated(),
             typography = Typography,
             shapes = NoMixerShapes,
+            // Expressive rather than the default standard scheme: it's what
+            // makes the theme's own fast/default spatial and effects tiers
+            // (see Motion.kt) read as springs with actual character instead
+            // of muted, barely-there ones.
+            motionScheme = MotionScheme.expressive(),
             content = content
         )
     }
@@ -303,6 +302,9 @@ fun PopupColors(preferences: UiPreferences, content: @Composable () -> Unit) {
         colorScheme = MaterialTheme.colorScheme.withOverrides(preferences).animated(),
         typography = MaterialTheme.typography,
         shapes = MaterialTheme.shapes,
+        // A nested MaterialTheme call otherwise resets to the standard
+        // scheme instead of inheriting the ambient one.
+        motionScheme = MaterialTheme.motionScheme,
         content = content
     )
 }

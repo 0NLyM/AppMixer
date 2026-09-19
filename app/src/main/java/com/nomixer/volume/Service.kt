@@ -29,7 +29,6 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +57,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
+import kotlinx.coroutines.launch
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
@@ -319,7 +319,7 @@ class Service : AccessibilityService() {
                                 alpha = preferences.paintedPanelAlpha()
                             )
                         },
-                        animationSpec = Motion.ColorShift,
+                        animationSpec = Motion.defaultEffectsSpec(),
                         label = "mixerPanel"
                     )
                     val sliderShadowColor by animateColorAsState(
@@ -328,7 +328,7 @@ class Service : AccessibilityService() {
                         } else {
                             Color.Black.copy(alpha = preferences.shadowAlpha())
                         },
-                        animationSpec = Motion.ColorShift,
+                        animationSpec = Motion.defaultEffectsSpec(),
                         label = "mixerSliderShadow"
                     )
                     // The panel's own shadow around its outer edge -- same
@@ -341,7 +341,7 @@ class Service : AccessibilityService() {
                     // CollapsedVolumePopup's own is.
                     val panelShadowColor by animateColorAsState(
                         targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
-                        animationSpec = Motion.ColorShift,
+                        animationSpec = Motion.defaultEffectsSpec(),
                         label = "mixerPanelShadow"
                     )
 
@@ -358,23 +358,26 @@ class Service : AccessibilityService() {
                     // faded in. Swapping outright and animating only what's
                     // on screen keeps the window's own size a single step.
                     val origin = preferences.activeAnchor().transformOrigin()
+                    // Scale (spatial) and alpha (effects) are two separate
+                    // Animatables on their own specs rather than one value
+                    // driving both -- a spatial spring is tuned to overshoot
+                    // the way a moving position does, and overshooting past
+                    // 1.0 alpha has nothing to overshoot into.
+                    val scaleSpec = Motion.defaultSpatialSpec<Float>()
+                    val alphaSpec = Motion.defaultEffectsSpec<Float>()
 
                     key(expanded) {
-                        val appear = remember { Animatable(0f) }
+                        val scaleAppear = remember { Animatable(0f) }
+                        val alphaAppear = remember { Animatable(0f) }
                         LaunchedEffect(Unit) {
-                            appear.animateTo(
-                                targetValue = 1f,
-                                animationSpec = tween(
-                                    durationMillis = Motion.MorphMillis,
-                                    easing = Motion.Emphasized
-                                )
-                            )
+                            launch { scaleAppear.animateTo(1f, scaleSpec) }
+                            launch { alphaAppear.animateTo(1f, alphaSpec) }
                         }
 
                         Box(
                             modifier = Modifier.graphicsLayer {
-                                val grown = 0.9f + 0.1f * appear.value
-                                alpha = appear.value
+                                val grown = 0.9f + 0.1f * scaleAppear.value
+                                alpha = alphaAppear.value
                                 scaleX = grown
                                 scaleY = grown
                                 // Grows out of the screen edge it hugs.

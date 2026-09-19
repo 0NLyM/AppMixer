@@ -4,7 +4,6 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -25,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.nomixer.volume.ui.theme.Motion
 
 /**
  * Whether a Bluetooth sink is among the outputs this device can currently
@@ -96,12 +96,16 @@ fun AnimatedVolumeIcon(
     // inside AnimatedContent -- a Box only honors align() on its direct
     // child's modifier chain, and putting it on the Icon instead would
     // leave it silently ignored.
+    // Computed here, in composable scope, since transitionSpec below isn't
+    // itself composable and can't call Motion's own spec accessors.
+    val iconFade = Motion.fastEffectsSpec<Float>()
+    val iconScale = Motion.fastSpatialSpec<Float>()
     AnimatedContent(
         targetState = icon,
         modifier = modifier,
         transitionSpec = {
-            (fadeIn(tween(180)) + scaleIn(tween(220), initialScale = 0.65f))
-                .togetherWith(fadeOut(tween(120)) + scaleOut(tween(160), targetScale = 0.65f))
+            (fadeIn(iconFade) + scaleIn(iconScale, initialScale = 0.65f))
+                .togetherWith(fadeOut(iconFade) + scaleOut(iconScale, targetScale = 0.65f))
         },
         label = "volumeIcon"
     ) { currentIcon ->

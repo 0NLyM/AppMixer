@@ -57,6 +57,11 @@ fun AppVolumeSlider(
                     APP_SLIDER_SHADOW_ELEVATION_DP
                 ),
             value = app.volume,
+            // App volume has no real per-unit steps of its own (it's a
+            // continuous 0..1 fraction) -- 24 gives it the same tick density
+            // as the disc's own decorative ring, so it still buzzes as it
+            // crosses.
+            hapticSteps = 24,
             onValueChange = { value ->
                 app.volume = value
                 onChange?.invoke()

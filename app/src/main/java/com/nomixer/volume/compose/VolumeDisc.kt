@@ -12,6 +12,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -28,6 +29,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -38,11 +41,15 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
+import com.nomixer.volume.haptics.SliderHaptics
+import com.nomixer.volume.haptics.rememberSliderHaptics
+import com.nomixer.volume.haptics.rememberSliderHapticStepTracker
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
@@ -70,6 +77,15 @@ fun VolumeDisc(
     gestureModifier: Modifier = Modifier,
     diameter: Dp = 200.dp,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    /**
+     * How many discrete haptic "clicks" [valueRange] is divided into --
+     * `null` (the default) rounds the range's own width to the nearest
+     * whole unit, which lines up with a real per-unit control (a system
+     * volume stream). Pass an explicit count for a continuous 0..1 range
+     * that has no natural unit of its own.
+     */
+    hapticSteps: Int? = null,
+    haptics: SliderHaptics = rememberSliderHaptics(),
     trackColor: Color = MaterialTheme.colorScheme.primaryContainer,
     fillColor: Color = MaterialTheme.colorScheme.primary,
     accentColor: Color = MaterialTheme.colorScheme.tertiary,
@@ -222,6 +238,13 @@ fun VolumeDisc(
     // finger exactly while one is down.
     var dragging by remember { mutableStateOf(false) }
     val fill = remember { Animatable(targetFraction) }
+    // Carried from the finger's own release speed, same as TrackSlider.
+    var releaseVelocity by remember { mutableFloatStateOf(0f) }
+    val hapticTracker = rememberSliderHapticStepTracker(
+        steps = (hapticSteps ?: range.roundToInt()).coerceAtLeast(1),
+        haptics = haptics
+    )
+    val spatialSpec = Motion.fastSpatialSpec<Float>()
 
     // Unconditional even though only Atmosphere mode ever uses it, and it
     // costs nothing while unused: one turn that finishes and then holds.
@@ -231,7 +254,7 @@ fun VolumeDisc(
         if (dragging) {
             fill.snapTo(targetFraction)
         } else {
-            fill.animateTo(targetFraction, Motion.VolumeLevel)
+            fill.animateTo(targetFraction, spatialSpec, initialVelocity = releaseVelocity)
         }
     }
 
@@ -274,21 +297,42 @@ fun VolumeDisc(
                 .pointerInput(range) {
                     var startValue = 0f
                     var startY = 0f
+                    val velocityTracker = VelocityTracker()
 
                     detectVerticalDragGestures(
                         onDragStart = { offset ->
                             startValue = latestValue
                             startY = offset.y
                             dragging = true
+                            velocityTracker.resetTracking()
+                            hapticTracker.onDragStart(targetFraction)
                         },
-                        onDragEnd = { dragging = false },
-                        onDragCancel = { dragging = false }
+                        onDragEnd = {
+                            dragging = false
+                            // Dragging up raises the value, so the fraction's
+                            // own velocity is the negative of the raw
+                            // downward-positive y velocity the tracker
+                            // reports.
+                            releaseVelocity =
+                                -velocityTracker.calculateVelocity().y / size.height.toFloat()
+                        },
+                        onDragCancel = {
+                            dragging = false
+                            releaseVelocity = 0f
+                        }
                     ) { change, _ ->
+                        velocityTracker.addPointerInputChange(change)
                         // Dragging up raises the volume.
                         val dragAmount = startY - change.position.y
                         val newValue = startValue + (dragAmount / size.height.toFloat()) * range
                         val coercedNewValue =
                             newValue.coerceIn(valueRange.start, valueRange.endInclusive)
+                        val newFraction = if (range <= 0f) {
+                            0f
+                        } else {
+                            (coercedNewValue - valueRange.start) / range
+                        }
+                        hapticTracker.onDrag(newFraction)
                         if (coercedNewValue != latestValue) {
                             onValueChange(coercedNewValue)
                         }
