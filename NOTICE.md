@@ -1445,5 +1445,26 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   framework, for any app or method that sets it, not something this app
   adds on top. Nothing to fix here -- 1.0.54's behavior is correct.
 
+## 2026-09-19 — 1.0.56
+
+- Correction to last release's note that reaching silent without the
+  platform's Do Not Disturb turning on "genuinely can't be done": that
+  was true of `AudioManager.setRingerMode`'s public API specifically,
+  not of the ringer mode itself. That public entry point
+  (`setRingerModeExternal`) gates silent behind Do Not Disturb access
+  and brings real system Do Not Disturb along with it as a side effect
+  of the *same call* -- confirmed by testing, it visibly turned Do Not
+  Disturb on and left it there. `cmd audio set-ringer-mode`, the shell
+  command `adb shell` (and Shizuku's shell) runs, reaches AudioService
+  through a different internal entry point that carries neither the
+  permission gate nor the Do Not Disturb coupling. The ringer switch now
+  runs that command as a Shizuku shell process instead of calling the
+  public API directly -- the same mechanism already used elsewhere in
+  the app to grant itself permissions. Reaching silent, and leaving it,
+  no longer touches Do Not Disturb at all.
+- Removed the Do Not Disturb access permission request and the
+  `ACCESS_NOTIFICATION_POLICY` manifest declaration from two releases
+  ago, both made unnecessary by the above.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
