@@ -56,6 +56,8 @@ fun VerticalTrackSlider(
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     /** See [TrackSlider]'s own parameter of the same name. */
     settleSpec: FiniteAnimationSpec<Float> = MotionTokens.Spatial.fast(),
+    /** See [TrackSlider]'s own parameter of the same name. */
+    notches: Int = 0,
     content: @Composable BoxScope.() -> Unit = {}
 ) {
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -72,10 +74,11 @@ fun VerticalTrackSlider(
     // model:   a thumb on a track, magnetised to the notches under it.
     // token:   [settleSpec] -- MotionTokens.Spatial.fast, or .defaultSoft
     //          for a follower.
-    // property: fill fraction.
-    // The same gesture the horizontal bar and the disc use; see
-    // [MagneticFill].
-    val fill = rememberMagneticFill(targetFraction, settleSpec)
+    // property: fill fraction, and the haptics riding it.
+    // The same gesture the horizontal bar and the disc use, and the same
+    // feel with it -- a tick per detent under the finger, a click as the
+    // throw lands. See [MagneticFill].
+    val fill = rememberMagneticFill(targetFraction, settleSpec, notches)
 
     val pillShape = GenericShape { size, _ ->
         addRoundRect(

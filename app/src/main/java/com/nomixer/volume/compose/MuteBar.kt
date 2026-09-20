@@ -67,6 +67,15 @@ private const val BAR_CLEARANCE = 1.3f
 val MixerGlyphSize = 32.dp
 
 /**
+ * Every round glyph control in the popup -- the ringer switch, the Do Not
+ * Disturb switch, the mixer's own visibility toggles -- at one size, so a
+ * row of them is a row rather than an assortment. The compact popup scales
+ * its own ringer switch from here; everything in the mixer takes it as it
+ * is.
+ */
+val RoundButtonSize = 48.dp
+
+/**
  * Every glyph sitting on a round control -- the ringer switch, the Do Not
  * Disturb switch -- as a share of the control's own size, so a button the
  * user has scaled up carries a glyph scaled with it.
@@ -74,10 +83,11 @@ val MixerGlyphSize = 32.dp
 const val ButtonGlyphFraction = 0.5f
 
 /**
- * [ButtonGlyphFraction] of the 48dp button the mixer's own switches are,
- * for the ones whose size isn't the caller's to choose.
+ * [ButtonGlyphFraction] of [RoundButtonSize], for the controls whose size
+ * isn't the caller's to choose. Derived rather than written down again:
+ * the two can't drift apart.
  */
-val ButtonGlyphSize = 24.dp
+val ButtonGlyphSize = RoundButtonSize * ButtonGlyphFraction
 
 /**
  * How far the bar has drawn itself across [barred]'s glyph right now, as a

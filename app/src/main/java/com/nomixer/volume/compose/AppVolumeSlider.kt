@@ -63,6 +63,11 @@ fun AppVolumeSlider(
             // because a finger is on this particular bar -- the softer,
             // more damped tier, so a column of them settles as one body.
             settleSpec = MotionTokens.Spatial.defaultSoft(),
+            // A per-app level is continuous -- there is no step in it to
+            // land on -- so it is felt against the shared count every
+            // stepless control uses, which is the disc's own. See
+            // [ContinuousNotches].
+            notches = ContinuousNotches,
             onValueChange = { value ->
                 app.volume = value
                 onChange?.invoke()

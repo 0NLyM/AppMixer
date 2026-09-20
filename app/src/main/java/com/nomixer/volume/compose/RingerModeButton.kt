@@ -55,25 +55,35 @@ private fun ringerDescription(mode: Int): Int = when (mode) {
 }
 
 /**
- * How far a round glyph button gives under a finger, and how deep the ringer
- * switch's own mode-change knock goes.
+ * How far a round glyph button gives -- under a finger, and when it is
+ * knocked by its own state changing.
  *
- * The press depth is shared with [ToggleButton] rather than chosen twice:
- * the two sit side by side in the mixer's ring row, and a finger moving
- * between them must not feel like it has crossed onto a different surface.
+ * **One number for both, and for every button.** The press depth is shared
+ * with [ToggleButton] rather than chosen twice: the ringer switch and the
+ * Do Not Disturb switch sit side by side in the mixer's ring row, and a
+ * finger moving between them must not feel like it has crossed onto a
+ * different surface. The mode-change pop bottoms out in the same place,
+ * because a button that gives further when it is pushed than when it
+ * answers is two objects wearing one shape.
  *
- * The press bottoms out at 0.89 of the button's own size. That is a real
- * give rather than a hint of one -- a control this small, with a finger
- * covering most of it, has to move far enough that what is left visible
- * around the fingertip still reads as taken. It is deep, not slow: the
- * travel is the same tenth of a second it always was.
+ * It bottoms out at 0.89 of the button's own size. That is a real give
+ * rather than a hint of one -- a control this small, with a finger covering
+ * most of it, has to move far enough that what is left visible around the
+ * fingertip still reads as taken -- and it is tight enough that the pop
+ * stays a button answering rather than a picture being re-drawn. It is
+ * deep, not slow: the travel is the same tenth of a second it always was,
+ * and what separates the press from the pop is the spring, not the
+ * distance. The press holds the button in for as long as the finger is
+ * there; the knock crosses straight back out past rest and settles.
  *
- * The knock is far shallower, because the character of that one comes from
- * the spring crossing back out past rest rather than from how far in it
- * went.
+ * [GLYPH_POP_SCALE] is the same floor, for the one case where a glyph
+ * genuinely is exchanged for another picture rather than changed: it starts
+ * and leaves at the depth the button itself gives to, so a swap on a
+ * pressed button is one movement rather than a small icon flying out of a
+ * large one.
  */
 internal const val BUTTON_PRESS_SQUASH = 0.11f
-private const val POP_SQUASH = 0.07f
+internal const val GLYPH_POP_SCALE = 1f - BUTTON_PRESS_SQUASH
 
 /** How far the vibrating glyph travels sideways at the peak of its shake, in dp. */
 private const val SHAKE_TRAVEL_DP = 2.4f
@@ -97,7 +107,7 @@ private const val SHAKE_TRAVEL_DP = 2.4f
 fun RingerModeButton(
     audioManager: AudioManager,
     modifier: Modifier = Modifier,
-    size: Dp = 48.dp,
+    size: Dp = RoundButtonSize,
     onChange: (() -> Unit)? = null
 ) {
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
@@ -189,6 +199,13 @@ fun RingerModeButton(
     // and swiping one feel like the same surface.
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+
+    // The switch's own two edges, felt rather than seen: a click as the
+    // finger lands and another as it lifts. The same click every slider in
+    // the app lands its throw with -- see [ControlHaptics] -- so a tap and
+    // a drag are the same hand.
+    HapticPresses(interactionSource)
+
     // element:  the button, and the glyph on it.
     // model:    a button under a finger.
     // token:    MotionTokens.Spatial.press.
@@ -220,7 +237,7 @@ fun RingerModeButton(
                 // in while a finger is down, and the mode change's own
                 // impulse knocking it and springing back out past its
                 // resting size. The glyph inside inherits both.
-                val knocked = 1f - POP_SQUASH * impulse.value - BUTTON_PRESS_SQUASH * press.value
+                val knocked = 1f - BUTTON_PRESS_SQUASH * impulse.value - BUTTON_PRESS_SQUASH * press.value
                 scaleX = knocked
                 scaleY = knocked
             }

@@ -518,6 +518,10 @@ fun CollapsedVolumePopup(
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
+                    // Media's own volume steps, so the compact bar ticks
+                    // against exactly the detents the disc and the mixer's
+                    // own media row do.
+                    notches = maxVolume.toInt(),
                     onValueChange = { value -> setVolume(value.roundToInt()) }
                 ) {
                     Box(
@@ -591,6 +595,10 @@ fun CollapsedVolumePopup(
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
+                    // Media's own volume steps, so the compact bar ticks
+                    // against exactly the detents the disc and the mixer's
+                    // own media row do.
+                    notches = maxVolume.toInt(),
                     onValueChange = { value -> setVolume(value.roundToInt()) }
                 ) {
                     Box(

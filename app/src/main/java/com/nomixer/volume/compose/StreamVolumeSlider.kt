@@ -175,6 +175,12 @@ fun StreamVolumeSlider(
             // See [AppVolumeSlider]: a row inside the mixer follows rather
             // than leads.
             settleSpec = MotionTokens.Spatial.defaultSoft(),
+            // A stream has real detents -- its own volume steps -- so it
+            // is felt against those rather than against a count invented
+            // for it. Fifteen-odd notches across the bar is what the
+            // hardware keys step through, which is exactly what a finger
+            // dragging the same level should feel.
+            notches = maxVolume.toInt(),
             onValueChange = { value ->
                 // Nearest, not truncated: the fill now follows the finger
                 // continuously and is magnetised to a step when it lifts

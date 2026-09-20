@@ -44,16 +44,17 @@ import androidx.compose.ui.graphics.Color
  * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction: 1:1 under a finger,    |
  * |                     |                       |                             | magnetised to the nearest step on     |
  * |                     |                       |                             | release, velocity-retargeted          |
- * | Tick ring           | a detent              | [Spatial.tick]              | angular position (derived from fill), |
- * |                     |                       |                             | and a haptic click per slot crossed   |
+ * | Tick ring           | a detent              | [Spatial.tick]              | angular position (derived from fill)   |
  * | Slider fill         | a thumb on a track    | [Spatial.fast]              | fill fraction, same gesture as the    |
  * |                     |                       |                             | disc's -- see MagneticFill            |
  * | Follower sliders    | a thumb, following    | [Spatial.defaultSoft]       | fill fraction                         |
- * | Ringer button       | a button under a finger | [Spatial.press]           | uniform scale, 0.89 at the bottom     |
- * | Toggle button       | a button under a finger | [Spatial.press]           | uniform scale, the ringer's own band  |
- * | Ringer mode change  | a button knocked      | [Spatial.knock]             | uniform scale                         |
+ * | Round glyph button  | a button under a finger | [Spatial.press]           | uniform scale, 0.89 at the bottom --  |
+ * |                     |                       |                             | ringer, Do Not Disturb, every toggle  |
+ * | Button state change | a button knocked      | [Spatial.knock]             | uniform scale, to the same 0.89       |
  * | Ringer icon         | the button's own face | [Effects.default]           | alpha only -- its scale is the        |
  * |                     |                       |                             | container's. Never a slide.           |
+ * | Glyph swap          | two pictures, not one | [Spatial.fast] (scale)      | uniform scale, from and to the press's |
+ * |                     | object changing state | + [Effects.default] (alpha) | own 0.89 floor -- never from 0        |
  * | Vibrate glyph       | a phone on a table    | [Spatial.shake]             | translationX                          |
  * | Speaker glyph       | a cone and the air    | [Spatial.fast]              | wave extent                           |
  * | Mute bar            | a stroke drawn across a glyph | [Spatial.default]   | bar extent, over the glyph's own      |
@@ -80,6 +81,17 @@ import androidx.compose.ui.graphics.Color
  * atmosphere field used to turn forever on fixed-length laps; they are
  * phases of the arrival now (see [LocalArrival]), so the overlay has
  * exactly one clock and comes to a complete stop when it has arrived.
+ *
+ * # What is felt rather than seen
+ *
+ * Haptics are governed the same way and in one place, but it isn't this
+ * one: see `ControlHaptics` in `compose/Haptics.kt`. Two constants, a tick
+ * for a detent going past under a finger and a click for a control
+ * landing, and the same rule -- a control that names its own feel at the
+ * call site is a control that feels like it belongs to another app. They
+ * ride the springs in the table above rather than running on anything of
+ * their own: the ticks come off the fill's own value crossing a notch, the
+ * click off the settle finishing.
  *
  * # Why two channels
  *

@@ -144,9 +144,13 @@ fun AnimatedVolumeIcon(
         targetState = icon,
         modifier = modifier,
         transitionSpec = {
-            (fadeIn(MotionTokens.Effects.default()) + scaleIn(MotionTokens.Spatial.fast(), initialScale = 0.62f))
+            // The same tight pop every glyph swap in the app makes: it
+            // starts and leaves at the depth a button under a finger gives
+            // to, rather than flying in from two thirds of its own size.
+            // See [GLYPH_POP_SCALE].
+            (fadeIn(MotionTokens.Effects.default()) + scaleIn(MotionTokens.Spatial.fast(), initialScale = GLYPH_POP_SCALE))
                 .togetherWith(
-                    fadeOut(MotionTokens.Effects.default()) + scaleOut(MotionTokens.Spatial.fast(), targetScale = 0.62f)
+                    fadeOut(MotionTokens.Effects.default()) + scaleOut(MotionTokens.Spatial.fast(), targetScale = GLYPH_POP_SCALE)
                 )
         },
         label = "volumeIcon"

@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.DoNotDisturbOn
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.RingVolume
@@ -213,15 +213,22 @@ private fun RingFooter(
             onChange = onChange
         )
 
-        // One glyph, silenced or not -- the same bar the speaker beside it
-        // wears, put on and taken off (see [BarredToggleButton]), rather
-        // than two different Do Not Disturb pictures swapping. Drawn at the
-        // ringer switch's own glyph size, so the pair reads as one row.
+        // The prohibition sign, and one glyph of it: the bar the speaker
+        // beside it wears is put on and taken off across the very same
+        // bounds (see [BarredToggleButton]) rather than two different Do
+        // Not Disturb pictures swapping. A notification bell said "there
+        // are notifications"; the circle says what the switch actually
+        // does, and the bar crossing it is the one mark this app uses for
+        // "silenced", whatever glyph is underneath it.
+        //
+        // The same body and the same size as the ringer switch it sits
+        // beside, so the pair reads as one row of one control repeated --
+        // see [ToggleButtonShell].
         BarredToggleButton(
             checked = interruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL,
             checkedDescription = stringResource(R.string.disable_do_not_disturb),
             uncheckedDescription = stringResource(R.string.enable_do_not_disturb),
-            icon = Icons.Default.Notifications
+            icon = Icons.Default.DoNotDisturbOn
         ) {
             notificationManagerProxy.setInterruptionFilter(
                 if (it) NotificationManager.INTERRUPTION_FILTER_NONE else NotificationManager.INTERRUPTION_FILTER_ALL

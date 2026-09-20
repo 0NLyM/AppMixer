@@ -14,6 +14,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlin.math.roundToInt
 
 /**
  * One gesture for every level control in the app: the slider bars, compact
@@ -45,9 +47,16 @@ import kotlinx.coroutines.flow.collectLatest
  * session -- arrives as a change of target and retargets the same spring
  * mid-flight, from where it has got to and at the speed it is carrying.
  *
+ * It is also where every level control in the app gets its *feel*, for the
+ * same reason it is where they get their motion: the detents going past
+ * under the finger and the click as the control lands on one are properties
+ * of this gesture, not of whichever shape happens to be drawing it. See
+ * [rememberMagneticFill]'s `notches`.
+ *
  * The caller owns the gesture detector and the geometry; this owns the
- * value and every animation on it. Paint [value], and read it in the draw
- * phase so a settle repaints without recomposing.
+ * value, every animation on it, and the haptics that go with them. Paint
+ * [value], and read it in the draw phase so a settle repaints without
+ * recomposing.
  */
 @Stable
 internal class MagneticFill internal constructor(
@@ -55,6 +64,20 @@ internal class MagneticFill internal constructor(
 ) {
     /** Whether a finger is on it right now. */
     internal var dragging by mutableStateOf(false)
+        private set
+
+    /**
+     * Whether the *user* is working this control right now -- a finger on
+     * it, or the settle that finger threw still running.
+     *
+     * Deliberately wider than [dragging], which ends the instant the touch
+     * lifts: a bar let go mid-throw is still being moved by the person who
+     * threw it, and the detents it coasts through are still theirs to feel.
+     * Anything *else* moving the level -- a volume key, another app, a
+     * media session -- moves it without a sound, because nobody is holding
+     * it.
+     */
+    internal var steering by mutableStateOf(false)
         private set
 
     /** Where the finger is, as a fraction of the control's own range. */
@@ -76,6 +99,7 @@ internal class MagneticFill internal constructor(
     fun grab(): Float {
         dragFraction = animatable.value
         dragging = true
+        steering = true
         return dragFraction
     }
 
@@ -98,6 +122,12 @@ internal class MagneticFill internal constructor(
     fun cancel() {
         releaseVelocity = 0f
         dragging = false
+        steering = false
+    }
+
+    /** The throw has come to rest: the control is nobody's again. */
+    internal fun rest() {
+        steering = false
     }
 
     internal fun takeVelocity(): Float {
@@ -106,6 +136,20 @@ internal class MagneticFill internal constructor(
         return thrown
     }
 }
+
+/**
+ * How many detents a control that has no steps of its own is felt to pass
+ * over across its whole range.
+ *
+ * A per-app level is a continuous number -- there is no notch in it to
+ * land on -- but a finger dragging one still has to feel that it is moving
+ * over something rather than over nothing. This is the disc's own tick
+ * count, so a bar and the dial pass the same number of detents under a
+ * thumb travelling their full length, and the two read as the same
+ * mechanism at different scales rather than as two controls with two
+ * feels.
+ */
+internal const val ContinuousNotches = 24
 
 /**
  * The [MagneticFill] for a control whose level is [targetFraction] -- the
@@ -118,6 +162,19 @@ internal class MagneticFill internal constructor(
  * actually finishes, for a caller that tracks whether its control is still
  * being turned.
  *
+ * [notches] is how many detents the control has across its whole range --
+ * a stream's own volume steps, or [ContinuousNotches] for a level that has
+ * none. One [ControlHaptics.tick] per notch crossed, and one
+ * [ControlHaptics.click] as the throw finally lands on one, for every
+ * control in the app: the feel belongs to the gesture, not to the shape
+ * drawing it. Zero means a control that is felt but not counted -- it
+ * still clicks when it lands, it simply has nothing to tick against.
+ *
+ * Only while the *user* is the one moving it (see [MagneticFill.steering]):
+ * a volume key pressed with the popup on screen moves the same fill through
+ * the same notches, and buzzing at a finger that is nowhere near the
+ * control is feedback for something that didn't happen.
+ *
  * One effect for the control's whole life rather than one per target: the
  * drag and the settle are branches of the same collector, so moving
  * between them cancels rather than restarts, and the [Animatable] carries
@@ -127,12 +184,32 @@ internal class MagneticFill internal constructor(
 internal fun rememberMagneticFill(
     targetFraction: Float,
     settleSpec: FiniteAnimationSpec<Float>,
+    notches: Int = 0,
     onSettled: () -> Unit = {}
 ): MagneticFill {
     val fill = remember { MagneticFill(Animatable(targetFraction)) }
     val magnet by rememberUpdatedState(targetFraction)
     val spec by rememberUpdatedState(settleSpec)
     val settled by rememberUpdatedState(onSettled)
+    val haptics = rememberControlHaptics()
+
+    // element:  a detent passing under the finger.
+    // model:    a notch on a track -- not an animation at all; it rides the
+    //           fill's own spring above and fires as that crosses a slot.
+    // property: haptic feedback.
+    if (notches > 0) {
+        LaunchedEffect(fill, haptics, notches) {
+            snapshotFlow { (fill.value * notches).roundToInt() }
+                // The slot the control is already sitting in is not a slot
+                // it just crossed.
+                .drop(1)
+                .collect {
+                    if (fill.steering) {
+                        haptics.tick()
+                    }
+                }
+        }
+    }
 
     LaunchedEffect(fill) {
         snapshotFlow { fill.dragging }.collectLatest { down ->
@@ -167,6 +244,21 @@ internal fun rememberMagneticFill(
                             // rather than restarts.
                             fill.animatable.animateTo(step, spec)
                         }
+                    }
+
+                    // element:  the control landing on its step.
+                    // model:    a magnet closing the last of the gap.
+                    // property: haptic feedback.
+                    //
+                    // The end of the user's own throw, and only that: this
+                    // branch also runs whenever something *else* retargets
+                    // the fill, and a click there would be the popup
+                    // reporting a volume key back to a hand that isn't on
+                    // it. [MagneticFill.steering] is exactly that
+                    // distinction, and the landing is where it ends.
+                    if (fill.steering) {
+                        haptics.click()
+                        fill.rest()
                     }
                     settled()
                 }

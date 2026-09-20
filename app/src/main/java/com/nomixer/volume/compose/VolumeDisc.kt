@@ -1,6 +1,5 @@
 package com.nomixer.volume.compose
 
-import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -11,13 +10,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -32,7 +26,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
@@ -45,12 +38,10 @@ import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.MotionTokens
-import kotlinx.coroutines.flow.drop
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
@@ -281,57 +272,32 @@ fun VolumeDisc(
     // it arrives as a mark appearing. See [handFadeFor].
     val arrivalFade = LocalArrivalFade.current
 
-    // Whether the user is turning this knob right now -- a finger on it, or
-    // the settle that finger threw still running. Distinct from [dragging],
-    // which ends the instant the touch lifts: a knob let go mid-turn is
-    // still being turned, and the detents it coasts through are still the
-    // user's own. Anything *else* moving the level (another app, a media
-    // session) moves it without clicking, because nobody is holding it.
-    var steering by remember { mutableStateOf(false) }
-
     // element:  the disc's fill, and the tick ring read off it.
     // model:    a knob, and the detent it settles into.
     // token:    MotionTokens.Spatial.tick.
     // property: fill fraction (the tick ring's angle is derived from it,
     //           never animated separately -- one number turns both the
     //           volume arc and the wheel of notches, so they cannot
-    //           disagree about where the knob is).
+    //           disagree about where the knob is), plus the haptics that
+    //           belong to that gesture: a tick per notch crossed and a
+    //           click as the throw lands on one.
     //
     // Exactly the gesture the bars use, on the detent tier rather than the
     // slider one: 1:1 under a finger, then the finger's own speed handed
     // to a spring aimed at the nearest step, which is what makes a thrown
     // knob coast through its notches and click into one rather than
     // stopping wherever the touch happened to end. See [MagneticFill].
-    val fill = rememberMagneticFill(targetFraction, MotionTokens.Spatial.tick) {
-        // The throw has come to rest, so the knob is no longer being
-        // turned by anyone.
-        steering = false
-    }
-
-    // element:  a tick passing under the thumb.
-    // model:    a detent.
-    // token:    -- the click is not an animation; it rides the fill's own
-    //           tick spring above and fires as that crosses a slot.
-    // property: haptic feedback.
     //
-    // Only where there are ticks to feel: a smooth ring has no notches, and
-    // clicking anyway would be feedback for something that isn't there.
-    // performHapticFeedback goes through the view, so the platform's own
-    // haptics setting is honoured without this checking it.
-    val view = LocalView.current
-    if (showDots) {
-        LaunchedEffect(fill, view) {
-            snapshotFlow { (fill.value * TICK_COUNT).roundToInt() }
-                // The slot the knob is already sitting in is not a slot it
-                // just crossed.
-                .drop(1)
-                .collect {
-                    if (steering) {
-                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                    }
-                }
-        }
-    }
+    // The ticks are counted only where there are notches painted to feel:
+    // a smooth ring has none, and clicking against something that isn't
+    // drawn is feedback for a detent nobody can see. The landing click
+    // stays either way -- the knob lands on a real level whether or not
+    // the ring shows them.
+    val fill = rememberMagneticFill(
+        targetFraction = targetFraction,
+        settleSpec = MotionTokens.Spatial.tick,
+        notches = if (showDots) TICK_COUNT else 0
+    )
 
     // Worked out here, in the composable phase rather than the Canvas's own
     // draw phase, purely so [GlassRingBackground] -- a real sibling
@@ -404,7 +370,6 @@ fun VolumeDisc(
                             startFraction = fill.grab()
                             startY = offset.y
                             tracker.resetTracking()
-                            steering = true
                         },
                         onDragEnd = {
                             // Up is more, and screen y grows downward, so
@@ -415,10 +380,7 @@ fun VolumeDisc(
                                 if (height > 0f) -tracker.calculateVelocity().y / height else 0f
                             )
                         },
-                        onDragCancel = {
-                            fill.cancel()
-                            steering = false
-                        }
+                        onDragCancel = { fill.cancel() }
                     ) { change, _ ->
                         tracker.addPosition(change.uptimeMillis, change.position)
                         val height = size.height.toFloat()

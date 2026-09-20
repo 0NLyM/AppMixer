@@ -91,17 +91,17 @@ fun AnimatedSpeakerGlyph(
     )
     // element: the mute bar.
     // model:   a stroke drawn across the glyph -- see [drawMuteBar].
-    // token:   MotionTokens.Spatial.default. Deliberately a tier slower
-    //          than the waves beside it: the waves answer a finger on a
-    //          slider, the bar answers the level reaching nothing, and at
-    //          the waves' own pace it was over before it could be read as
-    //          a mark being made.
+    // token:   MotionTokens.Spatial.default, times the arrival.
     // property: bar extent.
-    val bar = animateFloatAsState(
-        targetValue = if (muted) 1f else 0f,
-        animationSpec = MotionTokens.Spatial.default(),
-        label = "speakerMuteBar"
-    )
+    //
+    // The shared one, asked for the shared way ([rememberMuteBarExtent]),
+    // rather than a second animation that happens to be written the same:
+    // the bar an app icon in the mixer wears and the bar this speaker
+    // wears are one mark for one idea, and a copy of it here is a copy
+    // that can be changed in one place and not the other. It already
+    // carries the popup's own arrival, which is why the parts below
+    // multiply by it and this one doesn't.
+    val bar = rememberMuteBarExtent(barred = muted)
 
     Canvas(
         modifier = modifier
@@ -109,7 +109,7 @@ fun AnimatedSpeakerGlyph(
                 // The bar knocks its own channel out of the speaker it
                 // crosses, which needs a layer to punch through -- and only
                 // while there is a bar. See [drawMuteBar].
-                compositingStrategy = if (bar.value > 0.001f) {
+                compositingStrategy = if (bar() > 0.001f) {
                     CompositingStrategy.Offscreen
                 } else {
                     CompositingStrategy.Auto
@@ -134,7 +134,7 @@ fun AnimatedSpeakerGlyph(
                 drawSpeakerBody(tint)
                 drawWave(tint, WAVE_INNER_RADIUS, innerWave.value * arrived)
                 drawWave(tint, WAVE_OUTER_RADIUS, outerWave.value * arrived)
-                drawMuteBar(tint, bar.value * arrived)
+                drawMuteBar(tint, bar())
             }
         }
     }

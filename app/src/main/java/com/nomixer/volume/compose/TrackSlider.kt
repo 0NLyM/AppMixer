@@ -59,6 +59,14 @@ fun TrackSlider(
      * else did (the mixer's own rows) is handed the softer one instead.
      */
     settleSpec: FiniteAnimationSpec<Float> = MotionTokens.Spatial.fast(),
+    /**
+     * How many detents this bar has across its whole range -- a stream's
+     * own volume steps, or [ContinuousNotches] for a level that has none.
+     * One tick per notch crossed under a finger, and a click as the throw
+     * lands: see [MagneticFill]. Zero leaves the ticks off, for a bar
+     * nobody can actually drag.
+     */
+    notches: Int = 0,
     content: @Composable BoxScope.() -> Unit = {}
 ) {
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -78,12 +86,15 @@ fun TrackSlider(
     // model:   a thumb on a track, magnetised to the notches under it.
     // token:   [settleSpec] -- MotionTokens.Spatial.fast by default, or
     //          .defaultSoft for a row that only moves because the panel did.
-    // property: fill fraction.
+    // property: fill fraction, and the haptics riding it.
     //
     // See [MagneticFill] for the whole of it: 1:1 under the finger, the
     // finger's own speed carried into a spring aimed at the nearest step
-    // when it lifts, and a settle that can be caught again where it is.
-    val fill = rememberMagneticFill(targetFraction, settleSpec)
+    // when it lifts, and a settle that can be caught again where it is --
+    // together with the feel that goes with that gesture, a tick per
+    // detent and a click as it lands, which is the disc's own pair and
+    // now every control's.
+    val fill = rememberMagneticFill(targetFraction, settleSpec, notches)
 
     Box(
         modifier = modifier
