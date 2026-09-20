@@ -1485,6 +1485,71 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-20 — 1.0.61
+
+- Every spring, duration and easing in the overlay now lives in one file,
+  `ui/theme/MotionTokens.kt`, as a table each animation declares itself
+  against by name: what is moving, what it physically is, the token it
+  moves on, and the exact property that token drives. Nothing outside that
+  file names a spring any more, so a property that isn't in the table
+  can't be animated without adding the row that justifies it first. The
+  rule and the table are written down in `CLAUDE.md`.
+- Two channels rather than one. A spatial spring overshoots -- that is
+  what makes an object read as having mass -- but an overshoot past 1 on
+  alpha is clamped by the compositor, so the panel used to reach full
+  opacity, sit there for the length of the overshoot, and then ease back
+  off it. Alpha and colour are now on their own critically damped channel,
+  launched on the same frame as the movement and part of the same
+  transition, and the exit waits for both before the window goes.
+- With that split each panel can enter as the thing it actually is. A
+  panel at a screen edge slides out of that edge and does nothing else --
+  it no longer grows on the way in, which read as being created rather
+  than uncovered, and which scaled the glass pane with it. A centered
+  panel has no edge to come from, so it expands where it is. A
+  laterally-anchored disc does neither: it forms by turning, and the hand
+  is the only thing on the dial that fades in, written onto the face on a
+  later slice of the same arrival rather than by a second animation.
+- The centered mixer had two readings of where it was: the window was
+  centered by a plain layout update while the composition went on building
+  its entrance from the anchor, which still said "left edge". So it played
+  a lateral reveal it had no edge for and morphed out toward a rectangle
+  the centered window couldn't show, leaving a slice sliding in and then
+  the mixer simply being there. One `PanelPlacement` state now feeds both,
+  so there is nothing left for them to disagree about -- and at the center
+  the morph keeps its size half and drops the travel.
+- "Is the panel on screen at all" no longer resets when the panel changes
+  shape, so a placement change on a visible panel can't replay an entrance
+  it has already finished.
+- One spatial animation per control. The ringer switch had two scales on
+  the same object on separate clocks -- the container's press and knock,
+  and a second one written into the glyph swap, running against the
+  finger. The glyph is a child of the layer the press already drives, so
+  the swap is now just a crossfade. The press also bottomed out deep
+  enough to read as deforming rather than as taking a finger; it is
+  shallower now, and so is the knock, whose character comes from the
+  spring crossing back out past rest rather than from how far in it went.
+- The disc's ticks are a detent rather than a picture of one: every source
+  -- a finger, a volume key, another app -- settles the same value on the
+  same spring, so a key landing mid-settle bends that settle from where it
+  is at the speed it is carrying. Crossing a slot clicks only while the
+  knob is actually being turned (a finger on it, or the throw that finger
+  let go of still running); a level moved by something nobody is holding
+  moves silently.
+- Ambient motion, for the two backgrounds that were still pictures once
+  they had arrived. The glass light creeps about nine degrees a second,
+  one whole turn per lap so the seam has nothing to show -- and it moves
+  the light only: the pane underneath never turns and never scales, which
+  is the whole difference between glass and paper. Atmosphere turns on its
+  own axis and wanders its centre round a small orbit on top of the
+  arrival turn it already had. The atmosphere values are shader uniforms
+  read in the caller's own draw phase, so a panel of it costs three float
+  reads a frame and recomposes nothing; the glass beam is built at
+  composition and is quantised to two degrees instead, which is invisible
+  on a soft gradient and is the difference between rebuilding two shaders
+  sixty times a second and rebuilding them five. Neither runs behind a
+  panel that isn't showing it, and every lap is off under reduced motion
+  and cancelled with the composition that launched it.
+
 ## 2026-09-20 — 1.0.60
 
 Rebuilt the overlay's motion again from the 1.0.56 code, discarding the two
