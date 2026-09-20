@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.ui.theme.MotionTokens
 
 /** How far under its own size the dot starts, before the spring lets go. */
-private const val POP_SQUASH = 0.45f
+private const val DOT_SQUASH = 0.45f
 
 /**
  * The small solid dot Nothing OS scatters next to headers and status
@@ -42,7 +42,7 @@ fun NothingDot(
     // An impulse running back to rest, not a scale running up from zero: a
     // dot scaled to 0 has no size for a spring to overshoot *around*, so it
     // reads as an object being created rather than as one landing. Starting
-    // it displaced by [POP_SQUASH] and letting go means the dot is always a
+    // it displaced by [DOT_SQUASH] and letting go means the dot is always a
     // dot -- it arrives small, crosses past its own size and settles.
     val pop = remember { Animatable(1f) }
 
@@ -54,7 +54,7 @@ fun NothingDot(
         modifier = modifier
             .size(size)
             .graphicsLayer {
-                val landed = 1f - POP_SQUASH * pop.value
+                val landed = 1f - DOT_SQUASH * pop.value
                 scaleX = landed
                 scaleY = landed
             }
