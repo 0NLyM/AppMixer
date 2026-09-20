@@ -74,6 +74,7 @@ import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
+import com.nomixer.volume.data.UiPreferences
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.activeAnchor
@@ -90,23 +91,87 @@ import java.util.Objects
 import kotlin.math.roundToInt
 
 /**
- * Which edge a compact panel is revealed from as it arrives -- the screen
- * edge it is anchored to, so it opens out of the side of the screen rather
- * than being uncovered from some direction that has nothing to do with
- * where it sits.
+ * Where the panel actually sits right now -- **the one position state**, read
+ * by the window's own layout and by the composition's motion alike.
  *
- * Sideways wins for a corner anchor, the same way the transform origin
- * above resolves one: the vertical bar lives in corners and still belongs
- * to the side of the screen, not to the top of it. A centered popup has no
- * edge at all and simply grows.
+ * Splitting those two was the bug this exists to make impossible. The
+ * window was centered for the expanded mixer by a plain
+ * `updateViewLayout` -- a jump, outside any animation -- while the
+ * composition went on deriving its entrance from the *anchor*, which still
+ * said "left edge". So the mixer was laid out at the center and animated
+ * toward the side: it played a lateral reveal, ran its morph out toward a
+ * rectangle beyond the centered window's own bounds (where the window
+ * clipped it), and landed at the center with nothing animating the last
+ * part of the journey. Read as: it comes in from the side, then snaps.
+ *
+ * With one state there is no "still said": a placement that centers the
+ * window is the same placement the entrance is built from.
  */
-private fun PopupAnchor.revealEdge(): RevealEdge = when (this) {
-    PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> RevealEdge.Left
-    PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> RevealEdge.Right
-    PopupAnchor.TopCenter -> RevealEdge.Top
-    PopupAnchor.BottomCenter -> RevealEdge.Bottom
-    else -> RevealEdge.None
+private enum class PanelPlacement {
+    /** Hugging a screen edge -- the edge the panel is uncovered from. */
+    Left,
+    Right,
+    Top,
+    Bottom,
+
+    /**
+     * On its anchor's own center, with the user's offsets still applied.
+     * No edge to be uncovered from, so it simply grows where it is.
+     */
+    Center,
+
+    /**
+     * Dead center of the display, offsets deliberately ignored: the
+     * expanded mixer's own centered mode. Motion-wise identical to
+     * [Center] -- it is only the window's layout that treats it specially.
+     */
+    DisplayCenter;
+
+    /** True for both centered placements: the ones with no edge to come out of. */
+    val isCentered: Boolean
+        get() = this == Center || this == DisplayCenter
+
+    /**
+     * The screen edge this panel is revealed from as it arrives, so it
+     * opens out of the side of the screen rather than being uncovered from
+     * some direction that has nothing to do with where it sits.
+     *
+     * Sideways wins for a corner anchor, the same way the transform origin
+     * below resolves one: the vertical bar lives in corners and still
+     * belongs to the side of the screen, not to the top of it.
+     */
+    val revealEdge: RevealEdge
+        get() = when (this) {
+            Left -> RevealEdge.Left
+            Right -> RevealEdge.Right
+            Top -> RevealEdge.Top
+            Bottom -> RevealEdge.Bottom
+            Center, DisplayCenter -> RevealEdge.None
+        }
 }
+
+private fun PopupAnchor.placement(): PanelPlacement = when (this) {
+    PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> PanelPlacement.Left
+    PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> PanelPlacement.Right
+    PopupAnchor.TopCenter -> PanelPlacement.Top
+    PopupAnchor.BottomCenter -> PanelPlacement.Bottom
+    PopupAnchor.Center -> PanelPlacement.Center
+}
+
+/**
+ * The placement the popup has in [expanded] -- the single call both the
+ * window's gravity and the composition's entrance go through.
+ *
+ * The expanded mixer's own "center it" switch is resolved here and nowhere
+ * else, which is what keeps the window and the animation from ever
+ * disagreeing about where the panel is.
+ */
+private fun UiPreferences.panelPlacement(expanded: Boolean): PanelPlacement =
+    if (expanded && expandedMixerCentered) {
+        PanelPlacement.DisplayCenter
+    } else {
+        activeAnchor().placement()
+    }
 
 /** How far a compact panel travels along that edge as it opens out of it. */
 private val ENTER_TRAVEL_DP = 14.dp
@@ -446,21 +511,48 @@ class Service : AccessibilityService() {
                     // geometry the compact panel occupied keeps the
                     // window's own size a single step while still being a
                     // continuous transition on screen.
+                    // The one position state, for this composition's own
+                    // notion of expanded -- the same call the window's
+                    // gravity goes through, so the panel can never be laid
+                    // out in one place and animated toward another. See
+                    // [PanelPlacement].
                     val anchor = preferences.activeAnchor()
-                    val origin = anchor.transformOrigin()
+                    val placement = preferences.panelPlacement(expanded)
+                    // A centered panel grows out of its own middle. Taking
+                    // the anchor's origin here instead is exactly how the
+                    // centered mixer used to end up expanding toward a side
+                    // it wasn't on.
+                    val origin = if (placement.isCentered) {
+                        TransformOrigin.Center
+                    } else {
+                        anchor.transformOrigin()
+                    }
                     // The disc has no edge to be uncovered from -- it forms
-                    // by turning instead (see VolumeDisc's own radar turn),
-                    // and a straight-edged wipe across a circle would fight
-                    // that.
+                    // by turning instead (see VolumeDisc's own formation
+                    // turn), and a straight-edged wipe across a circle would
+                    // fight that.
                     val compactIsDisc = !expanded && preferences.popupStyle == PopupStyle.Disc
-                    val revealEdge = if (compactIsDisc) RevealEdge.None else anchor.revealEdge()
+                    val revealEdge = if (compactIsDisc) RevealEdge.None else placement.revealEdge
                     val panelCornerRadius = preferences.popupCornerRadius.dp
                     val morphOrigin = mixerMorphOrigin
                     val revealed = windowRevealed
                     val visible = contentVisible
 
+                    // "Is this panel on screen at all" -- deliberately
+                    // *outside* the key below. That is a fact about the
+                    // popup, not about whichever shape it currently has, so
+                    // changing shape must not reset it: a panel already up
+                    // carries on from exactly where (and how fast) it is,
+                    // rather than replaying an entrance it has already
+                    // played. Keying it was what made a placement change on
+                    // a visible panel fire the lateral enter a second time.
+                    val appear = remember { Animatable(0f) }
+
                     key(expanded) {
-                        val appear = remember { Animatable(0f) }
+                        // Keyed, unlike [appear]: this one *is* about the
+                        // current shape -- how far from the compact panel's
+                        // own rectangle to the mixer's -- so a new shape
+                        // genuinely starts a new one.
                         val morph = remember { Animatable(0f) }
 
                         LaunchedEffect(visible, revealed) {
@@ -481,9 +573,34 @@ class Service : AccessibilityService() {
                                     // compact panel, changed shape. So it
                                     // is present from the first frame and
                                     // the morph is the entrance.
+                                    //
+                                    // element:  the panel changing shape.
+                                    // model:    a sheet, still on screen,
+                                    //           taking a different size and
+                                    //           place.
+                                    // token:    MotionTokens.Spatial.default.
+                                    // property: translation + scale, from
+                                    //           the matched geometry in
+                                    //           [MixerMorphOrigin].
                                     appear.snapTo(1f)
                                     morph.animateTo(1f, MotionTokens.Spatial.default())
                                 } else {
+                                    // element:  the panel arriving.
+                                    // model:    a sheet uncovered at the
+                                    //           edge it is anchored to, or
+                                    //           expanding in place at the
+                                    //           center.
+                                    // token:    MotionTokens.Spatial.default.
+                                    // property: translation along that edge
+                                    //           axis (plus the reveal
+                                    //           outline derived from the
+                                    //           same value) and alpha on
+                                    //           MotionTokens.Effects.
+                                    //
+                                    // animateTo, so a panel already partway
+                                    // in or out bends toward its new target
+                                    // from where it is rather than jumping
+                                    // back to the start.
                                     morph.snapTo(1f)
                                     appear.animateTo(1f, MotionTokens.Spatial.default())
                                 }
@@ -509,11 +626,12 @@ class Service : AccessibilityService() {
                         }
 
                         // Handed down so the parts that phase their own
-                        // motion off the arrival -- the disc's radar turn,
-                        // the glass shimmer, Atmosphere's entering rotation
-                        // -- ride this spring instead of each starting one
-                        // of their own. Remembered, so providing it doesn't
-                        // invalidate every reader on each recomposition.
+                        // motion off the arrival -- the disc's formation
+                        // turn, the glass beam's entering sweep,
+                        // Atmosphere's entering rotation -- ride this
+                        // spring instead of each starting one of their own.
+                        // Remembered, so providing it doesn't invalidate
+                        // every reader on each recomposition.
                         val arrival = remember(appear) { { appear.value } }
 
                         CompositionLocalProvider(LocalArrival provides arrival) {
@@ -930,7 +1048,12 @@ class Service : AccessibilityService() {
                 // measured size the way clamping does, so gravity alone
                 // (resolved by the platform against whatever size the
                 // window turns out to be) already lands it dead center.
-                if (expanded && preferences.expandedMixerCentered) {
+                //
+                // Read through [panelPlacement] rather than off the
+                // preference directly, because the composition builds its
+                // entrance from exactly the same call -- that shared
+                // reading is the whole point of the state existing.
+                if (preferences.panelPlacement(expanded) == PanelPlacement.DisplayCenter) {
                     layoutParams.gravity = Gravity.CENTER
                     layoutParams.x = 0
                     layoutParams.y = 0
@@ -1056,17 +1179,29 @@ class Service : AccessibilityService() {
      *
      * Nothing measurable on either side means no morph, and the mixer falls
      * back to growing out of its anchor, which is what it always did.
+     *
+     * A centered mixer keeps the *size* half of that morph and drops the
+     * travel, deliberately. The window is only ever as big as the mixer
+     * itself, so a layer translated back out to where a side-anchored
+     * compact panel sat is a layer translated outside its own window --
+     * which the compositor simply cuts off. That is what the old centered
+     * expand actually looked like: a slice of panel sliding in at the edge
+     * of the window, and the rest of the journey missing, so the mixer
+     * appeared to arrive at the center by teleport. A panel with nowhere to
+     * travel from expands where it is instead, and its collapse is that
+     * same motion backwards.
      */
     private fun captureMixerMorphOrigin(target: View) {
         val from = compactBounds
         compactBounds = null
         val to = from?.let { viewBoundsOnScreen(target) } ?: return
+        val centered = manager.uiPreferences.panelPlacement(expanded = true).isCentered
 
         mixerMorphOrigin = MixerMorphOrigin(
             scaleX = (from.width().toFloat() / to.width()).coerceIn(0.05f, 3f),
             scaleY = (from.height().toFloat() / to.height()).coerceIn(0.05f, 3f),
-            translationX = from.exactCenterX() - to.exactCenterX(),
-            translationY = from.exactCenterY() - to.exactCenterY()
+            translationX = if (centered) 0f else from.exactCenterX() - to.exactCenterX(),
+            translationY = if (centered) 0f else from.exactCenterY() - to.exactCenterY()
         )
     }
 
