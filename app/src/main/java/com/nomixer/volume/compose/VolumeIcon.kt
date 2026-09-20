@@ -10,8 +10,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeDown
-import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BluetoothAudio
@@ -65,42 +63,70 @@ private fun AudioManager.hasBluetoothOutput(): Boolean =
 
 /**
  * The glyph a volume control should show for its current state: muted beats
- * everything else, then a connected Bluetooth sink, then the speaker -- and
- * the speaker itself comes in three, by how many waves are coming off it.
+ * everything else, then a connected Bluetooth sink, then the plain speaker
+ * icon otherwise. [volume] is read rather than a boolean so a caller with
+ * the level already at hand doesn't need to compute mute itself.
  *
- * Those three are what makes the icon read as a *level* rather than as a
- * label: crossing a third of the range adds a wave, crossing two thirds
- * adds the second, and [AnimatedVolumeIcon] springs each one in as it
- * arrives. The glyphs are the platform's own, so the waves sit exactly
- * where the speaker they belong to expects them, which is not something a
- * hand-drawn arc laid over a Material speaker manages reliably.
- *
- * [maxVolume] is what those thirds are measured against; at or below zero
- * the level can't be placed, so the plain full speaker stands in.
+ * Kept for callers that genuinely need a static [ImageVector]. Anything
+ * rendering the speaker on screen should use [VolumeGlyph] instead, which
+ * animates the speaker's own parts rather than exchanging one finished
+ * picture for another.
  */
 @Composable
-fun rememberVolumeIcon(
-    audioManager: AudioManager,
-    volume: Int,
-    maxVolume: Int = 0
-): ImageVector {
+fun rememberVolumeIcon(audioManager: AudioManager, volume: Int): ImageVector {
     val bluetoothActive = rememberBluetoothAudioActive(audioManager)
     return when {
         volume <= 0 -> Icons.AutoMirrored.Filled.VolumeOff
         bluetoothActive -> Icons.Default.BluetoothAudio
-        maxVolume <= 0 -> Icons.AutoMirrored.Filled.VolumeUp
-        volume <= maxVolume / 3 -> Icons.AutoMirrored.Filled.VolumeMute
-        volume <= maxVolume * 2 / 3 -> Icons.AutoMirrored.Filled.VolumeDown
         else -> Icons.AutoMirrored.Filled.VolumeUp
     }
 }
 
 /**
+ * The volume glyph as it appears in the popup: a speaker whose waves and
+ * mute bar animate on a body that never moves (see [AnimatedSpeakerGlyph]),
+ * or the Bluetooth mark when media is routed to a sink.
+ *
+ * Bluetooth is the one case that still swaps, because it isn't a level at
+ * all -- it's a different device -- so there is no shared body for one
+ * state to become the other on. Everything that *is* a level (nothing,
+ * quiet, loud) happens on the one speaker.
+ */
+@Composable
+fun VolumeGlyph(
+    audioManager: AudioManager,
+    volume: Int,
+    maxVolume: Int,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalContentColor.current
+) {
+    val bluetoothActive = rememberBluetoothAudioActive(audioManager)
+
+    if (bluetoothActive && volume > 0) {
+        AnimatedVolumeIcon(
+            icon = Icons.Default.BluetoothAudio,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            tint = tint
+        )
+        return
+    }
+
+    AnimatedSpeakerGlyph(
+        level = if (maxVolume > 0) volume.toFloat() / maxVolume else 0f,
+        muted = volume <= 0,
+        modifier = modifier,
+        contentDescription = contentDescription,
+        tint = tint
+    )
+}
+
+/**
  * Swaps to a new glyph with the same spring pop [RingerModeButton] uses for
- * its own, instead of snapping straight to it -- so a wave arriving as the
- * level crosses a third, the bar landing across a muted speaker, or the
- * switch to a Bluetooth sink all read as the icon reacting rather than as
- * one picture being exchanged for another between frames.
+ * its own icon, instead of snapping straight to it -- for the one case left
+ * that really is two different pictures rather than one changing state
+ * (see [VolumeGlyph]: a Bluetooth sink appearing or going away).
  */
 @Composable
 fun AnimatedVolumeIcon(
@@ -118,9 +144,9 @@ fun AnimatedVolumeIcon(
         targetState = icon,
         modifier = modifier,
         transitionSpec = {
-            (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.6f))
+            (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.62f))
                 .togetherWith(
-                    fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.6f)
+                    fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.62f)
                 )
         },
         label = "volumeIcon"

@@ -1,6 +1,7 @@
 package com.nomixer.volume.compose
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,6 +60,8 @@ fun VerticalTrackSlider(
     accentColor: Color = MaterialTheme.colorScheme.tertiary,
     cornerRadius: Dp = LocalSliderCornerRadius.current,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    /** See [TrackSlider]'s own parameter of the same name. */
+    settleSpec: FiniteAnimationSpec<Float> = Motion.fast(),
     content: @Composable BoxScope.() -> Unit = {}
 ) {
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -73,10 +76,11 @@ fun VerticalTrackSlider(
 
     // Glides to a new level, but tracks a finger exactly while one is down.
     var dragging by remember { mutableStateOf(false) }
-    // See [TrackSlider]: the flick's own speed, in fraction-of-the-track per
-    // second, handed to the settling spring so a throw carries through.
-    var releaseVelocity by remember { mutableFloatStateOf(0f) }
     val fill = remember { Animatable(targetFraction) }
+
+    // See [TrackSlider]: the finger's own speed at the moment it lifts,
+    // in fractions of the track per second, consumed by the settle.
+    var releaseVelocity by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
@@ -85,9 +89,9 @@ fun VerticalTrackSlider(
             val thrown = releaseVelocity
             releaseVelocity = 0f
             if (thrown != 0f) {
-                fill.animateTo(targetFraction, Motion.fast(), initialVelocity = thrown)
+                fill.animateTo(targetFraction, settleSpec, initialVelocity = thrown)
             } else {
-                fill.animateTo(targetFraction, Motion.fast())
+                fill.animateTo(targetFraction, settleSpec)
             }
         }
     }
@@ -119,8 +123,9 @@ fun VerticalTrackSlider(
                             dragging = true
                         },
                         onDragEnd = {
-                            // Negated for the same reason the drag itself is:
-                            // on this slider, up raises the level.
+                            // Negated: screen y grows downward, the level
+                            // grows upward, so a flick up has to arrive at
+                            // the spring as a positive velocity.
                             val height = size.height.toFloat()
                             releaseVelocity =
                                 if (height > 0f) -tracker.calculateVelocity().y / height else 0f

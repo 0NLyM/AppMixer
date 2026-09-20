@@ -1485,6 +1485,80 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-20 — 1.0.60
+
+Rebuilt the overlay's motion again from the 1.0.56 code, discarding the two
+passes in between. Every animated surface in the popup was reset to that
+release's state first, so what follows is the whole of the overlay's motion
+rather than a layer on top of an earlier attempt.
+
+- One spring vocabulary, shared by everything that moves, and no
+  fixed-duration curve left anywhere in the overlay: a fast tier for
+  anything a finger steers directly, a heavier one for whole surfaces, a
+  softer one for elements that follow rather than lead, and a critically
+  damped one for colour. A spring can be retargeted from where it is at the
+  speed it is already carrying, which is the only way a second gesture
+  landing mid-settle bends the motion instead of restarting it -- and the
+  only way a jump between two easings can be ruled out rather than tuned
+  around. All of it collapses to an instant snap under the platform's
+  "Remove animations" setting; the crossfades, which carry no travel, are
+  left alone.
+- The window itself no longer fades. It is added invisible, revealed the
+  moment it has been laid out and positioned, and from then on the
+  composition owns every frame of arriving, morphing and leaving -- one
+  clock instead of a window interpolator and a composition curve stacked on
+  each other, which is what used to make the popup read as coming up and
+  going away in two steps. Asking for the popup again mid-exit bends it
+  back from wherever it had got to.
+- The compact panel is *revealed* out of the screen edge it is anchored to
+  rather than sliding in whole: a rounded window opens from that edge, and
+  its corners morph from a full pill to the panel's own radius exactly as
+  it finishes opening, with a short push along the same axis so the reveal
+  and the travel are one motion. The exit is the same number running back.
+- The mixer morphs out of the compact panel for real. The panel's screen
+  rectangle is captured the moment the expand is asked for, the mixer's own
+  is measured once its window has been repositioned, and the mixer's layer
+  starts at exactly the size and place the compact panel occupied -- so
+  opening it is one surface changing shape rather than a second one
+  appearing. Dismissing from the mixer runs it in the order it was built:
+  the mixer folds back into the compact panel's rectangle, and only then
+  does that rectangle close back into the screen edge.
+- Every slider carries the finger's own release velocity into the spring it
+  settles on, converted into the units the fill actually animates in, and
+  still tracks the touch exactly 1:1 while one is down.
+- The disc arrives by turning: the painted ring -- track, arc and ticks --
+  unwinds counterclockwise into place as a graphics-layer rotation, while
+  the switch and the reading at its centre stay upright throughout.
+- The disc's knob and its volume ring now move as one. The tick taper reads
+  the level as the real number it is instead of rounding it to the nearest
+  tick, so it slides along the ring with the fill rather than hopping after
+  it, and a released drag no longer stops dead before the settle picks it
+  up.
+- The volume glyph animates its own parts on a speaker that never moves: a
+  wave grows out of the cone as the level crosses into its band and
+  retracts when it falls out again, and the mute bar draws itself across
+  where the waves were at zero, then un-draws the same way. They assemble as
+  the popup arrives and fold away as it leaves, on the popup's own spring.
+  Bluetooth is the one glyph that still swaps, because it isn't a level.
+- Glass: the reflection sweeps once across the face as the panel comes in
+  and back out the way it came as it leaves -- one shimmer shared by the
+  face and the rim, ending when the panel does, costing nothing at rest.
+- Atmosphere: the grain is now alive. It resamples into a whole new field
+  several times a second and dissolves between consecutive fields, which is
+  what film grain actually does -- two extra hashes per pixel, not a second
+  layer. The field's turn is phased off the popup's own arrival, and both
+  where it settles and how far its centre sits off the panel's are drawn
+  fresh every time the popup appears.
+- The ringer switch is one short pop per change -- low damping, high
+  stiffness, in and back out past its own size -- and the glyph reacts with
+  it: ringing and silent are the same speaker with its waves retracting and
+  its mute bar drawing on, and vibrate shakes sideways on a spring loose
+  enough to cross back and forth several times.
+- Buttons answer the finger itself, separately from whatever the press
+  changes, on the same spring a dragged slider settles on -- so pressing a
+  control and swiping one feel like the same surface. The toggle buttons'
+  glyph swap moved onto those shared springs too.
+
 ## 2026-09-20 — 1.0.59
 
 - Second pass over the motion rebuilt in 1.0.58, still on the one shared

@@ -88,9 +88,9 @@ fun ToggleButton(
             AnimatedContent(
                 targetState = checked,
                 transitionSpec = {
-                    (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.6f))
+                    (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.62f))
                         .togetherWith(
-                            fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.6f)
+                            fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.62f)
                         )
                 },
                 label = "toggleIcon"

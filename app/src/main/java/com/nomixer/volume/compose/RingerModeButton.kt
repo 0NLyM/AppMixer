@@ -22,8 +22,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,9 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -47,27 +43,29 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.R
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
 import com.nomixer.volume.ui.theme.Motion
+import kotlinx.coroutines.launch
 import org.joor.Reflect
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuRemoteProcess
 
 private const val TAG = "NoMixer.RingerMode"
 
-/** How far the button gives under a finger, and the glyph under an impulse. */
-private const val PRESS_SQUASH = 0.06f
-private const val GLYPH_SQUASH = 0.1f
+/** The spoken name of each mode, for the switch's own content description. */
+private fun ringerDescription(mode: Int): Int = when (mode) {
+    AudioManager.RINGER_MODE_VIBRATE -> R.string.ringer_vibrate
+    AudioManager.RINGER_MODE_SILENT -> R.string.ringer_silent
+    else -> R.string.ringer_normal
+}
 
 /**
- * Icon and description for a ringer mode -- the same speaker glyph family
- * [rememberVolumeIcon] uses for the main volume icon (waves for ringing,
- * a slash for silent), rather than a bell/phone one, so the switch reads
- * as the same "sound on/off" language as the rest of the popup.
+ * How far the button gives under a finger, and how deep the mode change's
+ * own knock goes.
  */
-private fun ringerFace(mode: Int): Pair<ImageVector, Int> = when (mode) {
-    AudioManager.RINGER_MODE_VIBRATE -> Icons.Default.Vibration to R.string.ringer_vibrate
-    AudioManager.RINGER_MODE_SILENT -> Icons.AutoMirrored.Filled.VolumeOff to R.string.ringer_silent
-    else -> Icons.AutoMirrored.Filled.VolumeUp to R.string.ringer_normal
-}
+private const val PRESS_SQUASH = 0.07f
+private const val POP_SQUASH = 0.12f
+
+/** How far the vibrating glyph travels sideways at the peak of its shake, in dp. */
+private const val SHAKE_TRAVEL_DP = 2.4f
 
 /**
  * Cycles ring -> vibrate -> silent -> ring, with one theme color per mode so
@@ -77,9 +75,12 @@ private fun ringerFace(mode: Int): Pair<ImageVector, Int> = when (mode) {
  * accent. Its corners follow the same radius setting, as a share of its own
  * size so the top of the range is a full circle.
  *
- * Each mode announces itself the way it sounds: the bell swings, vibrate
- * buzzes in place, and silent drops away. All of it is a few degrees and a
- * few percent -- enough to feel the switch, not enough to watch.
+ * Every switch is one short pop of the button itself -- in, back out past
+ * its own size, done -- and, on the glyph, whichever part of it the new
+ * mode actually changes: the waves retracting into the speaker and the mute
+ * bar drawing across where they were, or the phone shaking sideways. The
+ * button never swaps one finished picture for another where the two share a
+ * body.
  */
 @Composable
 fun RingerModeButton(
@@ -119,16 +120,25 @@ fun RingerModeButton(
         label = "ringerContent"
     )
 
-    // One impulse per mode change, displaced on the instant and then sprung
-    // back to rest. A switch isn't a scripted sequence of poses -- it's the
-    // button being knocked and recovering -- so the shape of the recovery is
-    // the spring's, not a list of keyframes'. Every mode moves both the
-    // button and the glyph on it: they're the same object reacting, and one
-    // of them holding still while the other moves reads as the icon having
-    // been swapped out underneath.
+    // One impulse per mode change: displaced on the instant and then let
+    // go. Low damping and high stiffness is the whole character of it --
+    // the button goes in, crosses back out past its own resting size and
+    // settles almost immediately, so the pop comes from the spring crossing
+    // zero rather than from a pose written down somewhere. Landing here
+    // again mid-recovery (two taps in a row) re-displaces from wherever it
+    // has got to instead of waiting for the first one to finish.
     val impulse = remember { Animatable(0f) }
+
+    // The vibrating glyph's own shake, on the same impulse but damped far
+    // lower, so it crosses back and forth several times before it stops --
+    // which is what a shake is, rather than a list of keyframed positions.
+    val shake = remember { Animatable(0f) }
     var settled by remember { mutableStateOf(false) }
 
+    // One effect rather than two, so "is this the first composition?" is
+    // answered once: two of them keyed the same way would both run, and the
+    // second would see the flag the first had already set and shake on a
+    // mode nobody just chose.
     LaunchedEffect(ringerMode) {
         if (!settled) {
             // First composition just reports the current mode; nothing
@@ -137,51 +147,29 @@ fun RingerModeButton(
             return@LaunchedEffect
         }
 
-        // Kicked to full displacement and released. Landing here mid-recovery
-        // (two taps in a row) re-displaces from wherever it is rather than
-        // waiting for the first one to finish.
-        //
-        // The recovery's own damping is what gives each mode its character,
-        // rather than a different animation per mode: vibrate is left loose
-        // enough to cross back and forth several times, which is a shake;
-        // silent is damped almost flat, which is something stopping; ringing
-        // sits between them and reads as a single confident knock.
-        impulse.snapTo(1f)
-        impulse.animateTo(
-            targetValue = 0f,
-            animationSpec = when (ringerMode) {
-                AudioManager.RINGER_MODE_VIBRATE ->
-                    spring(dampingRatio = 0.22f, stiffness = 2600f)
-
-                AudioManager.RINGER_MODE_SILENT ->
-                    spring(dampingRatio = 0.9f, stiffness = 700f)
-
-                else -> Motion.Nudge
+        if (ringerMode == AudioManager.RINGER_MODE_VIBRATE) {
+            // Alongside the pop, not after it: the button and the glyph on
+            // it are one object reacting, so they start together.
+            launch {
+                shake.snapTo(1f)
+                shake.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(dampingRatio = 0.16f, stiffness = 3400f)
+                )
             }
-        )
-    }
+        }
 
-    // How far each mode wears that impulse. Ringing swings widest, vibrate
-    // shivers tighter (its many crossings do the work instead of its reach),
-    // silent barely turns and takes the displacement into size instead --
-    // it's the mode that stops rather than sounds.
-    val glyphSwing = when (ringerMode) {
-        AudioManager.RINGER_MODE_VIBRATE -> 6f
-        AudioManager.RINGER_MODE_SILENT -> 2f
-        else -> 13f
-    }
-    val buttonSquash = when (ringerMode) {
-        AudioManager.RINGER_MODE_SILENT -> 0.13f
-        else -> 0.07f
+        impulse.snapTo(1f)
+        impulse.animateTo(targetValue = 0f, animationSpec = Motion.Pop)
     }
 
     // The press itself, separate from the mode change it causes: the button
     // takes the finger the moment it lands and lets go the moment it lifts,
-    // on the same spring family a dragged slider settles on, so pressing and
-    // swiping feel like the same surface.
+    // on the same spring a dragged slider settles on, so pressing a control
+    // and swiping one feel like the same surface.
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val press by animateFloatAsState(
+    val press = animateFloatAsState(
         targetValue = if (pressed) 1f else 0f,
         animationSpec = Motion.fast(),
         label = "ringerPress"
@@ -195,13 +183,10 @@ fun RingerModeButton(
         modifier = modifier
             .size(size)
             .graphicsLayer {
-                // Two things at once, and deliberately: the press holding it
-                // in while a finger is down, and the mode change's own
-                // impulse knocking it and springing back out past its
-                // resting size before settling. That overshoot is the pop --
-                // it comes from the spring crossing zero, not from a pose
-                // written down somewhere.
-                val knocked = 1f - buttonSquash * impulse.value - PRESS_SQUASH * press
+                // Two things at once, deliberately: the press holding it in
+                // while a finger is down, and the mode change's own impulse
+                // knocking it and springing back out past its resting size.
+                val knocked = 1f - POP_SQUASH * impulse.value - PRESS_SQUASH * press.value
                 scaleX = knocked
                 scaleY = knocked
             }
@@ -251,40 +236,49 @@ fun RingerModeButton(
             },
         contentAlignment = Alignment.Center
     ) {
+        // Ringing and silent are the *same* glyph in two states, so they
+        // are one composable that animates its own parts: the waves retract
+        // into the cone and the mute bar draws itself across where they
+        // were, on a speaker that never moves. Only vibrate is a genuinely
+        // different object, so only vibrate is a swap -- and the swap runs
+        // on the shared springs rather than on lengths of its own.
+        val vibrating = ringerMode == AudioManager.RINGER_MODE_VIBRATE
+        val description = stringResource(ringerDescription(ringerMode))
+
         AnimatedContent(
-            targetState = ringerMode,
+            targetState = vibrating,
             transitionSpec = {
-                // The glyph crossfades and grows into place on the shared
-                // springs rather than on fixed lengths, so it arrives with
-                // the button's own recovery instead of on a clock of its own.
-                (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.6f))
+                (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.62f))
                     .togetherWith(
-                        fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.6f)
+                        fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.62f)
                     )
             },
             label = "ringerIcon"
-        ) { mode ->
-            val (icon, descriptionRes) = ringerFace(mode)
-            Icon(
-                imageVector = icon,
-                contentDescription = stringResource(descriptionRes),
-                modifier = Modifier
-                    .size(size * 0.5f)
-                    .graphicsLayer {
-                        // A bell swings from its crown, so the pivot sits at
-                        // the top of the icon rather than its middle.
-                        rotationZ = impulse.value * glyphSwing
-                        // The glyph rides the same impulse in size as the
-                        // button does, a touch deeper, so the two read as
-                        // one object reacting rather than a picture sitting
-                        // on something that moved.
-                        val popped = 1f - GLYPH_SQUASH * impulse.value
-                        scaleX = popped
-                        scaleY = popped
-                        transformOrigin = TransformOrigin(0.5f, 0.1f)
-                    },
-                tint = contentColor
-            )
+        ) { isVibrating ->
+            if (isVibrating) {
+                Icon(
+                    imageVector = Icons.Default.Vibration,
+                    contentDescription = description,
+                    modifier = Modifier
+                        .size(size * 0.5f)
+                        .graphicsLayer {
+                            // A phone buzzing on a table travels sideways,
+                            // so the shake is translation rather than
+                            // rotation -- and it is the spring's own
+                            // oscillation, not a scripted wobble.
+                            translationX = shake.value * SHAKE_TRAVEL_DP.dp.toPx()
+                        },
+                    tint = contentColor
+                )
+            } else {
+                AnimatedSpeakerGlyph(
+                    level = if (ringerMode == AudioManager.RINGER_MODE_SILENT) 0f else 1f,
+                    muted = ringerMode == AudioManager.RINGER_MODE_SILENT,
+                    modifier = Modifier.size(size * 0.5f),
+                    contentDescription = description,
+                    tint = contentColor
+                )
+            }
         }
     }
 }

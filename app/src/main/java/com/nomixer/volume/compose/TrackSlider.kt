@@ -59,10 +59,10 @@ fun TrackSlider(
     cornerRadius: Dp = LocalSliderCornerRadius.current,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     /**
-     * How the fill settles once nothing is steering it. The mixer's own
-     * inner rows hand in [Motion.soft] instead: a whole panel of bars
-     * reacting at once should read as one body moving, not as a dozen
-     * separate springs each with its own opinion.
+     * The spring the fill settles on once a finger lets go, or once a
+     * volume key moves the level from outside. Defaults to the
+     * micro-interaction tier; a slider that only moves because something
+     * else did (the mixer's own rows) is handed the softer one instead.
      */
     settleSpec: FiniteAnimationSpec<Float> = Motion.fast(),
     content: @Composable BoxScope.() -> Unit = {}
@@ -84,22 +84,22 @@ fun TrackSlider(
     // under a finger, where it has to track the touch exactly or dragging
     // feels like the bar is lagging behind the hand.
     var dragging by remember { mutableStateOf(false) }
-    // Carried out of the drag and handed to the spring below, so a flick
-    // keeps travelling the way it was thrown instead of stopping dead the
-    // instant the finger leaves. In fraction-of-the-track per second, the
-    // same unit [fill] itself holds.
-    var releaseVelocity by remember { mutableFloatStateOf(0f) }
     val fill = remember { Animatable(targetFraction) }
+
+    // The speed the finger was carrying when it left the glass, in
+    // fractions of the track per second -- handed to the settling spring as
+    // its own initial velocity so the fill keeps travelling in the
+    // direction it was thrown instead of stopping dead where the touch
+    // ended. Consumed by the settle that reads it, so a later change from
+    // a volume key doesn't inherit a stale flick.
+    var releaseVelocity by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
+            // Exactly 1:1 under a finger: anything else reads as the bar
+            // lagging behind the hand.
             fill.snapTo(targetFraction)
         } else {
-            // Consumed before the animation starts, not after it ends: a
-            // retarget landing mid-settle (another volume key, say) has to
-            // pick the spring up at its *current* velocity, which is what
-            // animateTo does on its own, rather than re-injecting a flick
-            // that already happened.
             val thrown = releaseVelocity
             releaseVelocity = 0f
             if (thrown != 0f) {
@@ -145,9 +145,10 @@ fun TrackSlider(
                             dragging = true
                         },
                         onDragEnd = {
-                            // Pixels per second along the track, over the
-                            // track's own width: the fill's fraction moves at
-                            // exactly the speed the finger was moving.
+                            // px/s along the track, converted to the same
+                            // 0..1 fraction the fill itself animates in, so
+                            // the spring is handed a velocity in its own
+                            // units rather than the screen's.
                             val width = size.width.toFloat()
                             releaseVelocity =
                                 if (width > 0f) tracker.calculateVelocity().x / width else 0f

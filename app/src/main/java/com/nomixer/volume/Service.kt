@@ -38,12 +38,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -60,12 +58,14 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
+import com.nomixer.volume.compose.EdgeRevealShape
+import com.nomixer.volume.compose.RevealEdge
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.AtmosphereBackground
 import com.nomixer.volume.compose.GlassBackground
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.glassEdgeLightBrush
-import com.nomixer.volume.compose.rememberGlassBeamAngle
+import com.nomixer.volume.compose.rememberGlassShimmerAngle
 import com.nomixer.volume.compose.PANEL_SHADOW_BLUR_DP
 import com.nomixer.volume.compose.PanelShadow
 import com.nomixer.volume.data.shadowAlpha
@@ -83,11 +83,50 @@ import com.nomixer.volume.data.activeOffsetY
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
-import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.Motion
 import java.util.Objects
 import kotlin.math.roundToInt
+
+/**
+ * Which edge a compact panel is revealed from as it arrives -- the screen
+ * edge it is anchored to, so it opens out of the side of the screen rather
+ * than being uncovered from some direction that has nothing to do with
+ * where it sits.
+ *
+ * Sideways wins for a corner anchor, the same way the transform origin
+ * above resolves one: the vertical bar lives in corners and still belongs
+ * to the side of the screen, not to the top of it. A centered popup has no
+ * edge at all and simply grows.
+ */
+private fun PopupAnchor.revealEdge(): RevealEdge = when (this) {
+    PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> RevealEdge.Left
+    PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> RevealEdge.Right
+    PopupAnchor.TopCenter -> RevealEdge.Top
+    PopupAnchor.BottomCenter -> RevealEdge.Bottom
+    else -> RevealEdge.None
+}
+
+/** How far a compact panel travels along that edge as it opens out of it. */
+private val ENTER_TRAVEL_DP = 14.dp
+
+/**
+ * Where the mixer starts its morph: the compact popup's own rectangle,
+ * expressed in the mixer's own layer -- how much smaller it was in each
+ * axis, and how far its centre sat from where the mixer's centre now is.
+ *
+ * Feeding those straight into a graphics layer at morph 0 puts the mixer
+ * *exactly* where the compact panel was and at exactly its size, so running
+ * the number to 1 is a real matched-geometry morph between the two rather
+ * than a new panel appearing near where the old one used to be.
+ */
+private class MixerMorphOrigin(
+    val scaleX: Float,
+    val scaleY: Float,
+    val translationX: Float,
+    val translationY: Float
+)
 
 /**
  * The point an anchored popup should grow from: the edge it hugs, so it
@@ -108,70 +147,6 @@ private fun PopupAnchor.transformOrigin(): TransformOrigin {
     return TransformOrigin(x, y)
 }
 
-/**
- * Which way a panel travels as it arrives when nothing else decides for it,
- * as a unit vector: in from the screen edge it's anchored to. Used only for
- * a popup that appeared without a volume key behind it (the accessibility
- * button); when a key *is* what brought it up, the volume's own direction
- * wins -- see [volumeTravel].
- *
- * Sideways wins for a corner anchor: the vertical bar lives in corners and
- * still belongs to the side of the screen, not to the top of it.
- */
-private fun PopupAnchor.enterDirection(): Offset {
-    val x = when (this) {
-        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> -1f
-        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1f
-        else -> 0f
-    }
-    if (x != 0f) {
-        return Offset(x, 0f)
-    }
-
-    val y = when (this) {
-        PopupAnchor.TopCenter -> -1f
-        PopupAnchor.BottomCenter -> 1f
-        else -> 0f
-    }
-    return Offset(0f, y)
-}
-
-/**
- * How far a panel travels in from its edge. Deliberately modest: the
- * overlay window is only as big as the panel it holds, so anything that
- * leaves the panel's own bounds is clipped by the window rather than
- * sliding in from off-screen. This is the nudge that gives the arrival a
- * direction -- the scale growing out of the same edge is what sells the
- * rest of it.
- */
-private val ENTER_TRAVEL_DP = 20.dp
-
-/**
- * Which way a bar popup travels when a volume key is what summoned it: with
- * the volume itself. Raising it brings the panel up from below, lowering it
- * brings the panel down from above, so the gesture and the thing it moves
- * agree about which way is more. The exit runs the same spring backwards,
- * which sends it back out the way it came.
- */
-private fun volumeTravel(direction: Int): Offset = when {
-    direction > 0 -> Offset(0f, 1f)
-    direction < 0 -> Offset(0f, -1f)
-    else -> Offset.Zero
-}
-
-/** Whether a popup at this anchor sits on the screen's own vertical midline. */
-private fun PopupAnchor.isHorizontallyCentered(): Boolean = when (this) {
-    PopupAnchor.TopCenter, PopupAnchor.Center, PopupAnchor.BottomCenter -> true
-    else -> false
-}
-
-/**
- * How far the mixer turns as it flips out of a centered compact popup.
- * A centered popup has no side for the mixer to grow out of, so instead of
- * a direction it gets a face: the panel turns over into the bigger one.
- */
-private const val MIXER_FLIP_DEGREES = 34f
-
 @SuppressLint("AccessibilityPolicy")
 class Service : AccessibilityService() {
     companion object {
@@ -180,12 +155,12 @@ class Service : AccessibilityService() {
         private const val TAG = "NoMixer.Service"
 
         /**
-         * How long the exit spring is given before the window comes down.
-         * Comfortably past the point where [Motion.default] has taken the
-         * panel's own alpha to nothing, so the teardown is never what the
-         * user sees.
+         * The longest the window is left up after the exit is asked for,
+         * if the composition never reports back that it finished. Well
+         * past the two-stage exit's own settle -- it is a backstop, not
+         * the thing that decides how long the animation gets.
          */
-        private const val EXIT_SETTLE_MS = 420L
+        private const val EXIT_FALLBACK_TIMEOUT = 1400L
 
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
@@ -209,36 +184,50 @@ class Service : AccessibilityService() {
     private lateinit var manager: Manager
 
     private val handler = object : Handler(Looper.getMainLooper()) {
-        /**
-         * Torn down on a delay rather than on an animation callback: the
-         * exit itself belongs to the composition (see [contentVisible]),
-         * which is what keeps it on the same spring as the arrival, but the
-         * window has to come down whether or not that composition is still
-         * alive to finish. This is the guarantee; the spring is the looks.
-         */
-        private val removeViewRunnable = Runnable {
-            if (!viewVisible && view != null) {
-                Log.i(TAG, "remove view")
-                lifecycle?.currentState = Lifecycle.State.DESTROYED
-                windowManager.removeView(view)
-                view = null
-            }
-        }
-
         fun hideView() {
             if (viewVisible) {
                 Log.i(TAG, "animate out")
                 viewVisible = false
+                // The window itself no longer fades: the composition owns
+                // every frame of the exit (see createView), so all that
+                // happens here is telling it to play and arranging for the
+                // window to be taken down once it has. Two fades -- one on
+                // the window, one inside it -- is exactly what used to make
+                // the popup look like it left in two steps.
                 contentVisible = false
-                removeCallbacks(removeViewRunnable)
-                postDelayed(removeViewRunnable, EXIT_SETTLE_MS)
+                removeCallbacks(exitFallbackRunnable)
+                postDelayed(exitFallbackRunnable, EXIT_FALLBACK_TIMEOUT)
             }
         }
 
-        /** Called when the popup comes back before its exit has finished. */
-        fun keepView() {
-            removeCallbacks(removeViewRunnable)
+        /**
+         * Takes the window down, called by the exit animation itself the
+         * moment it finishes. Idempotent, and a no-op if something asked
+         * for the popup again in the meantime.
+         */
+        fun finishHide() {
+            removeCallbacks(exitFallbackRunnable)
+            if (viewVisible || view == null) {
+                return
+            }
+            Log.i(TAG, "remove view")
+            lifecycle?.currentState = Lifecycle.State.DESTROYED
+            windowManager.removeView(view)
+            view = null
+            windowRevealed = false
         }
+
+        /** Cancels a pending teardown, for a popup that came back. */
+        fun keepView() {
+            removeCallbacks(exitFallbackRunnable)
+        }
+
+        /**
+         * Only ever reached if the composition never got to finish its own
+         * exit -- the window is destroyed out from under it, say. The
+         * animation itself is what normally takes the window down.
+         */
+        private val exitFallbackRunnable = Runnable(::finishHide)
 
         private val hideViewRunnable = Runnable(::hideView)
 
@@ -263,9 +252,6 @@ class Service : AccessibilityService() {
 
         fun startRepeatAdjustVolume(direction: Int) {
             repeatAdjustVolumeDirection = direction
-            // Recorded before the popup is shown, so the arrival already
-            // knows which way it's meant to travel.
-            lastVolumeDirection = direction
             if (view != null) {
                 adjustVolume()
             }
@@ -435,9 +421,20 @@ class Service : AccessibilityService() {
                         label = "mixerPanelShadow"
                     )
 
-                    // One animation for "a panel appeared", replayed when
-                    // the popup morphs into the mixer because the key
-                    // changes with it.
+                    // The composition owns the whole appearance now: the
+                    // window is simply present and every frame of arriving,
+                    // morphing and leaving happens in here. Two springs,
+                    // and between them they cover both shapes the popup can
+                    // take:
+                    //
+                    //  - appear is "is this panel on screen at all": the
+                    //    compact panel's reveal out of its screen edge, its
+                    //    fade, and the same thing backwards on the way out.
+                    //  - morph is "how far from the compact panel's own
+                    //    rectangle to the mixer's": 0 puts the mixer
+                    //    exactly where the compact panel was, and at its
+                    //    size, so running it to 1 is a real morph between
+                    //    the two rather than a second panel appearing.
                     //
                     // Deliberately not an AnimatedContent with a
                     // SizeTransform: this window is WRAP_CONTENT, so an
@@ -445,97 +442,142 @@ class Service : AccessibilityService() {
                     // frame, and while both panels are alive it measures to
                     // the union of the two. The result was a window that
                     // jumped to the full mixer's size before the mixer had
-                    // faded in. Swapping outright and animating only what's
-                    // on screen keeps the window's own size a single step.
-
+                    // faded in. Morphing the mixer's own layer out of the
+                    // geometry the compact panel occupied keeps the
+                    // window's own size a single step while still being a
+                    // continuous transition on screen.
                     val anchor = preferences.activeAnchor()
                     val origin = anchor.transformOrigin()
-                    // The compact popup travels with the volume when a key
-                    // is what brought it up, and falls back to its anchored
-                    // edge when nothing did. The mixer always grows out of
-                    // wherever the compact popup was instead: it's the same
-                    // panel getting bigger, not a new one arriving.
-                    val travelDirection = when {
-                        expanded -> Offset.Zero
-                        lastVolumeDirection != 0 -> volumeTravel(lastVolumeDirection)
-                        else -> anchor.enterDirection()
-                    }
-                    // A centered compact popup has no side for the mixer to
-                    // come out of, so the mixer turns over into place instead
-                    // of sliding out of a midline that isn't an edge.
-                    val mixerFlips = expanded && anchor.isHorizontallyCentered()
-                    // The disc doesn't fade as a whole: its own radar sweep
-                    // (see [VolumeDisc]) carries the arrival, and fading the
-                    // disc would take that sweep with it. Only on the way in
-                    // -- on the way out the whole thing still goes, or it
-                    // would simply vanish.
-                    val discForms = !expanded && preferences.popupStyle == PopupStyle.Disc
+                    // The disc has no edge to be uncovered from -- it forms
+                    // by turning instead (see VolumeDisc's own radar turn),
+                    // and a straight-edged wipe across a circle would fight
+                    // that.
+                    val compactIsDisc = !expanded && preferences.popupStyle == PopupStyle.Disc
+                    val revealEdge = if (compactIsDisc) RevealEdge.None else anchor.revealEdge()
+                    val panelCornerRadius = preferences.popupCornerRadius.dp
+                    val morphOrigin = mixerMorphOrigin
+                    val revealed = windowRevealed
                     val visible = contentVisible
 
                     key(expanded) {
-                        // One spring for the entire arrival -- the panel, its
-                        // edge travel, its scale, its fade -- and the same one
-                        // played backwards on the way out. Every part of the
-                        // overlay is therefore on one clock: nothing can
-                        // arrive on a curve of its own and read as a step out
-                        // of time with the rest. It's an Animatable rather
-                        // than a duration so that re-showing the popup while
-                        // it's still dismissing bends the motion back from
-                        // wherever it had got to, at the speed it was already
-                        // carrying, instead of restarting it.
                         val appear = remember { Animatable(0f) }
-                        LaunchedEffect(visible) {
-                            appear.animateTo(
-                                targetValue = if (visible) 1f else 0f,
-                                animationSpec = Motion.default()
-                            )
+                        val morph = remember { Animatable(0f) }
+
+                        LaunchedEffect(visible, revealed) {
+                            if (visible) {
+                                // Nothing starts until the window is
+                                // actually on screen. The mixer's window is
+                                // deliberately held invisible for a frame
+                                // or two while it is repositioned for its
+                                // own size (see onExpand below), and an
+                                // animation that began under that would
+                                // simply have some of itself missing.
+                                if (!revealed) {
+                                    return@LaunchedEffect
+                                }
+
+                                if (expanded && morphOrigin != null) {
+                                    // The mixer doesn't arrive -- it is the
+                                    // compact panel, changed shape. So it
+                                    // is present from the first frame and
+                                    // the morph is the entrance.
+                                    appear.snapTo(1f)
+                                    morph.animateTo(1f, Motion.default())
+                                } else {
+                                    morph.snapTo(1f)
+                                    appear.animateTo(1f, Motion.default())
+                                }
+                            } else {
+                                // The exit runs the entrance backwards, in
+                                // the order it was built: the mixer folds
+                                // back into the compact panel's own
+                                // rectangle first, and only then does that
+                                // rectangle close back into the screen
+                                // edge it came out of.
+                                if (expanded && morphOrigin != null) {
+                                    morph.animateTo(0f, Motion.default())
+                                }
+                                appear.animateTo(0f, Motion.default())
+                                // Posted rather than called straight from
+                                // here: this coroutine belongs to the
+                                // composition the window is about to be
+                                // torn down with.
+                                this@Service.handler.post {
+                                    this@Service.handler.finishHide()
+                                }
+                            }
                         }
 
-                        // Handed down so the pieces that phase their own
-                        // motion off the arrival -- the disc's sweep, the
-                        // glass reflection's turn -- run on this spring
-                        // rather than each starting one of their own.
-                        // Remembered so providing it doesn't invalidate
-                        // every reader on each recomposition.
+                        // Handed down so the parts that phase their own
+                        // motion off the arrival -- the disc's radar turn,
+                        // the glass shimmer, Atmosphere's entering rotation
+                        // -- ride this spring instead of each starting one
+                        // of their own. Remembered, so providing it doesn't
+                        // invalidate every reader on each recomposition.
                         val arrival = remember(appear) { { appear.value } }
 
                         CompositionLocalProvider(LocalArrival provides arrival) {
                         // One beam shared by the mixer's glass face and its
-                        // rim, exactly as CollapsedVolumePopup does it. Taken
-                        // inside the provider above, because the turn it
-                        // carries is phased off that arrival: read outside it
-                        // the panel would arrive with its light already
-                        // settled.
-                        val beamAngle = rememberGlassBeamAngle(preferences.glassLightAngle)
+                        // rim, exactly as CollapsedVolumePopup does it.
+                        // Taken inside the provider above, because the
+                        // shimmer it carries is phased off that arrival:
+                        // read outside it, the panel would come up with its
+                        // light already settled.
+                        val beamAngle = rememberGlassShimmerAngle(preferences.glassLightAngle)
 
                         Box(
                             modifier = Modifier.graphicsLayer {
-                                val arrived = appear.value
-                                val away = 1f - arrived
+                                val arrived = appear.value.coerceIn(0f, 1f)
 
-                                val grown = 1f - 0.08f * away
-                                scaleX = grown
-                                scaleY = grown
-                                // A disc turns about its own centre; anything
-                                // else grows out of wherever the compact
-                                // popup sits, which for the mixer is the
-                                // panel it came from rather than a new place.
-                                transformOrigin =
-                                    if (discForms) TransformOrigin.Center else origin
+                                if (expanded && morphOrigin != null) {
+                                    // Straight from the compact panel's own
+                                    // rectangle to this one. Centre origin,
+                                    // because the translation below is what
+                                    // carries the difference in position --
+                                    // an edge origin would apply it twice.
+                                    val morphed = morph.value
+                                    val away = 1f - morphed
+                                    transformOrigin = TransformOrigin.Center
+                                    scaleX = morphOrigin.scaleX + (1f - morphOrigin.scaleX) * morphed
+                                    scaleY = morphOrigin.scaleY + (1f - morphOrigin.scaleY) * morphed
+                                    translationX = morphOrigin.translationX * away
+                                    translationY = morphOrigin.translationY * away
+                                } else {
+                                    val away = 1f - arrived
+                                    val grown = 1f - 0.08f * away
+                                    transformOrigin = origin
+                                    scaleX = grown
+                                    scaleY = grown
 
-                                val travel = ENTER_TRAVEL_DP.toPx() * away
-                                translationX = travelDirection.x * travel
-                                translationY = travelDirection.y * travel
-
-                                // A card turning over, not a spin: shallow,
-                                // and with a camera far enough back that the
-                                // near edge doesn't balloon on the way round.
-                                if (mixerFlips) {
-                                    cameraDistance = 14f * density
-                                    rotationY = away * MIXER_FLIP_DEGREES
+                                    // A short push along the same axis the
+                                    // panel is being uncovered on, so the
+                                    // reveal and the travel are one motion
+                                    // rather than two.
+                                    val travel = ENTER_TRAVEL_DP.toPx() * away
+                                    when (revealEdge) {
+                                        RevealEdge.Left -> translationX = -travel
+                                        RevealEdge.Right -> translationX = travel
+                                        RevealEdge.Top -> translationY = -travel
+                                        RevealEdge.Bottom -> translationY = travel
+                                        RevealEdge.None -> Unit
+                                    }
                                 }
 
-                                alpha = if (discForms && visible) 1f else arrived.coerceIn(0f, 1f)
+                                alpha = arrived
+
+                                // Only while there is something to reveal:
+                                // a clip left switched on at rest would cut
+                                // the panel's own shadow halo, which is
+                                // deliberately drawn outside its bounds.
+                                val revealing = arrived < 0.999f && revealEdge != RevealEdge.None
+                                clip = revealing
+                                if (revealing) {
+                                    shape = EdgeRevealShape(
+                                        progress = arrived,
+                                        edge = revealEdge,
+                                        cornerRadiusPx = panelCornerRadius.toPx()
+                                    )
+                                }
                             }
                         ) {
                             if (expanded) {
@@ -650,6 +692,15 @@ class Service : AccessibilityService() {
                                     preferences = preferences,
                                     atmosphereColors = atmosphereColorsState,
                                     onExpand = {
+                                        // The rectangle the compact panel
+                                        // occupies right now, in screen
+                                        // coordinates, read before anything
+                                        // moves: it is what the mixer will
+                                        // morph out of once its own window
+                                        // has been repositioned and
+                                        // measured.
+                                        this@Service.captureCompactBounds()
+                                        this@Service.windowRevealed = false
                                         expanded = true
                                         // The window is about to resize for
                                         // the mixer's own (usually much
@@ -690,11 +741,23 @@ class Service : AccessibilityService() {
                                                 // risking one that silently
                                                 // never does.
                                                 it.post {
+                                                    // Now that the mixer's
+                                                    // own window is where
+                                                    // and what size it is
+                                                    // going to be, the two
+                                                    // rectangles can be
+                                                    // compared -- and only
+                                                    // then is the window
+                                                    // shown, with the morph
+                                                    // starting from its
+                                                    // first visible frame.
+                                                    this@Service.captureMixerMorphOrigin(it)
                                                     this@Service.layoutParams.alpha = 1f
                                                     this@Service.windowManager.updateViewLayout(
                                                         it,
                                                         this@Service.layoutParams
                                                     )
+                                                    this@Service.windowRevealed = true
                                                 }
                                             }
                                         }
@@ -945,39 +1008,73 @@ class Service : AccessibilityService() {
     private var viewVisible = false
 
     /**
-     * Whether the composition should be showing itself. Read by the overlay
-     * root, which owns the whole arrival and dismissal on one spring -- this
-     * is only the direction it's pointed in. Separate from [viewVisible],
-     * which is about the window: the content is still on screen, animating
-     * out, for a while after the window has been declared gone.
+     * Whether the composition should be playing its arrival or its exit.
+     * The window's own alpha is no longer what fades -- it is either fully
+     * present or not added at all -- so this is the single switch the whole
+     * appearance hangs off, read by [createView]'s own springs.
      */
     private var contentVisible by mutableStateOf(true)
 
     /**
-     * Which way the volume was last pushed -- [AudioManager.ADJUST_RAISE] or
-     * [AudioManager.ADJUST_LOWER] -- so the compact popup can travel with
-     * it: up when the user is turning it up, down when they're turning it
-     * down. Zero when the popup was summoned by something other than a
-     * volume key, in which case it falls back to its anchored edge.
+     * Whether the window is actually on screen yet. It is added invisible
+     * and only revealed once it has been laid out and repositioned for its
+     * own measured size (twice over, for the mixer -- see the expand
+     * handler in [createView]), and an arrival that began before that would
+     * have had some of itself happen where nobody could see it.
      */
-    private var lastVolumeDirection by mutableIntStateOf(0)
+    private var windowRevealed by mutableStateOf(false)
 
     /**
-     * Shown by something other than a volume key -- the accessibility
-     * button, or the app asking for it. There's no volume direction behind
-     * it for the panel to travel with, so the recorded one is cleared and
-     * the arrival falls back to the anchored screen edge.
+     * The compact panel's own screen rectangle, captured the moment an
+     * expand is asked for and consumed once the mixer has been measured --
+     * see [captureMixerMorphOrigin].
      */
-    private fun showViewWithoutKey() {
-        lastVolumeDirection = 0
-        showView()
+    private var compactBounds: Rect? = null
+
+    /** Where the mixer morphs out of, or null if the two couldn't be compared. */
+    private var mixerMorphOrigin by mutableStateOf<MixerMorphOrigin?>(null)
+
+    /** The popup's rectangle on screen right now, or null if it isn't laid out. */
+    private fun viewBoundsOnScreen(target: View): Rect? {
+        if (target.width <= 0 || target.height <= 0) {
+            return null
+        }
+        val at = IntArray(2)
+        target.getLocationOnScreen(at)
+        return Rect(at[0], at[1], at[0] + target.width, at[1] + target.height)
+    }
+
+    private fun captureCompactBounds() {
+        compactBounds = view?.let { viewBoundsOnScreen(it) }
+        mixerMorphOrigin = null
+    }
+
+    /**
+     * Turns the two rectangles -- where the compact panel was, where the
+     * mixer now is -- into the transform that lays the mixer exactly over
+     * the old one, for the morph to run out of.
+     *
+     * Nothing measurable on either side means no morph, and the mixer falls
+     * back to growing out of its anchor, which is what it always did.
+     */
+    private fun captureMixerMorphOrigin(target: View) {
+        val from = compactBounds
+        compactBounds = null
+        val to = from?.let { viewBoundsOnScreen(target) } ?: return
+
+        mixerMorphOrigin = MixerMorphOrigin(
+            scaleX = (from.width().toFloat() / to.width()).coerceIn(0.05f, 3f),
+            scaleY = (from.height().toFloat() / to.height()).coerceIn(0.05f, 3f),
+            translationX = from.exactCenterX() - to.exactCenterX(),
+            translationY = from.exactCenterY() - to.exactCenterY()
+        )
     }
 
     private fun showView() {
-        // Set before the composition is built, so the arrival animation the
-        // root reads is already pointed the right way, and before the
-        // teardown is cancelled, so a popup coming back mid-exit turns
-        // around from wherever it had got to.
+        // Before anything else: a popup asked for again while the last one
+        // is still playing its exit bends straight back to arriving, from
+        // wherever it had got to and at the speed it was already carrying,
+        // rather than restarting from nothing.
         contentVisible = true
         handler.keepView()
 
@@ -989,18 +1086,23 @@ class Service : AccessibilityService() {
             atmosphereColorsState = sampleForegroundAppColors()
             // The view doesn't respond to input events if reused
             view = createView()
-            // The window itself never fades any more. It used to, on its own
-            // interpolator and its own length, underneath a composition
-            // fading on a different one -- two curves stacked on the same
-            // arrival, which is exactly what made the popup look like it
-            // came up in two steps. The window is simply present now, and
-            // the composition inside it owns every frame of the appearance.
-            layoutParams.alpha = 1f
+            windowRevealed = false
+            mixerMorphOrigin = null
+            // Added invisible and revealed by the layout pass below, so the
+            // window never shows itself at an unclamped position for a
+            // frame. Not a fade: the composition owns that.
+            layoutParams.alpha = 0f
             // Position settings may have changed since the last time the
             // popup was shown.
             applyConfiguredPosition(layoutParams)
             windowManager.addView(view, layoutParams)
-            clampToScreenOnceLaidOut(view!!, expanded = false)
+            clampToScreenOnceLaidOut(view!!, expanded = false) {
+                view?.let {
+                    layoutParams.alpha = 1f
+                    windowManager.updateViewLayout(it, layoutParams)
+                }
+                windowRevealed = true
+            }
         }
 
         if (!viewVisible) {
@@ -1015,7 +1117,7 @@ class Service : AccessibilityService() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.i(TAG, "onReceive ${intent.action}")
             if (intent.action == ACTION_SHOW_VIEW) {
-                showViewWithoutKey()
+                showView()
             }
         }
     }
@@ -1054,7 +1156,7 @@ class Service : AccessibilityService() {
             AccessibilityButtonCallback() {
             override fun onClicked(controller: AccessibilityButtonController?) {
                 if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
-                    showViewWithoutKey()
+                    showView()
                 } else {
                     warnShizukuDisconnected()
                 }

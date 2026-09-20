@@ -31,8 +31,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Typography
 
 private const val TAG = "NoMixer.StreamSlider"
@@ -168,7 +168,8 @@ fun StreamVolumeSlider(
                 ),
             value = volume.toFloat(),
             valueRange = 0f..maxVolume,
-            // Same: one of the mixer's own inner bars.
+            // See [AppVolumeSlider]: a row inside the mixer follows rather
+            // than leads.
             settleSpec = Motion.soft(),
             onValueChange = { value ->
                 val target = value.toInt()

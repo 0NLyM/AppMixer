@@ -269,18 +269,14 @@ fun CollapsedVolumePopup(
         onInteract()
     }
 
-    // One lit angle for every glass surface in this popup -- the panel's
-    // face, its rim, and the disc's own ring track -- drifting slowly so the
-    // reflection travels across the glass instead of sitting on it. Shared
-    // rather than taken per surface so they stay one beam.
-    val beamAngle = rememberGlassBeamAngle(preferences.glassLightAngle)
-
     // Just the current level: the compact popup is a glance, so the maximum
     // (and the stream's name) are left to the full mixer.
     val valueText = volume.toString()
-    // Mute beats a Bluetooth-connected glyph beats the plain speaker, shared
-    // by every style below instead of each hardcoding the speaker icon.
-    val volumeIcon = rememberVolumeIcon(audioManager, volume, maxVolume.toInt())
+    // One beam for the panel's face and its rim alike, carrying the
+    // shimmer that crosses the glass as the popup arrives -- see
+    // [rememberGlassShimmerAngle] for why both halves have to be handed the
+    // same number.
+    val beamAngle = rememberGlassShimmerAngle(preferences.glassLightAngle)
     val scale = preferences.activeScale()
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val discDiameter = (220 * scale).dp
@@ -532,8 +528,10 @@ fun CollapsedVolumePopup(
                         // it's the one pulled to dead center; the two are
                         // never both centered at once.
                         if (showIcon) {
-                            AnimatedVolumeIcon(
-                                icon = volumeIcon,
+                            VolumeGlyph(
+                                audioManager = audioManager,
+                                volume = volume,
+                                maxVolume = maxVolume.toInt(),
                                 contentDescription = stringResource(R.string.stream_media),
                                 modifier = Modifier
                                     .align(
@@ -619,8 +617,10 @@ fun CollapsedVolumePopup(
                         }
 
                         if (showIcon) {
-                            AnimatedVolumeIcon(
-                                icon = volumeIcon,
+                            VolumeGlyph(
+                                audioManager = audioManager,
+                                volume = volume,
+                                maxVolume = maxVolume.toInt(),
                                 contentDescription = stringResource(R.string.stream_media),
                                 modifier = Modifier
                                     .align(
@@ -693,7 +693,19 @@ fun CollapsedVolumePopup(
                         blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                         noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
                         noiseAlpha = preferences.glassNoiseAlpha,
-                        icon = if (showIcon) volumeIcon else null,
+                        icon = if (showIcon) {
+                            {
+                                VolumeGlyph(
+                                    audioManager = audioManager,
+                                    volume = volume,
+                                    maxVolume = maxVolume.toInt(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        } else {
+                            null
+                        },
                         label = if (showValue && !besideButton) valueText else null,
                         // The disc's hollow middle is where the ringer
                         // switch belongs, rather than stacked above the

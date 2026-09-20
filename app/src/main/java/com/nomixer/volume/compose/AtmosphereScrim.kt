@@ -1,11 +1,9 @@
 package com.nomixer.volume.compose
 
-import android.animation.ValueAnimator
 import android.graphics.RuntimeShader
 import android.util.Log
+import android.animation.ValueAnimator
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
@@ -26,12 +24,10 @@ import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.graphicsLayer
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
-import kotlin.math.cos
+import com.nomixer.volume.ui.theme.LocalArrival
 import kotlin.random.Random
-import kotlin.math.sin
 
 /**
  * The Atmosphere background: a Nothing-OS-flavoured alternative to
@@ -70,56 +66,62 @@ private const val ATMOSPHERE_SHADER_SRC = """
     uniform float3 colorB;
     uniform float grainIntensity;
     uniform float grainScale;
-    uniform float2 blobA;
-    uniform float2 blobB;
-    uniform float2 blobC;
-    uniform float blobRadius;
-    uniform float blobStrength;
+    uniform float grainPhase;
+    uniform float2 drift;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
     }
 
+    // One complete grain field, identified by a whole-numbered seed. Two
+    // hashes rather than one so a cell's value isn't a straight function of
+    // its position, which reads as a pattern rather than as grain.
+    float grainField(float2 cell, float seed) {
+        return hash(cell + seed * 37.0) * 0.55 +
+            hash(cell * 1.37 + 19.7 - seed * 11.0) * 0.45;
+    }
+
     half4 main(float2 fragCoord) {
         float2 center = resolution * 0.5;
-        float2 p = fragCoord - center;
+        float longest = max(resolution.x, resolution.y);
 
-        // One rigid turn of the whole field about the panel's center: every
-        // sample below reads off these rotated coordinates, so the grain and
-        // the color sweep travel together instead of each wandering off.
+        // drift moves the whole field's own center off the panel's, by a
+        // fraction of its longest side -- picked afresh every time the popup
+        // appears, so the same panel is never quite the same painting twice.
+        float2 p = fragCoord - center - drift * longest;
+
+        // One rigid turn of the whole field about that center: every sample
+        // below reads off these rotated coordinates, so the grain and the
+        // color sweep travel together instead of each wandering off.
         float s = sin(rotation);
         float c = cos(rotation);
         float2 turned = float2(p.x * c - p.y * s, p.x * s + p.y * c);
 
         // The coarse sweep: the two colors wound around the center, pulled
         // outward a little with radius so it spirals rather than pinwheels.
-        float longest = max(resolution.x, resolution.y);
         float angle = atan(turned.y, turned.x);
         float radius = length(turned) / longest;
         float sweep = fract(angle / 6.2831853 + radius * 0.9 + 1.0);
         float band = 0.5 - 0.5 * cos(sweep * 6.2831853);
 
-        // Soft patches of the second colour pooled over the sweep, in the
-        // same turned coordinates everything else reads -- so they travel
-        // with the field rather than sitting on top of it while it moves.
-        // smoothstep alone is the blur: no second pass, no extra layer,
-        // just a falloff wide enough that no edge of one is ever visible.
-        // Their centres come in already placed (and already drifting), so
-        // no two appearances pool in the same places.
-        if (blobStrength > 0.0) {
-            float2 tn = turned / longest;
-            float pooled =
-                smoothstep(blobRadius, 0.0, distance(tn, blobA)) +
-                smoothstep(blobRadius, 0.0, distance(tn, blobB)) +
-                smoothstep(blobRadius, 0.0, distance(tn, blobC));
-            band = clamp(band + (clamp(pooled, 0.0, 1.0) - 0.4) * blobStrength, 0.0, 1.0);
-        }
-
         // Grain in chunky cells rather than per pixel, so it reads as
         // actual grain at a glance instead of sensor noise. grainScale is
         // the cell divisor itself -- smaller means coarser (bigger) flecks.
+        //
+        // Real film grain is a *new* field of silver every frame, not one
+        // still field lit differently, so the cells are resampled several
+        // times a second and dissolved between two consecutive fields
+        // rather than being hashed anew per frame. Hashing per frame is
+        // what an earlier pass did, and it reads as static going in every
+        // direction at once; a dissolve between whole fields reads as
+        // grain that is alive.
         float2 cell = floor(turned * grainScale);
-        float grain = hash(cell) * 0.55 + hash(cell * 1.37 + 19.7) * 0.45;
+        float settled = floor(grainPhase);
+        float grain = mix(
+            grainField(cell, settled),
+            grainField(cell, settled + 1.0),
+            grainPhase - settled
+        );
 
         // grainIntensity scales how much the grain perturbs both the color
         // mix and the brightness -- 0 is a perfectly smooth two-color sweep
@@ -135,51 +137,24 @@ private const val ATMOSPHERE_SHADER_SRC = """
 """
 
 /**
- * How far the field turns while settling, and how long it takes to get
- * there -- shortened from the original 900ms without touching the curve
- * itself (still [FastOutSlowInEasing]) or how far it turns.
+ * How far the field turns on its way in, measured back from wherever this
+ * appearance happens to have settled on (see [rememberAtmosphereMotion]).
  */
 private const val ATMOSPHERE_TURN_RADIANS = 2.1f
-private const val ATMOSPHERE_SETTLE_MILLIS = 650
 
 private const val TWO_PI = 6.2831855f
 
 /**
- * One full turn of the field on its own axis once it has settled, and one
- * full lap of its drift, in milliseconds. Both deliberately long and
- * mismatched: two slow cycles of different lengths never quite repeat the
- * same frame, so the panel keeps moving without ever looking like a loop.
+ * How many whole grain fields the shader dissolves through per lap, and how
+ * long one lap takes. Together they set the rate the grain resamples at:
+ * fast enough to be alive, slow enough not to strobe, and cheap either way
+ * -- it is two extra hashes per pixel, not a second layer.
  */
-private const val ATMOSPHERE_SPIN_MILLIS = 62_000
-private const val ATMOSPHERE_DRIFT_MILLIS = 27_000
+private const val GRAIN_FIELDS_PER_LAP = 24f
+private const val GRAIN_LAP_MILLIS = 2_600
 
-/**
- * How far the field wanders from centre, as a fraction of the panel's
- * shortest side, and the overscan that keeps its corners covered while it
- * does. Both small: this is a field that breathes, not one that slides
- * around behind a window.
- */
-private const val ATMOSPHERE_DRIFT_FRACTION = 0.035f
-private const val ATMOSPHERE_OVERSCAN = 1.12f
-
-/**
- * The three soft patches pooled over the sweep, as positions in the same
- * turned, size-normalised space the shader samples in. Placed randomly per
- * appearance and nudged around while the popup is up, so the field is never
- * quite the same twice.
- */
-internal class AtmosphereBlobs(
-    val ax: Float, val ay: Float,
-    val bx: Float, val by: Float,
-    val cx: Float, val cy: Float
-)
-
-/** How wide a patch is and how strongly it reads, in the shader's units. */
-private const val BLOB_RADIUS = 0.42f
-private const val BLOB_STRENGTH = 0.55f
-
-/** How far a patch wanders from where it was placed, in the same units. */
-private const val BLOB_DRIFT = 0.07f
+/** How far off the panel's own center a field's center may be thrown. */
+private const val ATMOSPHERE_DRIFT_SPAN = 0.22f
 
 // Same reasoning as GlassScrim's own noiseBrush cache: compiling AGSL is far
 // too expensive to redo whenever a panel appears. Unlike that cache this one
@@ -235,7 +210,9 @@ private fun DrawScope.atmosphereBrush(
     rotation: Float,
     grainIntensity: Float,
     grainSize: Float,
-    blobs: AtmosphereBlobs? = null
+    grainPhase: Float = 0f,
+    driftX: Float = 0f,
+    driftY: Float = 0f
 ): Brush? {
     val shader = atmosphereShaderOrNull() ?: return null
     return try {
@@ -246,19 +223,8 @@ private fun DrawScope.atmosphereBrush(
         shader.setFloatUniform("colorB", second.red, second.green, second.blue)
         shader.setFloatUniform("grainIntensity", grainIntensity.coerceIn(0f, 1f))
         shader.setFloatUniform("grainScale", grainScaleFor(grainSize))
-        if (blobs == null) {
-            shader.setFloatUniform("blobStrength", 0f)
-            shader.setFloatUniform("blobA", 0f, 0f)
-            shader.setFloatUniform("blobB", 0f, 0f)
-            shader.setFloatUniform("blobC", 0f, 0f)
-            shader.setFloatUniform("blobRadius", 1f)
-        } else {
-            shader.setFloatUniform("blobStrength", BLOB_STRENGTH)
-            shader.setFloatUniform("blobA", blobs.ax, blobs.ay)
-            shader.setFloatUniform("blobB", blobs.bx, blobs.by)
-            shader.setFloatUniform("blobC", blobs.cx, blobs.cy)
-            shader.setFloatUniform("blobRadius", BLOB_RADIUS)
-        }
+        shader.setFloatUniform("grainPhase", grainPhase)
+        shader.setFloatUniform("drift", driftX, driftY)
         ShaderBrush(shader)
     } catch (e: Throwable) {
         Log.w("GlassScrim", "Atmosphere shader failed to update", e)
@@ -267,66 +233,71 @@ private fun DrawScope.atmosphereBrush(
 }
 
 /**
- * The turn the field makes as the popup appears: from nothing to
- * [ATMOSPHERE_TURN_RADIANS], decelerating, and then still for as long as the
- * popup stays up.
- *
- * Handed back as the [Animatable] itself rather than its value so callers
- * read it in their own draw phase (see [AtmosphereBackground] and
- * [VolumeDisc]), the same way VolumeDisc already reads its fill animation:
- * the panel repaints every frame of the turn without recomposing anything,
- * and stops repainting by itself once the turn is over.
+ * Everything Atmosphere animates, gathered in one place and handed out as
+ * functions rather than values so every reader takes them in its own draw
+ * phase: the panel repaints each frame without recomposing anything around
+ * it, and stops repainting by itself once there is nothing left to move.
  */
-@Composable
-internal fun rememberAtmosphereSpin(): Animatable<Float, AnimationVector1D> {
-    val spin = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        if (!ValueAnimator.areAnimatorsEnabled()) {
-            spin.snapTo(ATMOSPHERE_TURN_RADIANS)
-            return@LaunchedEffect
-        }
-
-        spin.animateTo(
-            targetValue = ATMOSPHERE_TURN_RADIANS,
-            animationSpec = tween(ATMOSPHERE_SETTLE_MILLIS, easing = FastOutSlowInEasing)
-        )
-
-        // And then it never stops. Evenly paced rather than sprung, because
-        // a continuous turn that eases would visibly pulse once a minute;
-        // the shader reads this through sin/cos, so the repeat's jump back
-        // by a whole turn lands on exactly the frame it left.
-        spin.animateTo(
-            targetValue = spin.value + TWO_PI,
-            animationSpec = infiniteRepeatable(
-                animation = tween(ATMOSPHERE_SPIN_MILLIS, easing = LinearEasing)
-            )
-        )
-    }
-    return spin
-}
+internal class AtmosphereMotion(
+    /** The field's own turn, in radians, for the current frame. */
+    val rotation: () -> Float,
+    /** How far the field's center sits off the panel's, as fractions of its longest side. */
+    val driftX: () -> Float,
+    val driftY: () -> Float,
+    /** Which grain field the shader is dissolving through -- see [GRAIN_FIELDS_PER_LAP]. */
+    val grainPhase: () -> Float
+)
 
 /**
- * The field's slow lap around its own centre, in radians. Separate from
- * [rememberAtmosphereSpin] because it drives something else entirely: the
- * spin turns the field's own coordinates inside the shader, this moves the
- * finished result as a whole, which the GPU does for free.
+ * The turn the field makes as the popup arrives, the place it arrives at,
+ * and the grain that keeps moving once it has.
+ *
+ * The turn is phased off [LocalArrival] rather than run on a curve of its
+ * own, so it rides exactly the spring the panel rides and unwinds the same
+ * way on the way out -- no second easing to keep in agreement with the
+ * first. Where it settles is a fresh random angle every time the popup
+ * appears, and the field's center is thrown off the panel's by a fresh
+ * random amount with it, so the same panel over the same app never looks
+ * like the same painting twice.
+ *
+ * The grain is the one thing here that doesn't stop: it advances evenly and
+ * forever, because it is a texture rather than a transition. Nothing is
+ * travelling from one state to another, so there is no spring to reach for
+ * -- and an eased loop visibly pulses at its own seam. It doesn't start at
+ * all when the platform's "Remove animations" setting is on.
  */
 @Composable
-private fun rememberAtmosphereDrift(): Animatable<Float, AnimationVector1D> {
-    val drift = remember { Animatable(0f) }
+internal fun rememberAtmosphereMotion(): AtmosphereMotion {
+    val arrival = LocalArrival.current
+
+    // One draw of the dice per appearance: where the field settles, and how
+    // far off center it sits when it gets there.
+    val seed = remember { List(3) { Random.nextFloat() } }
+
+    val grain = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         if (!ValueAnimator.areAnimatorsEnabled()) {
             return@LaunchedEffect
         }
-
-        drift.animateTo(
-            targetValue = TWO_PI,
+        grain.animateTo(
+            targetValue = GRAIN_FIELDS_PER_LAP,
             animationSpec = infiniteRepeatable(
-                animation = tween(ATMOSPHERE_DRIFT_MILLIS, easing = LinearEasing)
+                animation = tween(GRAIN_LAP_MILLIS, easing = LinearEasing)
             )
         )
     }
-    return drift
+
+    return remember(grain, arrival) {
+        AtmosphereMotion(
+            rotation = {
+                val away = (1f - arrival()).coerceIn(0f, 1f)
+                seed[0] * TWO_PI + ATMOSPHERE_TURN_RADIANS * away
+            },
+            driftX = { (seed[1] - 0.5f) * ATMOSPHERE_DRIFT_SPAN },
+            driftY = { (seed[2] - 0.5f) * ATMOSPHERE_DRIFT_SPAN },
+            grainPhase = { grain.value }
+        )
+    }
 }
 
 /**
@@ -345,56 +316,29 @@ fun AtmosphereBackground(
     grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
     grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT
 ) {
-    val spin = rememberAtmosphereSpin()
-    val drift = rememberAtmosphereDrift()
-    // Placed once per appearance, so the patches pool somewhere different
-    // every time the popup comes up rather than the panel always looking
-    // like the same painting.
-    val blobSeed = remember { List(6) { Random.nextFloat() } }
+    val motion = rememberAtmosphereMotion()
 
-    Box(modifier.clip(shape)) {
-        Box(
-            Modifier
-                .matchParentSize()
-                .graphicsLayer {
-                    // Read here rather than in composition: the lap is a
-                    // draw-phase transform of an already-painted field, so
-                    // it costs a matrix and nothing else -- no recomposition,
-                    // no shader rebuilt, no layout touched. Oversized so the
-                    // panel's own corners stay covered all the way round.
-                    val lap = drift.value
-                    val reach = size.minDimension * ATMOSPHERE_DRIFT_FRACTION
-                    translationX = cos(lap) * reach
-                    // Flattened into an ellipse rather than a circle: a
-                    // perfectly round orbit reads as a mechanism, an
-                    // off-round one reads as weather.
-                    translationY = sin(lap) * reach * 0.6f
-                    scaleX = ATMOSPHERE_OVERSCAN
-                    scaleY = ATMOSPHERE_OVERSCAN
+    Box(
+        modifier
+            .clip(shape)
+            .drawBehind {
+                val brush = atmosphereBrush(
+                    colors,
+                    baseColor.copy(alpha = 1f),
+                    motion.rotation(),
+                    grainIntensity,
+                    grainSize,
+                    motion.grainPhase(),
+                    motion.driftX(),
+                    motion.driftY()
+                )
+                if (brush != null) {
+                    drawRect(brush, alpha = baseColor.alpha)
+                } else {
+                    drawRect(baseColor)
                 }
-                .drawBehind {
-                    // Each patch takes the lap at its own phase, so they
-                    // wander past each other instead of moving as one.
-                    val lap = drift.value
-                    val blobs = AtmosphereBlobs(
-                        ax = (blobSeed[0] - 0.5f) * 0.9f + cos(lap) * BLOB_DRIFT,
-                        ay = (blobSeed[1] - 0.5f) * 0.9f + sin(lap) * BLOB_DRIFT,
-                        bx = (blobSeed[2] - 0.5f) * 0.9f + cos(lap + 2.1f) * BLOB_DRIFT,
-                        by = (blobSeed[3] - 0.5f) * 0.9f + sin(lap + 2.1f) * BLOB_DRIFT,
-                        cx = (blobSeed[4] - 0.5f) * 0.9f + cos(lap + 4.2f) * BLOB_DRIFT,
-                        cy = (blobSeed[5] - 0.5f) * 0.9f + sin(lap + 4.2f) * BLOB_DRIFT
-                    )
-                    val brush = atmosphereBrush(
-                        colors, baseColor.copy(alpha = 1f), spin.value, grainIntensity, grainSize, blobs
-                    )
-                    if (brush != null) {
-                        drawRect(brush, alpha = baseColor.alpha)
-                    } else {
-                        drawRect(baseColor)
-                    }
-                }
-        )
-    }
+            }
+    )
 }
 
 /**
@@ -403,7 +347,7 @@ fun AtmosphereBackground(
  * through a Compose layout node (unlike Glass, Atmosphere never needs a real
  * blur, so there's no need for a separate graphics layer here the way
  * [GlassRingBackground] needs one). [rotation] is read straight from the
- * caller's own draw phase (see [rememberAtmosphereSpin]); [colors] is handed
+ * caller's own draw phase (see [rememberAtmosphereMotion]); [colors] is handed
  * in the same way as [AtmosphereBackground]'s own (see this file's top
  * comment).
  *
@@ -421,7 +365,10 @@ fun DrawScope.drawAtmosphereRing(
     ringRadius: Float,
     ringWidth: Float,
     grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
-    grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT
+    grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT,
+    grainPhase: Float = 0f,
+    driftX: Float = 0f,
+    driftY: Float = 0f
 ) {
     val outerRadius = ringRadius + ringWidth / 2f
     val innerRadius = (ringRadius - ringWidth / 2f).coerceAtLeast(0f)
@@ -446,7 +393,16 @@ fun DrawScope.drawAtmosphereRing(
     }
 
     clipPath(ring) {
-        val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), rotation, grainIntensity, grainSize)
+        val brush = atmosphereBrush(
+            colors,
+            baseColor.copy(alpha = 1f),
+            rotation,
+            grainIntensity,
+            grainSize,
+            grainPhase,
+            driftX,
+            driftY
+        )
         if (brush != null) {
             drawRect(brush, alpha = baseColor.alpha)
         } else {

@@ -25,8 +25,8 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.App
 import com.nomixer.volume.icons.Hook
 import com.nomixer.volume.icons.HookOff
-import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Typography
 import kotlin.math.roundToInt
 
@@ -58,7 +58,9 @@ fun AppVolumeSlider(
                     APP_SLIDER_SHADOW_ELEVATION_DP
                 ),
             value = app.volume,
-            // A row in a list of rows: follows rather than leads.
+            // A mixer row moves because the panel it lives in did, not
+            // because a finger is on this particular bar -- the softer,
+            // more damped tier, so a column of them settles as one body.
             settleSpec = Motion.soft(),
             onValueChange = { value ->
                 app.volume = value

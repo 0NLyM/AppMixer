@@ -662,9 +662,9 @@ private fun CollapsedPopupPreviewContent(
                                 )
                             }
                             if (showIcon) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                    contentDescription = null,
+                                AnimatedSpeakerGlyph(
+                                    level = previewFraction,
+                                    muted = previewFraction <= 0f,
                                     modifier = Modifier
                                         .align(
                                             if (preferences.centeredContent == PopupCenterContent.Icon) {
@@ -720,9 +720,9 @@ private fun CollapsedPopupPreviewContent(
                                 .padding(horizontal = (14 * scale).dp)
                         ) {
                             if (showIcon) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                    contentDescription = null,
+                                AnimatedSpeakerGlyph(
+                                    level = previewFraction,
+                                    muted = previewFraction <= 0f,
                                     modifier = Modifier
                                         .align(
                                             if (preferences.centeredContent == PopupCenterContent.Icon) {
@@ -822,7 +822,17 @@ private fun CollapsedPopupPreviewContent(
                     blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                     noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
                     noiseAlpha = preferences.glassNoiseAlpha,
-                    icon = if (showIcon) Icons.AutoMirrored.Filled.VolumeUp else null,
+                    icon = if (showIcon) {
+                        {
+                            AnimatedSpeakerGlyph(
+                                level = previewFraction,
+                                muted = previewFraction <= 0f,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else {
+                        null
+                    },
                     label = if (showValue && !besideButton) previewValueText else null,
                     centerContent = if (showRingerButton) {
                         {

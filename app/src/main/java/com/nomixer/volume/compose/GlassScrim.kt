@@ -156,32 +156,36 @@ private const val FACE_LIGHT_ALPHA = 0.26f
 private const val EDGE_LIGHT_ALPHA = 0.55f
 
 /**
- * How far the reflection is turned aside before the panel has arrived. The
- * light swings into place as the glass does and swings back out the other
- * way as it leaves -- a short, physical turn rather than a permanent drift.
+ * How far round the panel the reflection is thrown before it settles on the
+ * angle the user actually chose. Wide enough that the lit band visibly
+ * travels across the face on the way in rather than merely tilting, short
+ * enough to be over before anyone looks for it.
  */
-private const val BEAM_ENTER_DEGREES = 26f
+private const val SHIMMER_ARC_DEGREES = 84f
 
 /**
- * The lit angle of the glass for the current frame of the panel's arrival.
+ * The lit angle of the glass for the current frame of the panel's arrival:
+ * the reflection sweeps once across the face as the panel comes in, and
+ * back out the way it came as the panel leaves.
  *
  * Returned as one number for the caller to hand to *both* halves of the
  * effect -- [glassBeamBrush] across the face and [glassEdgeLightBrush]
- * around the rim -- because they are one beam: turning the face's light
- * while the rim's stayed put would pull the effect in half. The panel
- * itself never turns; only where the light falls on it does.
+ * around the rim -- because they are one beam. Sweeping the face's light
+ * while the rim's stayed put would pull the effect in half; the panel
+ * itself never turns, only where the light falls on it does.
  *
  * Phased off [LocalArrival] rather than run as an animation of its own, so
- * the reflection settles on exactly the spring the panel settles on and
- * stops moving the moment the panel does -- and so the exit is the same
- * turn backwards, for free, rather than a second curve that has to be kept
- * in agreement with the first by hand.
+ * the shimmer rides exactly the spring the panel rides, stops the instant
+ * the panel stops, and gets its exit for free instead of needing a second
+ * curve kept in agreement with the first by hand. Outside the overlay the
+ * arrival is simply 1, so the settings preview shows the chosen angle with
+ * no sweep at all.
  */
 @Composable
-fun rememberGlassBeamAngle(lightAngle: Float): Float {
+fun rememberGlassShimmerAngle(lightAngle: Float): Float {
     val arrival = LocalArrival.current
     val away = (1f - arrival()).coerceIn(0f, 1f)
-    return lightAngle + away * BEAM_ENTER_DEGREES
+    return lightAngle + away * SHIMMER_ARC_DEGREES
 }
 
 /**

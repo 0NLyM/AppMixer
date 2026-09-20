@@ -5,11 +5,12 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -27,7 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
@@ -52,12 +53,19 @@ import kotlin.math.sin
 private const val TICK_COUNT = 24
 
 /**
- * One full turn of the arrival sweep, and how many degrees behind its front
- * the index takes to come fully up. A short tail rather than an instant
- * edge: a radar face lights up just behind the line, not exactly on it.
+ * How far the dial is turned aside before the popup has arrived. The ring
+ * unwinds counterclockwise into place as the panel comes in and winds back
+ * the same way as it leaves -- a radar face coming round to its mark, short
+ * enough to be a settling rather than a spin.
  */
-private const val SWEEP_TURN_DEGREES = 360f
-private const val SWEEP_FADE_DEGREES = 52f
+private const val DISC_RADAR_DEGREES = 46f
+
+/**
+ * How many tick slots either side of the level the taper reaches. The
+ * landmark is at 0 and a plain tick at 2, with everything between them a
+ * real position rather than a bucket -- see the taper itself, below.
+ */
+private const val TICK_TAPER_REACH = 2f
 
 /**
  * A volume disc: always a complete circle, positioned by the popup window
@@ -181,7 +189,14 @@ fun VolumeDisc(
      */
     noiseColor: Color = Color.White,
     noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT,
-    icon: ImageVector? = null,
+    /**
+     * The small glyph above the reading. A composable slot rather than an
+     * [androidx.compose.ui.graphics.vector.ImageVector], so the caller can
+     * hand in the speaker whose own parts animate with the level (see
+     * [AnimatedSpeakerGlyph]) instead of a finished picture that could only
+     * ever be swapped for another finished picture.
+     */
+    icon: (@Composable () -> Unit)? = null,
     label: String? = null,
     /** Fills the hole in the middle; takes the place of [icon] when set. */
     centerContent: (@Composable () -> Unit)? = null,
@@ -232,33 +247,27 @@ fun VolumeDisc(
     // The arc sweeps to a new level instead of snapping, but follows a
     // finger exactly while one is down.
     var dragging by remember { mutableStateOf(false) }
-    // The flick's own speed, in fraction-of-the-ring per second. See
-    // [TrackSlider]: a thumb thrown around the dial keeps the ring turning
-    // instead of stopping the moment it lifts.
-    var releaseVelocity by remember { mutableFloatStateOf(0f) }
     val fill = remember { Animatable(targetFraction) }
 
-    // The disc arrives the way a radar face does: a sweep travels once
-    // counterclockwise around the ring and the index lights up behind it,
-    // rather than the whole disc fading in at once. Phased off the popup's
-    // own arrival spring (see [LocalArrival]) instead of an animation of
-    // its own, so the sweep and the panel carrying it are the same motion
-    // -- and the exit runs it backwards without a second curve to keep in
-    // agreement. Read in the draw phase, so it repaints without recomposing.
-    val arrival = LocalArrival.current
+    // The speed the finger had when it left the glass, in fractions of the
+    // range per second. Handed to the settling spring as its own starting
+    // velocity, so the knob carries on turning the way it was thrown
+    // instead of stopping dead the instant the touch lifts -- which is the
+    // one place the ring's turn used to visibly step rather than flow.
+    var releaseVelocity by remember { mutableFloatStateOf(0f) }
 
     // Unconditional even though only Atmosphere mode ever uses it, and it
     // costs nothing while unused.
-    val atmosphereSpin = rememberAtmosphereSpin()
+    val atmosphereMotion = rememberAtmosphereMotion()
+
+    // How far the popup has arrived, for the radar turn below. Read in the
+    // draw phase, so the dial turns without recomposing the disc.
+    val arrival = LocalArrival.current
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
             fill.snapTo(targetFraction)
         } else {
-            // Consumed up front: a volume key landing while the ring is
-            // still settling has to retarget the spring from the speed it
-            // currently carries -- which is animateTo's own default -- and
-            // not re-throw a flick that already happened.
             val thrown = releaseVelocity
             releaseVelocity = 0f
             if (thrown != 0f) {
@@ -305,6 +314,16 @@ fun VolumeDisc(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
+                .graphicsLayer {
+                    // The whole dial -- track, arc, ticks -- turns into
+                    // place, counterclockwise, as the popup arrives, and
+                    // winds back out the same way. Only the painted ring
+                    // turns: the switch and the reading live outside this
+                    // Canvas and stay upright throughout. A pure
+                    // graphics-layer rotation, so it costs a matrix rather
+                    // than a repaint.
+                    rotationZ = DISC_RADAR_DEGREES * (1f - arrival()).coerceIn(0f, 1f)
+                }
                 .pointerInput(range) {
                     var startValue = 0f
                     var startY = 0f
@@ -318,7 +337,9 @@ fun VolumeDisc(
                             dragging = true
                         },
                         onDragEnd = {
-                            // Negated to match the gesture: up raises.
+                            // Up is more, and screen y grows downward, so
+                            // the tracker's own sign is flipped to match
+                            // the direction the level moves in.
                             val height = size.height.toFloat()
                             releaseVelocity =
                                 if (height > 0f) -tracker.calculateVelocity().y / height else 0f
@@ -364,32 +385,6 @@ fun VolumeDisc(
             // going clockwise, all the way around.
             val startAngle = -90f
             val fullSweep = 360f
-
-            // The index layer -- the ticks and the mark riding the fill's
-            // leading edge -- is the only thing on the disc the sweep
-            // reveals. The face, its track and its arc are simply there:
-            // fading those as well would just be the whole disc fading,
-            // which is what the sweep is here to replace.
-            val swept = arrival().coerceIn(0f, 1f)
-            val sweepFront = SWEEP_TURN_DEGREES * swept
-
-            // How lit a mark at [markAngle] is: full once the sweep has
-            // gone past it, falling off over the last few degrees behind
-            // the front so the reveal has a soft edge rather than a hard
-            // one. Counterclockwise, so the angle *behind* the front is the
-            // one measured backwards from where the sweep started.
-            fun revealAt(markAngle: Float): Float {
-                if (swept >= 1f) {
-                    return 1f
-                }
-                val behind = (((startAngle - markAngle) % SWEEP_TURN_DEGREES) + SWEEP_TURN_DEGREES) %
-                    SWEEP_TURN_DEGREES
-                return ((sweepFront - behind) / SWEEP_FADE_DEGREES).coerceIn(0f, 1f)
-            }
-
-            fun handColorAt(markAngle: Float): Color = accentColor.copy(
-                alpha = accentColor.alpha * revealAt(markAngle)
-            )
 
             // When the disc is laterally cut by the physical screen edge,
             // remap that whole range onto just the arc still visible past
@@ -453,12 +448,15 @@ fun VolumeDisc(
                     drawAtmosphereRing(
                         baseColor = trackBackingColor,
                         colors = atmosphereColors,
-                        rotation = atmosphereSpin.value,
+                        rotation = atmosphereMotion.rotation(),
                         center = center,
                         ringRadius = ringRadius,
                         ringWidth = ringWidth,
                         grainIntensity = grainIntensity,
-                        grainSize = grainSize
+                        grainSize = grainSize,
+                        grainPhase = atmosphereMotion.grainPhase(),
+                        driftX = atmosphereMotion.driftX(),
+                        driftY = atmosphereMotion.driftY()
                     )
                 } else {
                     drawArc(
@@ -593,26 +591,34 @@ fun VolumeDisc(
                 // actually renders once clipped.
                 val levelAngle = visibleStartAngle + visibleSweepAngle * fraction
                 val ringRotation = if (tickRotatingKnob) levelAngle - startAngle else 0f
-                val landmarkIndex = if (tickRotatingKnob) {
-                    0
+                // Where the level actually falls among the tick slots, kept
+                // as the real number it is rather than rounded to the
+                // nearest one. Rounding is what used to make the taper jump
+                // from tick to tick as the level crossed each halfway
+                // point, while the fill arc beside it moved continuously --
+                // two readings of the same number disagreeing about whether
+                // it had moved yet.
+                val landmarkPosition = if (tickRotatingKnob) {
+                    0f
                 } else {
-                    val nearest = Math.round((levelAngle - startAngle) / tickStep)
-                    ((nearest % TICK_COUNT) + TICK_COUNT) % TICK_COUNT
+                    val slot = (levelAngle - startAngle) / tickStep
+                    ((slot % TICK_COUNT) + TICK_COUNT) % TICK_COUNT
                 }
 
                 for (index in 0 until TICK_COUNT) {
-                    val rawDistance = abs(index - landmarkIndex)
+                    val rawDistance = abs(index - landmarkPosition)
                     // A complete circle closes on itself, so the short way
                     // round can go through either end.
                     val distanceFromLandmark = min(rawDistance, TICK_COUNT - rawDistance)
-                    // The middle adjacent step sits exactly halfway between
-                    // the landmark and a normal tick, so the size actually
-                    // reads as a taper rather than two arbitrary sizes.
-                    val scale = when (distanceFromLandmark) {
-                        0 -> 2f
-                        1 -> 1.5f
-                        else -> 1f
-                    }
+                    // A straight ramp from the landmark out to the reach:
+                    // exactly 2x at the level itself, 1.5x one slot away,
+                    // 1x from two slots out. It crosses the same three
+                    // sizes the stepped version had, so a settled ring
+                    // looks identical -- but between them it now moves,
+                    // which is the whole point: the taper slides along the
+                    // ring with the level instead of hopping after it.
+                    val scale =
+                        1f + 0.5f * (TICK_TAPER_REACH - distanceFromLandmark).coerceIn(0f, TICK_TAPER_REACH)
 
                     // Only length grows for a landmark tick -- thickness
                     // stays the same as every other tick, so the taper reads
@@ -631,7 +637,7 @@ fun VolumeDisc(
 
                     rotate(degrees = angle, pivot = tickCenter) {
                         drawRoundRect(
-                            color = handColorAt(angle),
+                            color = accentColor,
                             topLeft = Offset(
                                 tickCenter.x - length / 2f,
                                 tickCenter.y - thickness / 2f
@@ -648,7 +654,7 @@ fun VolumeDisc(
                 val markerRadians =
                     Math.toRadians((visibleStartAngle + visibleSweepAngle * fraction).toDouble())
                 drawCircle(
-                    color = handColorAt(visibleStartAngle + visibleSweepAngle * fraction),
+                    color = accentColor,
                     radius = ringWidth * (0.34f + chase * 0.16f),
                     center = Offset(
                         center.x + (cos(markerRadians) * ringRadius).toFloat(),
@@ -690,15 +696,14 @@ fun VolumeDisc(
         } else {
             if (icon != null) {
                 Box(
-                    modifier = Modifier.offset(y = -diameter * 0.17f),
+                    modifier = Modifier
+                        .offset(y = -diameter * 0.17f)
+                        .size(diameter * 0.14f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = contentColor,
-                        modifier = Modifier.size(diameter * 0.14f)
-                    )
+                    CompositionLocalProvider(LocalContentColor provides contentColor) {
+                        icon()
+                    }
                 }
             }
 
