@@ -65,8 +65,6 @@ import com.nomixer.volume.data.activeShowValue
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
-import com.nomixer.volume.haptics.SliderHaptics
-import com.nomixer.volume.haptics.rememberSliderHaptics
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -169,7 +167,6 @@ private fun PopupAnchor.expandDirection(): Int = when (this) {
 internal fun Modifier.expandOnSwipe(
     verticalAxis: Boolean,
     direction: Int,
-    haptics: SliderHaptics,
     onExpand: () -> Unit
 ): Modifier = pointerInput(verticalAxis, direction) {
     val threshold = 48.dp.toPx()
@@ -184,7 +181,6 @@ internal fun Modifier.expandOnSwipe(
 
         if (!fired && goingTheRightWay && abs(travelled) >= threshold) {
             fired = true
-            haptics.edge()
             onExpand()
         }
     }
@@ -272,6 +268,12 @@ fun CollapsedVolumePopup(
         }
         onInteract()
     }
+
+    // One lit angle for every glass surface in this popup -- the panel's
+    // face, its rim, and the disc's own ring track -- drifting slowly so the
+    // reflection travels across the glass instead of sitting on it. Shared
+    // rather than taken per surface so they stay one beam.
+    val beamAngle = rememberGlassBeamAngle(preferences.glassLightAngle)
 
     // Just the current level: the compact popup is a glance, so the maximum
     // (and the stream's name) are left to the full mixer.
@@ -399,7 +401,7 @@ fun CollapsedVolumePopup(
                 alpha = preferences.paintedPanelAlpha()
             )
         },
-        animationSpec = Motion.defaultEffectsSpec(),
+        animationSpec = Motion.ColorShift,
         label = "popupPanel"
     )
     val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
@@ -416,7 +418,7 @@ fun CollapsedVolumePopup(
     // how a switched-on shadow ended up looking switched off.
     val shadow by animateColorAsState(
         targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
-        animationSpec = Motion.defaultEffectsSpec(),
+        animationSpec = Motion.ColorShift,
         label = "popupShadow"
     )
     val buttonShape = RoundedCornerShape(percent = preferences.activeButtonCornerRadius().coerceIn(0, 50))
@@ -428,8 +430,6 @@ fun CollapsedVolumePopup(
     // pointerInput can intermittently steal a child's tap before it resolves
     // as a click. It now lives on just the slider component in each branch
     // below, so the button is a plain sibling outside the gesture's reach.
-    val haptics = rememberSliderHaptics()
-
     val expandSwipeModifier = Modifier.expandOnSwipe(
         // The horizontal bar spends the horizontal axis on volume, so its
         // expand gesture moves up or down instead.
@@ -439,7 +439,6 @@ fun CollapsedVolumePopup(
         } else {
             preferences.activeAnchor().expandDirection()
         },
-        haptics = haptics,
         onExpand = onExpand
     )
 
@@ -470,7 +469,7 @@ fun CollapsedVolumePopup(
                 shape = panelShape,
                 baseColor = panelColor,
                 blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                lightAngle = preferences.glassLightAngle,
+                lightAngle = beamAngle,
                 lightWidth = preferences.glassLightWidth,
                 noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
                 noiseAlpha = preferences.glassNoiseAlpha,
@@ -689,7 +688,7 @@ fun CollapsedVolumePopup(
                         atmosphereColors = atmosphereColors,
                         grainIntensity = preferences.atmosphereGrainIntensity,
                         grainSize = preferences.atmosphereGrainSize,
-                        lightAngle = preferences.glassLightAngle,
+                        lightAngle = beamAngle,
                         lightWidth = preferences.glassLightWidth,
                         blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                         noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
@@ -743,7 +742,7 @@ fun CollapsedVolumePopup(
                     .border(
                         1.dp,
                         glassEdgeLightBrush(
-                            preferences.glassLightAngle,
+                            beamAngle,
                             preferences.glassLightWidth
                         ),
                         panelShape

@@ -4,7 +4,6 @@ import android.media.AudioManager
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,8 +41,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.R
-import com.nomixer.volume.haptics.SliderHaptics
-import com.nomixer.volume.haptics.rememberSliderHaptics
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
 import com.nomixer.volume.ui.theme.Motion
 import org.joor.Reflect
@@ -81,7 +78,6 @@ fun RingerModeButton(
     audioManager: AudioManager,
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
-    haptics: SliderHaptics = rememberSliderHaptics(),
     onChange: (() -> Unit)? = null
 ) {
     var ringerMode by remember { mutableIntStateOf(audioManager.ringerMode) }
@@ -106,19 +102,23 @@ fun RingerModeButton(
 
     val containerColor by animateColorAsState(
         targetValue = targetContainer,
-        animationSpec = Motion.fastEffectsSpec(),
+        animationSpec = Motion.ColorShift,
         label = "ringerContainer"
     )
     val contentColor by animateColorAsState(
         targetValue = targetContent,
-        animationSpec = Motion.fastEffectsSpec(),
+        animationSpec = Motion.ColorShift,
         label = "ringerContent"
     )
 
-    // Swing carries the two modes that make a noise; dip is the silent one
-    // falling still. Only one of them moves per switch.
-    val swing = remember { Animatable(0f) }
-    val dip = remember { Animatable(1f) }
+    // One impulse per mode change, displaced on the instant and then sprung
+    // back to rest. A switch isn't a scripted sequence of poses -- it's the
+    // button being knocked and recovering -- so the shape of the recovery is
+    // the spring's, not a list of keyframes'. Every mode moves both the
+    // button and the glyph on it: they're the same object reacting, and one
+    // of them holding still while the other moves reads as the icon having
+    // been swapped out underneath.
+    val impulse = remember { Animatable(0f) }
     var settled by remember { mutableStateOf(false) }
 
     LaunchedEffect(ringerMode) {
@@ -129,50 +129,25 @@ fun RingerModeButton(
             return@LaunchedEffect
         }
 
-        when (ringerMode) {
-            AudioManager.RINGER_MODE_VIBRATE -> {
-                haptics.tick(intensity = 0.7f)
-                swing.animateTo(
-                    targetValue = 0f,
-                    animationSpec = keyframes {
-                        durationMillis = 340
-                        0f at 0
-                        1f at 45
-                        -0.85f at 100
-                        0.6f at 155
-                        -0.4f at 210
-                        0.18f at 270
-                    }
-                )
-            }
+        // Kicked to full displacement and released. Landing here mid-recovery
+        // (two taps in a row) re-displaces from wherever it is rather than
+        // waiting for the first one to finish.
+        impulse.snapTo(1f)
+        impulse.animateTo(0f, Motion.Nudge)
+    }
 
-            AudioManager.RINGER_MODE_SILENT -> {
-                haptics.mute(true)
-                dip.animateTo(
-                    targetValue = 1f,
-                    animationSpec = keyframes {
-                        durationMillis = 300
-                        1f at 0
-                        0.84f at 110
-                        1.03f at 220
-                    }
-                )
-            }
-
-            else -> {
-                haptics.mute(false)
-                swing.animateTo(
-                    targetValue = 0f,
-                    animationSpec = keyframes {
-                        durationMillis = 460
-                        0f at 0
-                        1f at 110
-                        -0.7f at 230
-                        0.3f at 350
-                    }
-                )
-            }
-        }
+    // How each mode wears that one impulse. Ringing swings widest, vibrate
+    // shivers tighter and faster-reading, silent barely turns and takes the
+    // displacement into the button's own size instead -- it's the mode that
+    // stops rather than sounds.
+    val glyphSwing = when (ringerMode) {
+        AudioManager.RINGER_MODE_VIBRATE -> 7f
+        AudioManager.RINGER_MODE_SILENT -> 2f
+        else -> 13f
+    }
+    val buttonSquash = when (ringerMode) {
+        AudioManager.RINGER_MODE_SILENT -> 0.13f
+        else -> 0.07f
     }
 
     // Deliberately not an IconButton: that applies its own 40dp size and a
@@ -183,8 +158,11 @@ fun RingerModeButton(
         modifier = modifier
             .size(size)
             .graphicsLayer {
-                scaleX = dip.value
-                scaleY = dip.value
+                // The button takes the impulse as size: knocked in, sprung
+                // back out past its own edge, settled.
+                val knocked = 1f - buttonSquash * impulse.value
+                scaleX = knocked
+                scaleY = knocked
             }
             .clip(shape)
             .background(color = containerColor)
@@ -228,16 +206,16 @@ fun RingerModeButton(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Computed here, in composable scope, rather than inside
-        // transitionSpec below -- that lambda isn't itself composable, so it
-        // can't call Motion's own spec accessors directly.
-        val iconFade = Motion.fastEffectsSpec<Float>()
-        val iconScale = Motion.fastSpatialSpec<Float>()
         AnimatedContent(
             targetState = ringerMode,
             transitionSpec = {
-                (fadeIn(iconFade) + scaleIn(iconScale, initialScale = 0.65f))
-                    .togetherWith(fadeOut(iconFade) + scaleOut(iconScale, targetScale = 0.65f))
+                // The glyph crossfades and grows into place on the shared
+                // springs rather than on fixed lengths, so it arrives with
+                // the button's own recovery instead of on a clock of its own.
+                (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.6f))
+                    .togetherWith(
+                        fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.6f)
+                    )
             },
             label = "ringerIcon"
         ) { mode ->
@@ -250,11 +228,7 @@ fun RingerModeButton(
                     .graphicsLayer {
                         // A bell swings from its crown, so the pivot sits at
                         // the top of the icon rather than its middle.
-                        rotationZ = swing.value * if (mode == AudioManager.RINGER_MODE_VIBRATE) {
-                            6f
-                        } else {
-                            11f
-                        }
+                        rotationZ = impulse.value * glyphSwing
                         transformOrigin = TransformOrigin(0.5f, 0.1f)
                     },
                 tint = contentColor

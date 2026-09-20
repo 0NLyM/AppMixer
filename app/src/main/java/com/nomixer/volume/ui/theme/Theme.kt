@@ -203,26 +203,33 @@ private fun ColorScheme.animated(): ColorScheme {
     // Locals are prefixed rather than named after the roles they animate:
     // `val primary by animateColorAsState(primary, ...)` would be a
     // declaration referring to itself.
-    val colorSpec = Motion.defaultEffectsSpec<Color>()
-    val animatedPrimary by animateColorAsState(primary, colorSpec, label = "primary")
-    val animatedOnPrimary by animateColorAsState(onPrimary, colorSpec, label = "onPrimary")
+    val animatedPrimary by animateColorAsState(primary, Motion.ColorShift, label = "primary")
+    val animatedOnPrimary by animateColorAsState(
+        onPrimary, Motion.ColorShift, label = "onPrimary"
+    )
     val animatedPrimaryContainer by animateColorAsState(
-        primaryContainer, colorSpec, label = "primaryContainer"
+        primaryContainer, Motion.ColorShift, label = "primaryContainer"
     )
     val animatedOnPrimaryContainer by animateColorAsState(
-        onPrimaryContainer, colorSpec, label = "onPrimaryContainer"
+        onPrimaryContainer, Motion.ColorShift, label = "onPrimaryContainer"
     )
-    val animatedBackground by animateColorAsState(background, colorSpec, label = "background")
+    val animatedBackground by animateColorAsState(
+        background, Motion.ColorShift, label = "background"
+    )
     val animatedOnBackground by animateColorAsState(
-        onBackground, colorSpec, label = "onBackground"
+        onBackground, Motion.ColorShift, label = "onBackground"
     )
-    val animatedSurface by animateColorAsState(surface, colorSpec, label = "surface")
-    val animatedOnSurface by animateColorAsState(onSurface, colorSpec, label = "onSurface")
-    val animatedTertiary by animateColorAsState(tertiary, colorSpec, label = "tertiary")
-    val animatedOnTertiary by animateColorAsState(onTertiary, colorSpec, label = "onTertiary")
-    val animatedOutline by animateColorAsState(outline, colorSpec, label = "outline")
+    val animatedSurface by animateColorAsState(surface, Motion.ColorShift, label = "surface")
+    val animatedOnSurface by animateColorAsState(
+        onSurface, Motion.ColorShift, label = "onSurface"
+    )
+    val animatedTertiary by animateColorAsState(tertiary, Motion.ColorShift, label = "tertiary")
+    val animatedOnTertiary by animateColorAsState(
+        onTertiary, Motion.ColorShift, label = "onTertiary"
+    )
+    val animatedOutline by animateColorAsState(outline, Motion.ColorShift, label = "outline")
     val animatedOutlineVariant by animateColorAsState(
-        outlineVariant, colorSpec, label = "outlineVariant"
+        outlineVariant, Motion.ColorShift, label = "outlineVariant"
     )
 
     return copy(

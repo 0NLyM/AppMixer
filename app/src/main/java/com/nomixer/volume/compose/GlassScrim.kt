@@ -1,10 +1,15 @@
 package com.nomixer.volume.compose
 
+import android.animation.ValueAnimator
 import android.graphics.RuntimeShader
 import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -32,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -153,6 +159,53 @@ private fun beamStops(width: Float): List<Float> {
 /** Peak brightness of the beam across the panel's face, and along its rim. */
 private const val FACE_LIGHT_ALPHA = 0.26f
 private const val EDGE_LIGHT_ALPHA = 0.55f
+
+/** One full turn of the reflection across the glass, in milliseconds. */
+private const val BEAM_TURN_MILLIS = 44_000f
+
+/**
+ * How often the beam's angle is actually moved. At one turn every 44
+ * seconds the light travels 0.008 degrees per millisecond, so a step every
+ * 90ms is under a degree and reads as continuous -- while costing a
+ * seventh of the work that advancing it on every single frame would.
+ *
+ * That cost matters here more than it looks: the angle feeds a gradient
+ * shader built in the draw phase *and* the rim light's own brush, so it
+ * can't be a pure graphics-layer transform the way a spin on a finished
+ * image could be. Slow light is cheap light.
+ */
+private const val BEAM_STEP_MILLIS = 90L
+
+/**
+ * The lit angle of the glass, drifting slowly and forever around the panel.
+ *
+ * Returned as one number for the caller to hand to *both* halves of the
+ * effect -- [glassBeamBrush] across the face and [glassEdgeLightBrush]
+ * around the rim -- because they are one beam: rotating the face's light
+ * while the rim's stayed put would pull the effect in half. The panel
+ * itself never turns; only where the light falls on it does.
+ */
+@Composable
+fun rememberGlassBeamAngle(lightAngle: Float): Float {
+    var drift by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        // Nothing here is a transition, so there's no spring to reach for:
+        // a continuous turn has to advance evenly or it visibly pulses.
+        // Stops with the composition it belongs to, like any LaunchedEffect.
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            return@LaunchedEffect
+        }
+
+        val step = 360f * BEAM_STEP_MILLIS / BEAM_TURN_MILLIS
+        while (true) {
+            delay(BEAM_STEP_MILLIS)
+            drift = (drift + step) % 360f
+        }
+    }
+
+    return lightAngle + drift
+}
 
 /**
  * The beam across the glass's own face: white light *added* along it, over a

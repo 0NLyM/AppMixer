@@ -2,6 +2,7 @@ package com.nomixer.volume.compose
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -53,7 +54,7 @@ fun ToggleButton(
         } else {
             MaterialTheme.colorScheme.primaryContainer
         },
-        animationSpec = Motion.fastEffectsSpec(),
+        animationSpec = Motion.ColorShift,
         label = "toggleContainer"
     )
     val contentColor by animateColorAsState(
@@ -62,7 +63,7 @@ fun ToggleButton(
         } else {
             MaterialTheme.colorScheme.onPrimaryContainer
         },
-        animationSpec = Motion.fastEffectsSpec(),
+        animationSpec = Motion.ColorShift,
         label = "toggleContent"
     )
     TooltipBox(
@@ -82,16 +83,14 @@ fun ToggleButton(
                 )
         ) {
             // The glyph itself swaps with a small pop rather than
-            // blinking from one shape to the other. Computed here, in
-            // composable scope, since transitionSpec below isn't itself
-            // composable and can't call Motion's own spec accessors.
-            val iconFade = Motion.fastEffectsSpec<Float>()
-            val iconScale = Motion.fastSpatialSpec<Float>()
+            // blinking from one shape to the other.
             AnimatedContent(
                 targetState = checked,
                 transitionSpec = {
-                    (fadeIn(iconFade) + scaleIn(iconScale, initialScale = 0.65f))
-                        .togetherWith(fadeOut(iconFade) + scaleOut(iconScale, targetScale = 0.65f))
+                    (fadeIn(tween(180)) + scaleIn(tween(220), initialScale = 0.65f))
+                        .togetherWith(
+                            fadeOut(tween(120)) + scaleOut(tween(160), targetScale = 0.65f)
+                        )
                 },
                 label = "toggleIcon"
             ) { isChecked ->

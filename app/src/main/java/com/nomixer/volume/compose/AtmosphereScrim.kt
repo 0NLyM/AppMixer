@@ -1,10 +1,13 @@
 package com.nomixer.volume.compose
 
+import android.animation.ValueAnimator
 import android.graphics.RuntimeShader
 import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -23,8 +26,11 @@ import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * The Atmosphere background: a Nothing-OS-flavoured alternative to
@@ -114,6 +120,26 @@ private const val ATMOSPHERE_SHADER_SRC = """
 private const val ATMOSPHERE_TURN_RADIANS = 2.1f
 private const val ATMOSPHERE_SETTLE_MILLIS = 650
 
+private const val TWO_PI = 6.2831855f
+
+/**
+ * One full turn of the field on its own axis once it has settled, and one
+ * full lap of its drift, in milliseconds. Both deliberately long and
+ * mismatched: two slow cycles of different lengths never quite repeat the
+ * same frame, so the panel keeps moving without ever looking like a loop.
+ */
+private const val ATMOSPHERE_SPIN_MILLIS = 62_000
+private const val ATMOSPHERE_DRIFT_MILLIS = 27_000
+
+/**
+ * How far the field wanders from centre, as a fraction of the panel's
+ * shortest side, and the overscan that keeps its corners covered while it
+ * does. Both small: this is a field that breathes, not one that slides
+ * around behind a window.
+ */
+private const val ATMOSPHERE_DRIFT_FRACTION = 0.035f
+private const val ATMOSPHERE_OVERSCAN = 1.12f
+
 // Same reasoning as GlassScrim's own noiseBrush cache: compiling AGSL is far
 // too expensive to redo whenever a panel appears. Unlike that cache this one
 // is never invalidated by size (the shader reads size from its own
@@ -200,12 +226,52 @@ private fun DrawScope.atmosphereBrush(
 internal fun rememberAtmosphereSpin(): Animatable<Float, AnimationVector1D> {
     val spin = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            spin.snapTo(ATMOSPHERE_TURN_RADIANS)
+            return@LaunchedEffect
+        }
+
         spin.animateTo(
             targetValue = ATMOSPHERE_TURN_RADIANS,
             animationSpec = tween(ATMOSPHERE_SETTLE_MILLIS, easing = FastOutSlowInEasing)
         )
+
+        // And then it never stops. Evenly paced rather than sprung, because
+        // a continuous turn that eases would visibly pulse once a minute;
+        // the shader reads this through sin/cos, so the repeat's jump back
+        // by a whole turn lands on exactly the frame it left.
+        spin.animateTo(
+            targetValue = spin.value + TWO_PI,
+            animationSpec = infiniteRepeatable(
+                animation = tween(ATMOSPHERE_SPIN_MILLIS, easing = LinearEasing)
+            )
+        )
     }
     return spin
+}
+
+/**
+ * The field's slow lap around its own centre, in radians. Separate from
+ * [rememberAtmosphereSpin] because it drives something else entirely: the
+ * spin turns the field's own coordinates inside the shader, this moves the
+ * finished result as a whole, which the GPU does for free.
+ */
+@Composable
+private fun rememberAtmosphereDrift(): Animatable<Float, AnimationVector1D> {
+    val drift = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            return@LaunchedEffect
+        }
+
+        drift.animateTo(
+            targetValue = TWO_PI,
+            animationSpec = infiniteRepeatable(
+                animation = tween(ATMOSPHERE_DRIFT_MILLIS, easing = LinearEasing)
+            )
+        )
+    }
+    return drift
 }
 
 /**
@@ -225,19 +291,38 @@ fun AtmosphereBackground(
     grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT
 ) {
     val spin = rememberAtmosphereSpin()
+    val drift = rememberAtmosphereDrift()
 
-    Box(
-        modifier
-            .clip(shape)
-            .drawBehind {
-                val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), spin.value, grainIntensity, grainSize)
-                if (brush != null) {
-                    drawRect(brush, alpha = baseColor.alpha)
-                } else {
-                    drawRect(baseColor)
+    Box(modifier.clip(shape)) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                    // Read here rather than in composition: the lap is a
+                    // draw-phase transform of an already-painted field, so
+                    // it costs a matrix and nothing else -- no recomposition,
+                    // no shader rebuilt, no layout touched. Oversized so the
+                    // panel's own corners stay covered all the way round.
+                    val lap = drift.value
+                    val reach = size.minDimension * ATMOSPHERE_DRIFT_FRACTION
+                    translationX = cos(lap) * reach
+                    // Flattened into an ellipse rather than a circle: a
+                    // perfectly round orbit reads as a mechanism, an
+                    // off-round one reads as weather.
+                    translationY = sin(lap) * reach * 0.6f
+                    scaleX = ATMOSPHERE_OVERSCAN
+                    scaleY = ATMOSPHERE_OVERSCAN
                 }
-            }
-    )
+                .drawBehind {
+                    val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), spin.value, grainIntensity, grainSize)
+                    if (brush != null) {
+                        drawRect(brush, alpha = baseColor.alpha)
+                    } else {
+                        drawRect(baseColor)
+                    }
+                }
+        )
+    }
 }
 
 /**

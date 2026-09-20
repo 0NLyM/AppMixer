@@ -1,6 +1,7 @@
 package com.nomixer.volume.compose
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,17 +34,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
-import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.platform.LocalDensity
-import com.nomixer.volume.haptics.SliderHaptics
-import com.nomixer.volume.haptics.rememberSliderHaptics
-import com.nomixer.volume.haptics.rememberSliderHapticStepTracker
 import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Motion
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 @Composable
 fun TrackSlider(
@@ -63,14 +59,12 @@ fun TrackSlider(
     cornerRadius: Dp = LocalSliderCornerRadius.current,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     /**
-     * How many discrete haptic "clicks" [valueRange] is divided into --
-     * `null` (the default) rounds the range's own width to the nearest
-     * whole unit, which lines up with a real per-unit control (a system
-     * volume stream). Pass an explicit count for a continuous 0..1 range
-     * that has no natural unit of its own (the per-app slider).
+     * How the fill settles once nothing is steering it. The mixer's own
+     * inner rows hand in [Motion.soft] instead: a whole panel of bars
+     * reacting at once should read as one body moving, not as a dozen
+     * separate springs each with its own opinion.
      */
-    hapticSteps: Int? = null,
-    haptics: SliderHaptics = rememberSliderHaptics(),
+    settleSpec: FiniteAnimationSpec<Float> = Motion.fast(),
     content: @Composable BoxScope.() -> Unit = {}
 ) {
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -90,23 +84,29 @@ fun TrackSlider(
     // under a finger, where it has to track the touch exactly or dragging
     // feels like the bar is lagging behind the hand.
     var dragging by remember { mutableStateOf(false) }
-    val fill = remember { Animatable(targetFraction) }
-    // Carried from the finger's own release speed into the settling spring,
-    // rather than the spring always starting cold at zero -- a fast flick
-    // keeps travelling into the spring instead of visibly stalling for a
-    // beat first. Reset once consumed by the LaunchedEffect below.
+    // Carried out of the drag and handed to the spring below, so a flick
+    // keeps travelling the way it was thrown instead of stopping dead the
+    // instant the finger leaves. In fraction-of-the-track per second, the
+    // same unit [fill] itself holds.
     var releaseVelocity by remember { mutableFloatStateOf(0f) }
-    val hapticTracker = rememberSliderHapticStepTracker(
-        steps = (hapticSteps ?: range.roundToInt()).coerceAtLeast(1),
-        haptics = haptics
-    )
-    val spatialSpec = Motion.fastSpatialSpec<Float>()
+    val fill = remember { Animatable(targetFraction) }
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
             fill.snapTo(targetFraction)
         } else {
-            fill.animateTo(targetFraction, spatialSpec, initialVelocity = releaseVelocity)
+            // Consumed before the animation starts, not after it ends: a
+            // retarget landing mid-settle (another volume key, say) has to
+            // pick the spring up at its *current* velocity, which is what
+            // animateTo does on its own, rather than re-injecting a flick
+            // that already happened.
+            val thrown = releaseVelocity
+            releaseVelocity = 0f
+            if (thrown != 0f) {
+                fill.animateTo(targetFraction, settleSpec, initialVelocity = thrown)
+            } else {
+                fill.animateTo(targetFraction, settleSpec)
+            }
         }
     }
 
@@ -135,38 +135,35 @@ fun TrackSlider(
                 if (enabled) {
                     var startValue = 0f
                     var startX = 0f
-                    val velocityTracker = VelocityTracker()
+                    val tracker = VelocityTracker()
 
                     detectHorizontalDragGestures(
                         onDragStart = { offset ->
                             startValue = latestValue
                             startX = offset.x
+                            tracker.resetTracking()
                             dragging = true
-                            velocityTracker.resetTracking()
-                            hapticTracker.onDragStart(targetFraction)
                         },
                         onDragEnd = {
-                            dragging = false
+                            // Pixels per second along the track, over the
+                            // track's own width: the fill's fraction moves at
+                            // exactly the speed the finger was moving.
+                            val width = size.width.toFloat()
                             releaseVelocity =
-                                velocityTracker.calculateVelocity().x / size.width.toFloat()
+                                if (width > 0f) tracker.calculateVelocity().x / width else 0f
+                            dragging = false
                         },
                         onDragCancel = {
-                            dragging = false
                             releaseVelocity = 0f
+                            dragging = false
                         }
                     ) { change, _ ->
-                        velocityTracker.addPointerInputChange(change)
+                        tracker.addPosition(change.uptimeMillis, change.position)
                         val dragAmount = change.position.x - startX
                         val changedPercentage = dragAmount / size.width.toFloat()
                         val newValue = (startValue + changedPercentage * range)
                         val coercedNewValue =
                             newValue.coerceIn(valueRange.start, valueRange.endInclusive)
-                        val newFraction = if (range <= 0f) {
-                            0f
-                        } else {
-                            (coercedNewValue - valueRange.start) / range
-                        }
-                        hapticTracker.onDrag(newFraction)
                         if (coercedNewValue != latestValue) {
                             onValueChange(coercedNewValue)
                         }

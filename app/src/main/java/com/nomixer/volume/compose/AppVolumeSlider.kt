@@ -26,6 +26,7 @@ import com.nomixer.volume.data.App
 import com.nomixer.volume.icons.Hook
 import com.nomixer.volume.icons.HookOff
 import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
+import com.nomixer.volume.ui.theme.Motion
 import com.nomixer.volume.ui.theme.Typography
 import kotlin.math.roundToInt
 
@@ -57,11 +58,8 @@ fun AppVolumeSlider(
                     APP_SLIDER_SHADOW_ELEVATION_DP
                 ),
             value = app.volume,
-            // App volume has no real per-unit steps of its own (it's a
-            // continuous 0..1 fraction) -- 24 gives it the same tick density
-            // as the disc's own decorative ring, so it still buzzes as it
-            // crosses.
-            hapticSteps = 24,
+            // A row in a list of rows: follows rather than leads.
+            settleSpec = Motion.soft(),
             onValueChange = { value ->
                 app.volume = value
                 onChange?.invoke()

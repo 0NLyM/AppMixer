@@ -1485,5 +1485,52 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-20 — 1.0.58
+
+- Rebuilt the overlay's motion from the 1.0.56 code, dropping the previous
+  release's pass entirely along with the haptics that came with it (the
+  `VIBRATE` permission is gone again with them). What replaces it is one
+  spring family shared by everything that moves: a fast tier for anything a
+  finger is steering directly, a slower one for whole surfaces arriving,
+  a softer one for elements that follow rather than lead, and a critically
+  damped one for colour. Nothing in the popup travels on a fixed duration
+  any more.
+- The popup and the mixer it grows into now arrive on a single spring that
+  owns every part of the appearance at once. The window itself no longer
+  fades underneath on an interpolator and a length of its own -- two
+  stacked curves on one arrival was what made the popup look like it came
+  up in two steps. Coming back while it's still dismissing now bends the
+  motion around from wherever it had got to, at the speed it was already
+  carrying, rather than restarting it.
+- A bar popup enters and leaves along the screen edge it's anchored to,
+  growing out of that same edge; a side-anchored one travels sideways, a
+  top or bottom one up or down, and a centred one simply grows.
+- The disc forms by turning counterclockwise into place about its own
+  centre, and doesn't fade as a whole while it does: the fade belongs to
+  the index layer -- the ticks and the mark riding the fill's leading edge
+  -- so the face turns in rather than materialising.
+- Every slider now carries the finger's own release velocity into the
+  spring it settles on, so a flick keeps travelling instead of stopping
+  dead where the finger left, and still tracks the touch exactly 1:1 while
+  one is down. A volume key landing mid-settle retargets the same spring
+  from the speed it's currently carrying instead of starting again -- the
+  disc's tick ring especially, which is where restarting read worst.
+- The mixer's own inner rows settle on the softer tier, so a panel of them
+  reacting at once reads as one body moving rather than a dozen separate
+  springs.
+- The ringer switch takes one impulse per mode change and springs back from
+  it, rather than running a scripted sequence of poses -- and every mode
+  now moves both the button and the glyph on it, so the switch reacts as
+  one object instead of looking like the icon was swapped out underneath.
+- Glass: the reflection drifts slowly and continuously around the panel,
+  face and rim together as one beam, while the panel itself stays put.
+- Atmosphere: the field keeps turning on its own axis after it settles, and
+  drifts around its centre on a slow, off-round lap -- the turn inside the
+  shader, the lap as a pure graphics-layer transform.
+- All of it honours the platform's "Remove animations" setting: the
+  travelling springs collapse to an instant snap and the continuous loops
+  don't start, while crossfades -- which carry no travel to object to --
+  are left alone.
+
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.

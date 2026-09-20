@@ -3,8 +3,6 @@ package com.nomixer.volume
 import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback
 import android.accessibilityservice.AccessibilityService
-import android.animation.Animator
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -25,7 +23,6 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -44,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -57,7 +55,6 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import kotlinx.coroutines.launch
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
@@ -66,6 +63,7 @@ import com.nomixer.volume.compose.AtmosphereBackground
 import com.nomixer.volume.compose.GlassBackground
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.glassEdgeLightBrush
+import com.nomixer.volume.compose.rememberGlassBeamAngle
 import com.nomixer.volume.compose.PANEL_SHADOW_BLUR_DP
 import com.nomixer.volume.compose.PanelShadow
 import com.nomixer.volume.data.shadowAlpha
@@ -107,6 +105,50 @@ private fun PopupAnchor.transformOrigin(): TransformOrigin {
     return TransformOrigin(x, y)
 }
 
+/**
+ * Which way a panel travels as it arrives, as a unit vector: in from the
+ * screen edge it's anchored to. A laterally anchored bar comes in sideways,
+ * a top or bottom one comes down or up, and a centered popup has no edge to
+ * have come from, so it only grows.
+ *
+ * Sideways wins for a corner anchor: the vertical bar lives in corners and
+ * still belongs to the side of the screen, not to the top of it.
+ */
+private fun PopupAnchor.enterDirection(): Offset {
+    val x = when (this) {
+        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> -1f
+        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1f
+        else -> 0f
+    }
+    if (x != 0f) {
+        return Offset(x, 0f)
+    }
+
+    val y = when (this) {
+        PopupAnchor.TopCenter -> -1f
+        PopupAnchor.BottomCenter -> 1f
+        else -> 0f
+    }
+    return Offset(0f, y)
+}
+
+/**
+ * How far a panel travels in from its edge. Deliberately modest: the
+ * overlay window is only as big as the panel it holds, so anything that
+ * leaves the panel's own bounds is clipped by the window rather than
+ * sliding in from off-screen. This is the nudge that gives the arrival a
+ * direction -- the scale growing out of the same edge is what sells the
+ * rest of it.
+ */
+private val ENTER_TRAVEL_DP = 20.dp
+
+/**
+ * How far forward the disc starts before unwinding counterclockwise into
+ * place. Enough to read as a turn on a round face -- a dial settling rather
+ * than a card sliding in -- without spinning far enough to be a trick.
+ */
+private const val DISC_FORM_DEGREES = 22f
+
 @SuppressLint("AccessibilityPolicy")
 class Service : AccessibilityService() {
     companion object {
@@ -114,7 +156,13 @@ class Service : AccessibilityService() {
 
         private const val TAG = "NoMixer.Service"
 
-        private const val ANIMATION_DURATION = 300L
+        /**
+         * How long the exit spring is given before the window comes down.
+         * Comfortably past the point where [Motion.default] has taken the
+         * panel's own alpha to nothing, so the teardown is never what the
+         * user sees.
+         */
+        private const val EXIT_SETTLE_MS = 420L
 
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
@@ -138,19 +186,35 @@ class Service : AccessibilityService() {
     private lateinit var manager: Manager
 
     private val handler = object : Handler(Looper.getMainLooper()) {
+        /**
+         * Torn down on a delay rather than on an animation callback: the
+         * exit itself belongs to the composition (see [contentVisible]),
+         * which is what keeps it on the same spring as the arrival, but the
+         * window has to come down whether or not that composition is still
+         * alive to finish. This is the guarantee; the spring is the looks.
+         */
+        private val removeViewRunnable = Runnable {
+            if (!viewVisible && view != null) {
+                Log.i(TAG, "remove view")
+                lifecycle?.currentState = Lifecycle.State.DESTROYED
+                windowManager.removeView(view)
+                view = null
+            }
+        }
+
         fun hideView() {
             if (viewVisible) {
                 Log.i(TAG, "animate out")
-                animateAlpha(layoutParams.alpha, 0f, ANIMATION_DURATION) {
-                    if (!viewVisible) {
-                        Log.i(TAG, "remove view")
-                        lifecycle?.currentState = Lifecycle.State.DESTROYED
-                        windowManager.removeView(view)
-                        view = null
-                    }
-                }
                 viewVisible = false
+                contentVisible = false
+                removeCallbacks(removeViewRunnable)
+                postDelayed(removeViewRunnable, EXIT_SETTLE_MS)
             }
+        }
+
+        /** Called when the popup comes back before its exit has finished. */
+        fun keepView() {
+            removeCallbacks(removeViewRunnable)
         }
 
         private val hideViewRunnable = Runnable(::hideView)
@@ -319,7 +383,7 @@ class Service : AccessibilityService() {
                                 alpha = preferences.paintedPanelAlpha()
                             )
                         },
-                        animationSpec = Motion.defaultEffectsSpec(),
+                        animationSpec = Motion.ColorShift,
                         label = "mixerPanel"
                     )
                     val sliderShadowColor by animateColorAsState(
@@ -328,7 +392,7 @@ class Service : AccessibilityService() {
                         } else {
                             Color.Black.copy(alpha = preferences.shadowAlpha())
                         },
-                        animationSpec = Motion.defaultEffectsSpec(),
+                        animationSpec = Motion.ColorShift,
                         label = "mixerSliderShadow"
                     )
                     // The panel's own shadow around its outer edge -- same
@@ -341,7 +405,7 @@ class Service : AccessibilityService() {
                     // CollapsedVolumePopup's own is.
                     val panelShadowColor by animateColorAsState(
                         targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
-                        animationSpec = Motion.defaultEffectsSpec(),
+                        animationSpec = Motion.ColorShift,
                         label = "mixerPanelShadow"
                     )
 
@@ -357,31 +421,63 @@ class Service : AccessibilityService() {
                     // jumped to the full mixer's size before the mixer had
                     // faded in. Swapping outright and animating only what's
                     // on screen keeps the window's own size a single step.
-                    val origin = preferences.activeAnchor().transformOrigin()
-                    // Scale (spatial) and alpha (effects) are two separate
-                    // Animatables on their own specs rather than one value
-                    // driving both -- a spatial spring is tuned to overshoot
-                    // the way a moving position does, and overshooting past
-                    // 1.0 alpha has nothing to overshoot into.
-                    val scaleSpec = Motion.defaultSpatialSpec<Float>()
-                    val alphaSpec = Motion.defaultEffectsSpec<Float>()
+                    // See CollapsedVolumePopup: one drifting beam shared by
+                    // the mixer's glass face and its rim.
+                    val beamAngle = rememberGlassBeamAngle(preferences.glassLightAngle)
+
+                    val anchor = preferences.activeAnchor()
+                    val origin = anchor.transformOrigin()
+                    val fromEdge = anchor.enterDirection()
+                    // The disc forms by turning about its own axis instead of
+                    // arriving from an edge, and doesn't fade as a whole: its
+                    // needle carries the fade on its own (see [VolumeDisc]),
+                    // and fading the disc would take the needle's fade with
+                    // it. Only on the way in -- on the way out the whole
+                    // thing still goes, or it would simply vanish.
+                    val discForms = !expanded && preferences.popupStyle == PopupStyle.Disc
+                    val visible = contentVisible
 
                     key(expanded) {
-                        val scaleAppear = remember { Animatable(0f) }
-                        val alphaAppear = remember { Animatable(0f) }
-                        LaunchedEffect(Unit) {
-                            launch { scaleAppear.animateTo(1f, scaleSpec) }
-                            launch { alphaAppear.animateTo(1f, alphaSpec) }
+                        // One spring for the entire arrival -- the panel, its
+                        // edge travel, its scale, its fade -- and the same one
+                        // played backwards on the way out. Every part of the
+                        // overlay is therefore on one clock: nothing can
+                        // arrive on a curve of its own and read as a step out
+                        // of time with the rest. It's an Animatable rather
+                        // than a duration so that re-showing the popup while
+                        // it's still dismissing bends the motion back from
+                        // wherever it had got to, at the speed it was already
+                        // carrying, instead of restarting it.
+                        val appear = remember { Animatable(0f) }
+                        LaunchedEffect(visible) {
+                            appear.animateTo(
+                                targetValue = if (visible) 1f else 0f,
+                                animationSpec = Motion.default()
+                            )
                         }
 
                         Box(
                             modifier = Modifier.graphicsLayer {
-                                val grown = 0.9f + 0.1f * scaleAppear.value
-                                alpha = alphaAppear.value
+                                val arrived = appear.value
+                                val away = 1f - arrived
+
+                                val grown = 1f - 0.08f * away
                                 scaleX = grown
                                 scaleY = grown
-                                // Grows out of the screen edge it hugs.
-                                transformOrigin = origin
+                                // A disc turns about its own centre; a bar
+                                // grows out of the screen edge it hugs.
+                                transformOrigin =
+                                    if (discForms) TransformOrigin.Center else origin
+
+                                val travel = ENTER_TRAVEL_DP.toPx() * away
+                                translationX = fromEdge.x * travel
+                                translationY = fromEdge.y * travel
+
+                                // Counterclockwise into place: it starts
+                                // turned forward and unwinds to true.
+                                rotationZ = if (discForms) away * DISC_FORM_DEGREES else 0f
+
+                                alpha = if (discForms && visible) 1f else arrived.coerceIn(0f, 1f)
                             }
                         ) {
                             if (expanded) {
@@ -414,7 +510,7 @@ class Service : AccessibilityService() {
                                             shape = mixerShape,
                                             baseColor = panelColor,
                                             blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                                            lightAngle = preferences.glassLightAngle,
+                                            lightAngle = beamAngle,
                                             lightWidth = preferences.glassLightWidth,
                                             noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
                                             noiseAlpha = preferences.glassNoiseAlpha,
@@ -471,7 +567,7 @@ class Service : AccessibilityService() {
                                                 .border(
                                                     1.dp,
                                                     glassEdgeLightBrush(
-                                                        preferences.glassLightAngle,
+                                                        beamAngle,
                                                         preferences.glassLightWidth
                                                     ),
                                                     mixerShape
@@ -789,7 +885,23 @@ class Service : AccessibilityService() {
     private var view: View? = null
     private var viewVisible = false
 
+    /**
+     * Whether the composition should be showing itself. Read by the overlay
+     * root, which owns the whole arrival and dismissal on one spring -- this
+     * is only the direction it's pointed in. Separate from [viewVisible],
+     * which is about the window: the content is still on screen, animating
+     * out, for a while after the window has been declared gone.
+     */
+    private var contentVisible by mutableStateOf(true)
+
     private fun showView() {
+        // Set before the composition is built, so the arrival animation the
+        // root reads is already pointed the right way, and before the
+        // teardown is cancelled, so a popup coming back mid-exit turns
+        // around from wherever it had got to.
+        contentVisible = true
+        handler.keepView()
+
         if (view == null) {
             Log.i(TAG, "add view")
             // Strictly before the view is built, so it's whatever app the
@@ -798,7 +910,13 @@ class Service : AccessibilityService() {
             atmosphereColorsState = sampleForegroundAppColors()
             // The view doesn't respond to input events if reused
             view = createView()
-            layoutParams.alpha = 0f
+            // The window itself never fades any more. It used to, on its own
+            // interpolator and its own length, underneath a composition
+            // fading on a different one -- two curves stacked on the same
+            // arrival, which is exactly what made the popup look like it
+            // came up in two steps. The window is simply present now, and
+            // the composition inside it owns every frame of the appearance.
+            layoutParams.alpha = 1f
             // Position settings may have changed since the last time the
             // popup was shown.
             applyConfiguredPosition(layoutParams)
@@ -808,54 +926,10 @@ class Service : AccessibilityService() {
 
         if (!viewVisible) {
             Log.i(TAG, "animate in")
-            animateAlpha(layoutParams.alpha, 1f, ANIMATION_DURATION)
             viewVisible = true
         }
 
         handler.startIdleTimer()
-    }
-
-    private var currentAnimator: ValueAnimator? = null
-
-    private fun animateAlpha(from: Float, to: Float, duration: Long, onEnd: (() -> Unit)? = null) {
-        currentAnimator?.cancel()
-
-        val animator = ValueAnimator.ofFloat(from, to)
-        animator.duration = duration
-        animator.interpolator = AccelerateDecelerateInterpolator()
-
-        animator.addUpdateListener { animation ->
-            if (view != null) {
-                layoutParams.alpha = animation.animatedValue as Float
-                windowManager.updateViewLayout(view, layoutParams)
-            }
-        }
-
-        animator.addListener(object : Animator.AnimatorListener {
-            var canceled = false
-
-            override fun onAnimationStart(animation: Animator) {}
-
-            override fun onAnimationEnd(animation: Animator) {
-                if (canceled) {
-                    return
-                }
-
-                layoutParams.alpha = to
-                windowManager.updateViewLayout(view, layoutParams)
-
-                onEnd?.invoke()
-            }
-
-            override fun onAnimationCancel(animation: Animator) {
-                canceled = true
-            }
-
-            override fun onAnimationRepeat(animation: Animator) {}
-        })
-
-        animator.start()
-        currentAnimator = animator
     }
 
     private val broadcastReceiver = object : BroadcastReceiver() {

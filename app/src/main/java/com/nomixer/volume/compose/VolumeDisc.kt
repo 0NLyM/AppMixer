@@ -30,7 +30,6 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
-import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -41,15 +40,11 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
-import com.nomixer.volume.haptics.SliderHaptics
-import com.nomixer.volume.haptics.rememberSliderHaptics
-import com.nomixer.volume.haptics.rememberSliderHapticStepTracker
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
@@ -77,15 +72,6 @@ fun VolumeDisc(
     gestureModifier: Modifier = Modifier,
     diameter: Dp = 200.dp,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
-    /**
-     * How many discrete haptic "clicks" [valueRange] is divided into --
-     * `null` (the default) rounds the range's own width to the nearest
-     * whole unit, which lines up with a real per-unit control (a system
-     * volume stream). Pass an explicit count for a continuous 0..1 range
-     * that has no natural unit of its own.
-     */
-    hapticSteps: Int? = null,
-    haptics: SliderHaptics = rememberSliderHaptics(),
     trackColor: Color = MaterialTheme.colorScheme.primaryContainer,
     fillColor: Color = MaterialTheme.colorScheme.primary,
     accentColor: Color = MaterialTheme.colorScheme.tertiary,
@@ -237,24 +223,41 @@ fun VolumeDisc(
     // The arc sweeps to a new level instead of snapping, but follows a
     // finger exactly while one is down.
     var dragging by remember { mutableStateOf(false) }
-    val fill = remember { Animatable(targetFraction) }
-    // Carried from the finger's own release speed, same as TrackSlider.
+    // The flick's own speed, in fraction-of-the-ring per second. See
+    // [TrackSlider]: a thumb thrown around the dial keeps the ring turning
+    // instead of stopping the moment it lifts.
     var releaseVelocity by remember { mutableFloatStateOf(0f) }
-    val hapticTracker = rememberSliderHapticStepTracker(
-        steps = (hapticSteps ?: range.roundToInt()).coerceAtLeast(1),
-        haptics = haptics
-    )
-    val spatialSpec = Motion.fastSpatialSpec<Float>()
+    val fill = remember { Animatable(targetFraction) }
+
+    // The one red mark on the face fades up as the disc turns into place
+    // (Service.kt owns that turn), so the disc forms rather than simply
+    // being there -- and it's this, not the disc itself, that carries the
+    // fade. Read in the draw phase below, so it repaints without
+    // recomposing anything.
+    val needle = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        needle.animateTo(1f, Motion.default())
+    }
 
     // Unconditional even though only Atmosphere mode ever uses it, and it
-    // costs nothing while unused: one turn that finishes and then holds.
+    // costs nothing while unused.
     val atmosphereSpin = rememberAtmosphereSpin()
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
             fill.snapTo(targetFraction)
         } else {
-            fill.animateTo(targetFraction, spatialSpec, initialVelocity = releaseVelocity)
+            // Consumed up front: a volume key landing while the ring is
+            // still settling has to retarget the spring from the speed it
+            // currently carries -- which is animateTo's own default -- and
+            // not re-throw a flick that already happened.
+            val thrown = releaseVelocity
+            releaseVelocity = 0f
+            if (thrown != 0f) {
+                fill.animateTo(targetFraction, Motion.fast(), initialVelocity = thrown)
+            } else {
+                fill.animateTo(targetFraction, Motion.fast())
+            }
         }
     }
 
@@ -297,42 +300,33 @@ fun VolumeDisc(
                 .pointerInput(range) {
                     var startValue = 0f
                     var startY = 0f
-                    val velocityTracker = VelocityTracker()
+                    val tracker = VelocityTracker()
 
                     detectVerticalDragGestures(
                         onDragStart = { offset ->
                             startValue = latestValue
                             startY = offset.y
+                            tracker.resetTracking()
                             dragging = true
-                            velocityTracker.resetTracking()
-                            hapticTracker.onDragStart(targetFraction)
                         },
                         onDragEnd = {
-                            dragging = false
-                            // Dragging up raises the value, so the fraction's
-                            // own velocity is the negative of the raw
-                            // downward-positive y velocity the tracker
-                            // reports.
+                            // Negated to match the gesture: up raises.
+                            val height = size.height.toFloat()
                             releaseVelocity =
-                                -velocityTracker.calculateVelocity().y / size.height.toFloat()
+                                if (height > 0f) -tracker.calculateVelocity().y / height else 0f
+                            dragging = false
                         },
                         onDragCancel = {
-                            dragging = false
                             releaseVelocity = 0f
+                            dragging = false
                         }
                     ) { change, _ ->
-                        velocityTracker.addPointerInputChange(change)
+                        tracker.addPosition(change.uptimeMillis, change.position)
                         // Dragging up raises the volume.
                         val dragAmount = startY - change.position.y
                         val newValue = startValue + (dragAmount / size.height.toFloat()) * range
                         val coercedNewValue =
                             newValue.coerceIn(valueRange.start, valueRange.endInclusive)
-                        val newFraction = if (range <= 0f) {
-                            0f
-                        } else {
-                            (coercedNewValue - valueRange.start) / range
-                        }
-                        hapticTracker.onDrag(newFraction)
                         if (coercedNewValue != latestValue) {
                             onValueChange(coercedNewValue)
                         }
@@ -344,6 +338,15 @@ fun VolumeDisc(
             // recomposing the disc.
             val fraction = fill.value
             val chase = (abs(targetFraction - fraction) * 7f).coerceAtMost(1f)
+
+            // The index layer -- the ticks and the mark riding the fill's
+            // leading edge -- is the only thing on the disc that fades in.
+            // The face, its track and its arc are already turning into
+            // place; fading those as well would just be the whole disc
+            // fading, which is what the turn is there to replace.
+            val handColor = accentColor.copy(
+                alpha = accentColor.alpha * needle.value.coerceIn(0f, 1f)
+            )
 
             // The disc is inset inside its box so the shadow has a ring of
             // its own to fade across. Drawn edge to edge, the shadow ended
@@ -603,7 +606,7 @@ fun VolumeDisc(
 
                     rotate(degrees = angle, pivot = tickCenter) {
                         drawRoundRect(
-                            color = accentColor,
+                            color = handColor,
                             topLeft = Offset(
                                 tickCenter.x - length / 2f,
                                 tickCenter.y - thickness / 2f
@@ -620,7 +623,7 @@ fun VolumeDisc(
                 val markerRadians =
                     Math.toRadians((visibleStartAngle + visibleSweepAngle * fraction).toDouble())
                 drawCircle(
-                    color = accentColor,
+                    color = handColor,
                     radius = ringWidth * (0.34f + chase * 0.16f),
                     center = Offset(
                         center.x + (cos(markerRadians) * ringRadius).toFloat(),
