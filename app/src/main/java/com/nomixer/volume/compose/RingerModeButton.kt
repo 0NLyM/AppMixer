@@ -8,8 +8,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -59,9 +57,16 @@ private fun ringerDescription(mode: Int): Int = when (mode) {
 /**
  * How far the button gives under a finger, and how deep the mode change's
  * own knock goes.
+ *
+ * Both are small on purpose. A button is a button, not a thing being
+ * squeezed: the press bottoms out at 0.955 of its own size, inside the
+ * 0.94..0.97 band that reads as "taken" rather than as "deformed", and the
+ * knock is shallower still, because the character of that one comes from
+ * the spring crossing back out past rest rather than from how far in it
+ * went.
  */
-private const val PRESS_SQUASH = 0.07f
-private const val POP_SQUASH = 0.12f
+private const val PRESS_SQUASH = 0.045f
+private const val POP_SQUASH = 0.07f
 
 /** How far the vibrating glyph travels sideways at the peak of its shake, in dp. */
 private const val SHAKE_TRAVEL_DP = 2.4f
@@ -126,6 +131,11 @@ fun RingerModeButton(
     // zero rather than from a pose written down somewhere. Landing here
     // again mid-recovery (two taps in a row) re-displaces from wherever it
     // has got to instead of waiting for the first one to finish.
+    // element:  the button.
+    // model:    a button knocked by the thing it just did.
+    // token:    MotionTokens.Spatial.knock.
+    // property: uniform scale -- shared with the press below, and inherited
+    //           by the glyph, which is a child of this same layer.
     val impulse = remember { Animatable(0f) }
 
     // The vibrating glyph's own shake, on the same impulse but damped far
@@ -151,6 +161,10 @@ fun RingerModeButton(
             // it are one object reacting, so they start together.
             launch {
                 shake.snapTo(1f)
+                // element:  the vibrate glyph.
+                // model:    a phone buzzing on a table.
+                // token:    MotionTokens.Spatial.shake.
+                // property: translationX.
                 shake.animateTo(
                     targetValue = 0f,
                     animationSpec = MotionTokens.Spatial.shake
@@ -168,9 +182,19 @@ fun RingerModeButton(
     // and swiping one feel like the same surface.
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    // element:  the button, and the glyph on it.
+    // model:    a button under a finger.
+    // token:    MotionTokens.Spatial.press.
+    // property: uniform scale, 0.955 at the bottom.
+    //
+    // One layer for both, deliberately: the glyph is a child of the
+    // graphics layer this drives, so there is a single spatial animation
+    // for the whole control rather than one for the container and another
+    // for the thing drawn on it. A button's face doesn't move relative to
+    // its own front.
     val press = animateFloatAsState(
         targetValue = if (pressed) 1f else 0f,
-        animationSpec = MotionTokens.Spatial.fast(),
+        animationSpec = MotionTokens.Spatial.press,
         label = "ringerPress"
     )
 
@@ -185,6 +209,10 @@ fun RingerModeButton(
                 // Two things at once, deliberately: the press holding it in
                 // while a finger is down, and the mode change's own impulse
                 // knocking it and springing back out past its resting size.
+                // Two things at once, on one scale: the press holding it
+                // in while a finger is down, and the mode change's own
+                // impulse knocking it and springing back out past its
+                // resting size. The glyph inside inherits both.
                 val knocked = 1f - POP_SQUASH * impulse.value - PRESS_SQUASH * press.value
                 scaleX = knocked
                 scaleY = knocked
@@ -244,13 +272,23 @@ fun RingerModeButton(
         val vibrating = ringerMode == AudioManager.RINGER_MODE_VIBRATE
         val description = stringResource(ringerDescription(ringerMode))
 
+        // element:  the glyph, swapping between two different objects.
+        // model:    the button's own face changing.
+        // token:    MotionTokens.Effects.default.
+        // property: alpha, and nothing else.
+        //
+        // No scale of its own, and no slide. The glyph already carries the
+        // button's press and its knock -- it is inside that layer -- so a
+        // scale written here would be a second spatial animation on the
+        // same object, running on its own clock and against the one the
+        // finger is actually driving. What is left is a crossfade, which is
+        // all this ever needed to be: the swap is between two *pictures*,
+        // and the thing they are drawn on has already reacted.
         AnimatedContent(
             targetState = vibrating,
             transitionSpec = {
-                (fadeIn(MotionTokens.Effects.default()) + scaleIn(MotionTokens.Spatial.fast(), initialScale = 0.62f))
-                    .togetherWith(
-                        fadeOut(MotionTokens.Effects.default()) + scaleOut(MotionTokens.Spatial.fast(), targetScale = 0.62f)
-                    )
+                fadeIn(MotionTokens.Effects.default())
+                    .togetherWith(fadeOut(MotionTokens.Effects.default()))
             },
             label = "ringerIcon"
         ) { isVibrating ->

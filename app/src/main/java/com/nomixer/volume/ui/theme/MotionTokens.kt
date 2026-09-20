@@ -47,13 +47,14 @@ import androidx.compose.ui.graphics.Color
  * | Disc pane           | a knob                | [Spatial.default]           | rotationZ (formation, anticlockwise)  |
  * | Disc hand           | the mark on a dial    | [Effects.default]           | alpha, a later slice of the arrival   |
  * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction, velocity-retargeted    |
- * | Tick ring           | a detent              | [Spatial.tick]              | angular position (derived from fill)  |
+ * | Tick ring           | a detent              | [Spatial.tick]              | angular position (derived from fill), |
+ * |                     |                       |                             | and a haptic click per slot crossed   |
  * | Slider fill         | a thumb on a track    | [Spatial.fast]              | fill fraction                         |
  * | Follower sliders    | a thumb, following    | [Spatial.defaultSoft]       | fill fraction                         |
  * | Ringer button       | a button under a finger | [Spatial.press]           | uniform scale, 0.94..0.97             |
  * | Ringer mode change  | a button knocked      | [Spatial.knock]             | uniform scale                         |
- * | Ringer icon         | the button's own face | [Spatial.press] +           | scale + alpha, one Transition with    |
- * |                     |                       | [Effects.default]           | the container. Never a slide.         |
+ * | Ringer icon         | the button's own face | [Effects.default]           | alpha only -- its scale is the        |
+ * |                     |                       |                             | container's. Never a slide.           |
  * | Vibrate glyph       | a phone on a table    | [Spatial.shake]             | translationX                          |
  * | Speaker glyph       | a cone and the air    | [Spatial.fast]              | wave extent, mute bar                 |
  * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |

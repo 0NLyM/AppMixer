@@ -1,5 +1,6 @@
 package com.nomixer.volume.compose
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
@@ -44,10 +47,12 @@ import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.MotionTokens
+import kotlinx.coroutines.flow.drop
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
@@ -285,6 +290,28 @@ fun VolumeDisc(
     // it arrives as a mark appearing. See [handFadeFor].
     val arrivalFade = LocalArrivalFade.current
 
+    // Whether the user is turning this knob right now -- a finger on it, or
+    // the settle that finger threw still running. Distinct from [dragging],
+    // which ends the instant the touch lifts: a knob let go mid-turn is
+    // still being turned, and the detents it coasts through are still the
+    // user's own. Anything *else* moving the level (another app, a media
+    // session) moves it without clicking, because nobody is holding it.
+    var steering by remember { mutableStateOf(false) }
+
+    // element:  the disc's fill, and the tick ring read off it.
+    // model:    a knob, and the detent it settles into.
+    // token:    MotionTokens.Spatial.tick.
+    // property: fill fraction (the tick ring's angle is derived from it,
+    //           never animated separately).
+    //
+    // One spring for every source. A finger tracks 1:1 while it is down --
+    // anything else reads as the ring lagging behind the hand -- and
+    // everything that isn't a finger (a volume key, another app) settles on
+    // the tick spring. Because it is the same Animatable throughout, a key
+    // landing mid-settle retargets that settle from where it has got to and
+    // at the speed it is carrying: animateTo departs from the current
+    // velocity by default, so there is no restart from a standstill
+    // anywhere in here, and a thrown knob simply keeps turning.
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
             fill.snapTo(targetFraction)
@@ -292,10 +319,38 @@ fun VolumeDisc(
             val thrown = releaseVelocity
             releaseVelocity = 0f
             if (thrown != 0f) {
-                fill.animateTo(targetFraction, MotionTokens.Spatial.fast(), initialVelocity = thrown)
+                fill.animateTo(targetFraction, MotionTokens.Spatial.tick, initialVelocity = thrown)
             } else {
-                fill.animateTo(targetFraction, MotionTokens.Spatial.fast())
+                fill.animateTo(targetFraction, MotionTokens.Spatial.tick)
             }
+            // The throw has come to rest, so the knob is no longer being
+            // turned by anyone.
+            steering = false
+        }
+    }
+
+    // element:  a tick passing under the thumb.
+    // model:    a detent.
+    // token:    -- the click is not an animation; it rides the fill's own
+    //           tick spring above and fires as that crosses a slot.
+    // property: haptic feedback.
+    //
+    // Only where there are ticks to feel: a smooth ring has no notches, and
+    // clicking anyway would be feedback for something that isn't there.
+    // performHapticFeedback goes through the view, so the platform's own
+    // haptics setting is honoured without this checking it.
+    val view = LocalView.current
+    if (showDots) {
+        LaunchedEffect(fill, view) {
+            snapshotFlow { (fill.value * TICK_COUNT).roundToInt() }
+                // The slot the knob is already sitting in is not a slot it
+                // just crossed.
+                .drop(1)
+                .collect {
+                    if (steering) {
+                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    }
+                }
         }
     }
 
@@ -366,6 +421,7 @@ fun VolumeDisc(
                             startY = offset.y
                             tracker.resetTracking()
                             dragging = true
+                            steering = true
                         },
                         onDragEnd = {
                             // Up is more, and screen y grows downward, so
@@ -379,6 +435,7 @@ fun VolumeDisc(
                         onDragCancel = {
                             releaseVelocity = 0f
                             dragging = false
+                            steering = false
                         }
                     ) { change, _ ->
                         tracker.addPosition(change.uptimeMillis, change.position)
