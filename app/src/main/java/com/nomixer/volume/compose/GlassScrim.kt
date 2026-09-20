@@ -2,8 +2,12 @@ package com.nomixer.volume.compose
 
 import android.graphics.RuntimeShader
 import android.util.Log
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +37,7 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -164,28 +169,81 @@ private const val EDGE_LIGHT_ALPHA = 0.55f
 private const val SHIMMER_ARC_DEGREES = 84f
 
 /**
- * The lit angle of the glass for the current frame of the panel's arrival:
- * the reflection sweeps once across the face as the panel comes in, and
- * back out the way it came as the panel leaves.
+ * How coarsely the ambient creep below is quantised, in degrees.
+ *
+ * The beam is a wide, soft gradient and the rim is a hairline, so a degree
+ * either way is not a thing anyone can see -- but it *is* the difference
+ * between rebuilding two gradient shaders sixty times a second forever and
+ * rebuilding them about five. The angle is a composition-phase value (both
+ * brushes are built from it, one of them inside a Modifier.border), so
+ * every distinct value it takes costs a recomposition of the glass; there
+ * is nothing to gain by taking more of them than the eye resolves.
+ */
+private const val SHEEN_STEP_DEGREES = 2f
+
+/** One whole turn, which is the only lap length that joins back onto itself. */
+private const val FULL_TURN_DEGREES = 360f
+
+/**
+ * The lit angle of the glass for the current frame: where the panel's
+ * arrival has thrown the reflection, plus the slow creep it never stops
+ * making.
  *
  * Returned as one number for the caller to hand to *both* halves of the
  * effect -- [glassBeamBrush] across the face and [glassEdgeLightBrush]
  * around the rim -- because they are one beam. Sweeping the face's light
- * while the rim's stayed put would pull the effect in half; the panel
- * itself never turns, only where the light falls on it does.
+ * while the rim's stayed put would pull the effect in half.
  *
- * Phased off [LocalArrival] rather than run as an animation of its own, so
- * the shimmer rides exactly the spring the panel rides, stops the instant
- * the panel stops, and gets its exit for free instead of needing a second
- * curve kept in agreement with the first by hand. Outside the overlay the
- * arrival is simply 1, so the settings preview shows the chosen angle with
- * no sweep at all.
+ * element:  the reflection on the glass.
+ * model:    a pane lying still under a light that moves.
+ * token:    [MotionTokens.Ambient.glassSheenLapMillis] for the creep;
+ *           the panel's own spatial spring, borrowed through
+ *           [LocalArrival], for the arrival sweep.
+ * property: the beam's angle, and nothing else. **The pane itself never
+ *           turns and never scales** -- that is the whole difference
+ *           between glass and a sheet of paper, and it is why this
+ *           returns an angle rather than a rotation for someone to put on
+ *           a layer.
+ *
+ * The arrival half is phased off [LocalArrival] rather than run as an
+ * animation of its own, so it rides exactly the spring the panel rides and
+ * gets its exit for free instead of needing a second curve kept in
+ * agreement with the first by hand. The creep is an [MotionTokens.Ambient]
+ * lap: linear, because it is not travelling anywhere and an eased loop
+ * pulses at its own seam, and a whole turn, because only a whole turn joins
+ * back onto itself invisibly. It doesn't start under
+ * [MotionTokens.reducedMotion], and it is cancelled with the composition it
+ * was launched in.
+ *
+ * Outside the overlay the arrival is simply 1, so the settings preview
+ * shows the chosen angle with the creep and no sweep.
  */
 @Composable
-fun rememberGlassShimmerAngle(lightAngle: Float): Float {
+fun rememberGlassShimmerAngle(lightAngle: Float, creeping: Boolean = true): Float {
     val arrival = LocalArrival.current
+
+    val sheen = remember { Animatable(0f) }
+    LaunchedEffect(creeping) {
+        // Nothing to light, nothing to creep across. Callers pass false
+        // when the panel is painted solid or with Atmosphere, so a lap that
+        // nobody can see never runs -- and never costs the recompositions
+        // [SHEEN_STEP_DEGREES] exists to ration.
+        if (!creeping || MotionTokens.reducedMotion) {
+            return@LaunchedEffect
+        }
+        sheen.animateTo(
+            targetValue = FULL_TURN_DEGREES,
+            animationSpec = MotionTokens.Ambient.loop(MotionTokens.Ambient.glassSheenLapMillis)
+        )
+    }
+    val crept by remember {
+        derivedStateOf {
+            (sheen.value / SHEEN_STEP_DEGREES).toInt() * SHEEN_STEP_DEGREES
+        }
+    }
+
     val away = (1f - arrival()).coerceIn(0f, 1f)
-    return lightAngle + away * SHIMMER_ARC_DEGREES
+    return lightAngle + away * SHIMMER_ARC_DEGREES + crept
 }
 
 /**

@@ -276,7 +276,14 @@ fun CollapsedVolumePopup(
     // shimmer that crosses the glass as the popup arrives -- see
     // [rememberGlassShimmerAngle] for why both halves have to be handed the
     // same number.
-    val beamAngle = rememberGlassShimmerAngle(preferences.glassLightAngle)
+    val beamAngle = rememberGlassShimmerAngle(
+        lightAngle = preferences.glassLightAngle,
+        // The same condition [panelGlass] resolves further down, read here
+        // because the beam is needed before it. Glass is the only
+        // background with a reflection to creep.
+        creeping = preferences.activeShowBackground() &&
+            preferences.activeBackground() == PopupBackground.Translucent
+    )
     val scale = preferences.activeScale()
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val discDiameter = (220 * scale).dp

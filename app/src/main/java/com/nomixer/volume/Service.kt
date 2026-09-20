@@ -683,7 +683,10 @@ class Service : AccessibilityService() {
                         // shimmer it carries is phased off that arrival:
                         // read outside it, the panel would come up with its
                         // light already settled.
-                        val beamAngle = rememberGlassShimmerAngle(preferences.glassLightAngle)
+                        val beamAngle = rememberGlassShimmerAngle(
+                            lightAngle = preferences.glassLightAngle,
+                            creeping = panelGlass
+                        )
 
                         Box(
                             modifier = Modifier.graphicsLayer {

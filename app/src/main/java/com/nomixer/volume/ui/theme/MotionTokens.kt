@@ -225,8 +225,13 @@ object MotionTokens {
      * collapse to.
      */
     object Ambient {
-        /** How long the glass reflection takes to creep once round the panel. */
-        const val glassSheenLapMillis = 14_000
+        /**
+         * How long the glass reflection takes to creep once round the
+         * panel. Slow enough (about nine degrees a second) that nobody
+         * watches it move, long enough that the panel is never quite lit
+         * the way it was last time it was up.
+         */
+        const val glassSheenLapMillis = 42_000
 
         /** How long the atmosphere field takes to turn once on its own axis. */
         const val atmosphereSpinLapMillis = 48_000

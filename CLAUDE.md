@@ -81,6 +81,21 @@ are not started at all (an infinite spec has no snap to collapse to);
 tail, because a control that answers a finger with nothing reads as broken
 rather than as calm.
 
+### Ambient loops
+
+Every `Ambient` loop is launched from a `LaunchedEffect`, so it is
+cancelled with the composition that started it -- a panel that goes away
+takes its laps with it. Each one is also gated twice: off under
+`reducedMotion`, and off when the thing it animates isn't being painted
+(the glass sheen doesn't run behind a solid panel).
+
+An `Ambient` value read in the **draw phase** -- through a `() -> Float`,
+the way `AtmosphereMotion` hands out all of its -- costs a float read and a
+shader uniform per frame and recomposes nothing. A value read in the
+**composition phase** costs a recomposition per distinct value, so quantise
+it to what the eye actually resolves (see `SHEEN_STEP_DEGREES` in
+`GlassScrim.kt`). Prefer the draw phase.
+
 ### One arrival, one spring
 
 `LocalArrival` carries how far the overlay has arrived, 0 to 1, from the
