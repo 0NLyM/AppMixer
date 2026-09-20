@@ -7,8 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.DoNotDisturbOff
-import androidx.compose.material.icons.filled.DoNotDisturbOn
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.RingVolume
@@ -214,12 +213,15 @@ private fun RingFooter(
             onChange = onChange
         )
 
-        ToggleButton(
+        // One glyph, silenced or not -- the same bar the speaker beside it
+        // wears, put on and taken off (see [BarredToggleButton]), rather
+        // than two different Do Not Disturb pictures swapping. Drawn at the
+        // ringer switch's own glyph size, so the pair reads as one row.
+        BarredToggleButton(
             checked = interruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL,
             checkedDescription = stringResource(R.string.disable_do_not_disturb),
-            checkedIcon = Icons.Default.DoNotDisturbOn,
             uncheckedDescription = stringResource(R.string.enable_do_not_disturb),
-            uncheckedIcon = Icons.Default.DoNotDisturbOff
+            icon = Icons.Default.Notifications
         ) {
             notificationManagerProxy.setInterruptionFilter(
                 if (it) NotificationManager.INTERRUPTION_FILTER_NONE else NotificationManager.INTERRUPTION_FILTER_ALL

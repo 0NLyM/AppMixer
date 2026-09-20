@@ -272,18 +272,11 @@ fun CollapsedVolumePopup(
     // Just the current level: the compact popup is a glance, so the maximum
     // (and the stream's name) are left to the full mixer.
     val valueText = volume.toString()
-    // One beam for the panel's face and its rim alike, carrying the
-    // shimmer that crosses the glass as the popup arrives -- see
-    // [rememberGlassShimmerAngle] for why both halves have to be handed the
-    // same number.
-    val beamAngle = rememberGlassShimmerAngle(
-        lightAngle = preferences.glassLightAngle,
-        // The same condition [panelGlass] resolves further down, read here
-        // because the beam is needed before it. Glass is the only
-        // background with a reflection to creep.
-        creeping = preferences.activeShowBackground() &&
-            preferences.activeBackground() == PopupBackground.Translucent
-    )
+    // One beam for the panel's face and its rim alike, carrying the flare
+    // and the sweep that cross the glass as the popup arrives -- see
+    // [rememberGlassBeam] for why both halves have to be handed the same
+    // light.
+    val beam = rememberGlassBeam(lightAngle = preferences.glassLightAngle)
     val scale = preferences.activeScale()
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val discDiameter = (220 * scale).dp
@@ -472,8 +465,9 @@ fun CollapsedVolumePopup(
                 shape = panelShape,
                 baseColor = panelColor,
                 blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                lightAngle = beamAngle,
+                lightAngle = beam.angle,
                 lightWidth = preferences.glassLightWidth,
+                lightStrength = beam.strength,
                 noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
                 noiseAlpha = preferences.glassNoiseAlpha,
                 modifier = Modifier.matchParentSize()
@@ -695,8 +689,9 @@ fun CollapsedVolumePopup(
                         atmosphereColors = atmosphereColors,
                         grainIntensity = preferences.atmosphereGrainIntensity,
                         grainSize = preferences.atmosphereGrainSize,
-                        lightAngle = beamAngle,
+                        lightAngle = beam.angle,
                         lightWidth = preferences.glassLightWidth,
+                        lightStrength = beam.strength,
                         blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                         noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
                         noiseAlpha = preferences.glassNoiseAlpha,
@@ -761,8 +756,9 @@ fun CollapsedVolumePopup(
                     .border(
                         1.dp,
                         glassEdgeLightBrush(
-                            beamAngle,
-                            preferences.glassLightWidth
+                            beam.angle,
+                            preferences.glassLightWidth,
+                            beam.strength
                         ),
                         panelShape
                     )

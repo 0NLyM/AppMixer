@@ -38,8 +38,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -65,7 +67,7 @@ import com.nomixer.volume.compose.AtmosphereBackground
 import com.nomixer.volume.compose.GlassBackground
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.glassEdgeLightBrush
-import com.nomixer.volume.compose.rememberGlassShimmerAngle
+import com.nomixer.volume.compose.rememberGlassBeam
 import com.nomixer.volume.compose.PANEL_SHADOW_BLUR_DP
 import com.nomixer.volume.compose.PanelShadow
 import com.nomixer.volume.data.shadowAlpha
@@ -175,7 +177,17 @@ private fun UiPreferences.panelPlacement(expanded: Boolean): PanelPlacement =
         activeAnchor().placement()
     }
 
-/** How far a compact panel travels along that edge as it opens out of it. */
+/**
+ * How far past the **display's** own edge a compact panel starts, before
+ * it slides out of it.
+ *
+ * The panel's travel is this plus whatever gap the user's offset leaves
+ * between the panel and that edge (see [Service.edgeGapPx]), so the
+ * thing it comes out from is always the side of the screen. Measuring the
+ * travel from the panel's own edge instead is what made an offset popup
+ * appear to be uncovered by nothing at all -- a sheet sliding out from
+ * behind a line drawn in mid-air, a few dp to its left.
+ */
 private val ENTER_TRAVEL_DP = 14.dp
 
 /**
@@ -200,7 +212,26 @@ private class MixerMorphOrigin(
     val scaleX: Float,
     val scaleY: Float,
     val translationX: Float,
-    val translationY: Float
+    val translationY: Float,
+    /**
+     * Whether the travel above is carried by the **window's** own position
+     * rather than by the layer inside it.
+     *
+     * It has to be whenever the rectangle the morph starts at doesn't fit
+     * inside the window the panel is drawn in -- a mixer centered on the
+     * display coming out of a bar that hugged the side of the screen is the
+     * obvious case. The window is only ever as big as the panel itself, so
+     * a layer translated out there is a layer outside its own window, which
+     * the compositor simply cuts off: a slice of panel sliding in at the
+     * edge of the window, the rest of the journey missing, and the mixer
+     * appearing to arrive at the center by teleport. Moving the window
+     * instead puts the same travel somewhere it can actually be seen.
+     *
+     * It is still one number either way. The window's offset and the
+     * layer's scale are both read off the single morph value, so they
+     * cannot disagree about how far along the journey is.
+     */
+    val travelsWithWindow: Boolean
 )
 
 /**
@@ -574,7 +605,37 @@ class Service : AccessibilityService() {
                         // genuinely starts a new one.
                         val morph = remember { Animatable(0f) }
 
-                        LaunchedEffect(visible, revealed) {
+                        // The geometry the morph running right now is
+                        // travelling out of. A *different* one means a
+                        // different journey -- the mixer that just opened,
+                        // or a panel whose placement changed under it while
+                        // it was up -- and a journey starts at its start.
+                        var startedFrom by remember { mutableStateOf<MixerMorphOrigin?>(null) }
+
+                        // The placement this panel has actually been laid
+                        // out at. When the one the preferences resolve to
+                        // moves away from it -- the centered-mixer switch,
+                        // flipped while the mixer is on screen -- the
+                        // window is re-placed at the new one and the panel
+                        // travels there from where it currently is, on the
+                        // morph below. Interpolated, never jumped: the
+                        // switch is a change of destination, and a panel
+                        // that is already somewhere has to get there.
+                        //
+                        // Expanded only. The compact popup's own anchor is
+                        // read afresh every time it appears, and moving a
+                        // window out from under a finger that is dragging
+                        // its slider is not a fix for anything.
+                        var placedAt by remember { mutableStateOf(placement) }
+                        LaunchedEffect(placement, visible, revealed) {
+                            if (!expanded || !visible || !revealed || placement == placedAt) {
+                                return@LaunchedEffect
+                            }
+                            placedAt = placement
+                            this@Service.relocateForPlacement(expanded = true)
+                        }
+
+                        LaunchedEffect(visible, revealed, morphOrigin) {
                             if (visible) {
                                 // Nothing starts until the window is
                                 // actually on screen. The mixer's window is
@@ -614,6 +675,13 @@ class Service : AccessibilityService() {
                                     //           the matched geometry in
                                     //           [MixerMorphOrigin].
                                     appear.snapTo(1f)
+                                    if (morphOrigin !== startedFrom) {
+                                        // A journey this one hasn't run
+                                        // yet: back to its start, which is
+                                        // where the panel currently is.
+                                        startedFrom = morphOrigin
+                                        morph.snapTo(0f)
+                                    }
                                     morph.animateTo(1f, MotionTokens.Spatial.default())
                                 } else {
                                     // element:  the panel arriving.
@@ -663,6 +731,40 @@ class Service : AccessibilityService() {
                             }
                         }
 
+                        // Deliberately *after* the transition above: both
+                        // restart together when a new geometry arrives, and
+                        // they are started in the order they are written,
+                        // so the morph is already back at its start by the
+                        // time this reads it. The other way round, the
+                        // first thing this would push is the *settled*
+                        // position -- one frame of the panel at its
+                        // destination before it jumps back to travel there.
+                        //
+                        // element:  a centered panel travelling to the
+                        //           middle of the display.
+                        // model:    the same sheet changing shape -- with
+                        //           its travel carried by the window it is
+                        //           in, because a layer translated outside
+                        //           its own window is a layer the
+                        //           compositor cuts off.
+                        // token:    MotionTokens.Spatial.default -- this
+                        //           *is* the morph above, read off the very
+                        //           same value rather than animated again.
+                        // property: the window's own x/y.
+                        LaunchedEffect(morphOrigin) {
+                            val travel = morphOrigin ?: return@LaunchedEffect
+                            if (!travel.travelsWithWindow) {
+                                return@LaunchedEffect
+                            }
+                            snapshotFlow { morph.value }.collect { morphed ->
+                                val away = 1f - morphed
+                                this@Service.displaceWindow(
+                                    travel.translationX * away,
+                                    travel.translationY * away
+                                )
+                            }
+                        }
+
                         // Handed down so the parts that phase their own
                         // motion off the arrival -- the disc's formation
                         // turn, the glass beam's entering sweep,
@@ -683,10 +785,7 @@ class Service : AccessibilityService() {
                         // shimmer it carries is phased off that arrival:
                         // read outside it, the panel would come up with its
                         // light already settled.
-                        val beamAngle = rememberGlassShimmerAngle(
-                            lightAngle = preferences.glassLightAngle,
-                            creeping = panelGlass
-                        )
+                        val beam = rememberGlassBeam(lightAngle = preferences.glassLightAngle)
 
                         Box(
                             modifier = Modifier.graphicsLayer {
@@ -703,8 +802,17 @@ class Service : AccessibilityService() {
                                     transformOrigin = TransformOrigin.Center
                                     scaleX = morphOrigin.scaleX + (1f - morphOrigin.scaleX) * morphed
                                     scaleY = morphOrigin.scaleY + (1f - morphOrigin.scaleY) * morphed
-                                    translationX = morphOrigin.translationX * away
-                                    translationY = morphOrigin.translationY * away
+                                    if (!morphOrigin.travelsWithWindow) {
+                                        translationX = morphOrigin.translationX * away
+                                        translationY = morphOrigin.translationY * away
+                                    }
+                                    // The other case puts the very same
+                                    // number on the window instead -- see
+                                    // [MixerMorphOrigin.travelsWithWindow]
+                                    // and the effect that pushes it. It is
+                                    // deliberately not *also* applied here:
+                                    // that would be the journey travelled
+                                    // twice.
                                 } else {
                                     val away = 1f - arrived
                                     transformOrigin = origin
@@ -735,7 +843,19 @@ class Service : AccessibilityService() {
                                         //           outline, derived from
                                         //           the same value).
                                         revealEdge != RevealEdge.None -> {
-                                            val travel = ENTER_TRAVEL_DP.toPx() * away
+                                            // Out of the *display's* edge,
+                                            // whatever offset the user has
+                                            // pushed the panel in by: the
+                                            // gap that offset leaves is
+                                            // part of the journey, so the
+                                            // panel comes from the side of
+                                            // the screen rather than from a
+                                            // line in mid-air a few dp off
+                                            // its own edge. At zero offset
+                                            // the gap is zero and this is
+                                            // exactly what it always was.
+                                            val travel =
+                                                (ENTER_TRAVEL_DP.toPx() + edgeGapPx) * away
                                             when (revealEdge) {
                                                 RevealEdge.Left -> translationX = -travel
                                                 RevealEdge.Right -> translationX = travel
@@ -827,8 +947,9 @@ class Service : AccessibilityService() {
                                             shape = mixerShape,
                                             baseColor = panelColor,
                                             blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                                            lightAngle = beamAngle,
+                                            lightAngle = beam.angle,
                                             lightWidth = preferences.glassLightWidth,
+                                            lightStrength = beam.strength,
                                             noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
                                             noiseAlpha = preferences.glassNoiseAlpha,
                                             modifier = Modifier.matchParentSize()
@@ -884,8 +1005,9 @@ class Service : AccessibilityService() {
                                                 .border(
                                                     1.dp,
                                                     glassEdgeLightBrush(
-                                                        beamAngle,
-                                                        preferences.glassLightWidth
+                                                        beam.angle,
+                                                        preferences.glassLightWidth,
+                                                        beam.strength
                                                     ),
                                                     mixerShape
                                                 )
@@ -965,16 +1087,10 @@ class Service : AccessibilityService() {
                                                     // rectangles can be
                                                     // compared -- and only
                                                     // then is the window
-                                                    // shown, with the morph
-                                                    // starting from its
-                                                    // first visible frame.
-                                                    this@Service.captureMixerMorphOrigin(it)
-                                                    this@Service.layoutParams.alpha = 1f
-                                                    this@Service.windowManager.updateViewLayout(
-                                                        it,
-                                                        this@Service.layoutParams
-                                                    )
-                                                    this@Service.windowRevealed = true
+                                                    // shown, already sitting
+                                                    // at the morph's own
+                                                    // first frame.
+                                                    this@Service.revealMorphedInto(it)
                                                 }
                                             }
                                         }
@@ -1141,6 +1257,7 @@ class Service : AccessibilityService() {
                 }
 
                 val preferences = manager.uiPreferences
+                val placement = preferences.panelPlacement(expanded)
 
                 // The expanded mixer can skip all the clamp math below
                 // entirely: centering doesn't depend on the mixer's own
@@ -1152,10 +1269,15 @@ class Service : AccessibilityService() {
                 // preference directly, because the composition builds its
                 // entrance from exactly the same call -- that shared
                 // reading is the whole point of the state existing.
-                if (preferences.panelPlacement(expanded) == PanelPlacement.DisplayCenter) {
+                if (placement == PanelPlacement.DisplayCenter) {
                     layoutParams.gravity = Gravity.CENTER
                     layoutParams.x = 0
                     layoutParams.y = 0
+                    panelBaseX = 0
+                    panelBaseY = 0
+                    // Nothing to be uncovered from, so nothing to measure a
+                    // gap to.
+                    edgeGapPx = 0f
                     windowManager.updateViewLayout(target, layoutParams)
                     onPositioned?.invoke()
                     return
@@ -1215,6 +1337,23 @@ class Service : AccessibilityService() {
                     else -> adjustedAbsoluteTop - (bounds.height() - target.height) / 2
                 }
 
+                // Where the panel has actually ended up: what a later
+                // displacement is measured from (see [displaceWindow]), and
+                // how far it is from the display edge it comes out of (see
+                // [edgeGapPx]). Both are read off the clamped, cutout-
+                // adjusted position rather than the requested one, because
+                // what the entrance has to come out from is the edge the
+                // panel really ended up near.
+                panelBaseX = clampedX
+                panelBaseY = cutoutAdjustedY
+                edgeGapPx = when (placement.revealEdge) {
+                    RevealEdge.Left -> absoluteLeft.toFloat()
+                    RevealEdge.Right -> (bounds.width() - absoluteLeft - target.width).toFloat()
+                    RevealEdge.Top -> adjustedAbsoluteTop.toFloat()
+                    RevealEdge.Bottom -> (bounds.height() - adjustedAbsoluteTop - target.height).toFloat()
+                    RevealEdge.None -> 0f
+                }.coerceAtLeast(0f)
+
                 if (clampedX != layoutParams.x || cutoutAdjustedY != layoutParams.y) {
                     layoutParams.x = clampedX
                     layoutParams.y = cutoutAdjustedY
@@ -1247,6 +1386,32 @@ class Service : AccessibilityService() {
     private var windowRevealed by mutableStateOf(false)
 
     /**
+     * How far the panel's own revealing edge sits from the display edge it
+     * is revealed from, in px, once the window has actually been laid out
+     * and clamped -- the user's offset, as the panel really ended up
+     * wearing it.
+     *
+     * The compact panel's entrance is measured from the *screen's* edge, so
+     * this is part of its travel: see [ENTER_TRAVEL_DP]. Compose state
+     * rather than a plain field, because it is read from inside a graphics
+     * layer that has to repaint when it changes.
+     */
+    private var edgeGapPx by mutableFloatStateOf(0f)
+
+    /**
+     * The window position the current placement actually resolved to --
+     * what [WindowManager.LayoutParams.x] and `y` are when the panel is
+     * sitting exactly where it belongs.
+     *
+     * [displaceWindow] moves the window relative to these rather than to
+     * zero, because "where it belongs" is only zero for the mixer's own
+     * dead-center mode; a center anchor keeps the user's offsets, and a
+     * panel that travelled home to 0,0 would quietly throw those away.
+     */
+    private var panelBaseX = 0
+    private var panelBaseY = 0
+
+    /**
      * The compact panel's own screen rectangle, captured the moment an
      * expand is asked for and consumed once the mixer has been measured --
      * see [captureMixerMorphOrigin].
@@ -1255,6 +1420,93 @@ class Service : AccessibilityService() {
 
     /** Where the mixer morphs out of, or null if the two couldn't be compared. */
     private var mixerMorphOrigin by mutableStateOf<MixerMorphOrigin?>(null)
+
+    /**
+     * Offsets the window from the placement it was laid out at, by [dx],
+     * [dy] px -- the centered mixer's own travel out of the compact panel's
+     * rectangle, one frame at a time (see
+     * [MixerMorphOrigin.travelsWithWindow]).
+     *
+     * Position only: the window keeps the size and gravity it was given, so
+     * this is the cheap half of a relayout rather than a remeasure, and
+     * `FLAG_LAYOUT_NO_LIMITS` is what lets it hang off the display while
+     * the panel inside it is still scaled down to where it came from.
+     */
+    private fun displaceWindow(dx: Float, dy: Float) {
+        val target = view ?: return
+        if (!target.isAttachedToWindow) {
+            // The window can be taken down while the composition inside it
+            // still has a frame's worth of coroutine left to run, and
+            // repositioning a view the WindowManager no longer knows about
+            // throws.
+            return
+        }
+
+        val x = panelBaseX + dx.roundToInt()
+        val y = panelBaseY + dy.roundToInt()
+        if (layoutParams.x == x && layoutParams.y == y) {
+            return
+        }
+
+        layoutParams.x = x
+        layoutParams.y = y
+        windowManager.updateViewLayout(target, layoutParams)
+    }
+
+    /**
+     * Moves the window to whatever placement the preferences now resolve
+     * to, while the panel is already on screen, and leaves behind the
+     * geometry for it to travel there from: where it was, against where it
+     * has ended up.
+     *
+     * The panel itself doesn't move here at all -- this only re-places the
+     * window and hands [mixerMorphOrigin] the difference, which is what the
+     * composition's own morph then runs out of. That is the whole point:
+     * the destination changes, the journey to it is animated, and there is
+     * never a frame where the panel is simply somewhere else.
+     */
+    private fun relocateForPlacement(expanded: Boolean) {
+        val target = view ?: return
+        val from = viewBoundsOnScreen(target) ?: return
+
+        compactBounds = from
+        // Hidden while it is moved, exactly as an expand hides it: the
+        // window cannot be re-placed and have the panel's own travel
+        // applied to it in the same pass, and a frame of the panel sitting
+        // at its destination before it travels there is the teleport this
+        // whole thing exists to remove.
+        windowRevealed = false
+        layoutParams.alpha = 0f
+        applyConfiguredPosition(layoutParams)
+        windowManager.updateViewLayout(target, layoutParams)
+        clampToScreenOnceLaidOut(target, expanded) {
+            // One hop past the correction, for the same reason the expand
+            // handler takes one: the panel's own content may need a second
+            // pass to settle before its rectangle means anything.
+            target.post { this@Service.revealMorphedInto(target) }
+        }
+    }
+
+    /**
+     * Compares where the panel was with where it has just been laid out,
+     * puts the window at the very first frame of the morph between the two,
+     * and only then shows it again.
+     *
+     * All in one layout pass, deliberately. Revealing the window and *then*
+     * displacing it is one frame of the panel at its destination -- the
+     * mixer full size in the middle of the display before it jumps back to
+     * the bar it is supposed to be growing out of.
+     */
+    private fun revealMorphedInto(target: View) {
+        val origin = captureMixerMorphOrigin(target)
+        if (origin != null && origin.travelsWithWindow) {
+            layoutParams.x = panelBaseX + origin.translationX.roundToInt()
+            layoutParams.y = panelBaseY + origin.translationY.roundToInt()
+        }
+        layoutParams.alpha = 1f
+        windowManager.updateViewLayout(target, layoutParams)
+        windowRevealed = true
+    }
 
     /** The popup's rectangle on screen right now, or null if it isn't laid out. */
     private fun viewBoundsOnScreen(target: View): Rect? {
@@ -1272,36 +1524,40 @@ class Service : AccessibilityService() {
     }
 
     /**
-     * Turns the two rectangles -- where the compact panel was, where the
-     * mixer now is -- into the transform that lays the mixer exactly over
-     * the old one, for the morph to run out of.
+     * Turns the two rectangles -- where the panel was, where it now is --
+     * into the transform that lays it exactly over the old one, for the
+     * morph to run out of.
      *
      * Nothing measurable on either side means no morph, and the mixer falls
      * back to growing out of its anchor, which is what it always did.
      *
-     * A centered mixer keeps the *size* half of that morph and drops the
-     * travel, deliberately. The window is only ever as big as the mixer
-     * itself, so a layer translated back out to where a side-anchored
-     * compact panel sat is a layer translated outside its own window --
-     * which the compositor simply cuts off. That is what the old centered
-     * expand actually looked like: a slice of panel sliding in at the edge
-     * of the window, and the rest of the journey missing, so the mixer
-     * appeared to arrive at the center by teleport. A panel with nowhere to
-     * travel from expands where it is instead, and its collapse is that
-     * same motion backwards.
+     * Which of the two carries the travel is decided here, and it is
+     * decided by geometry rather than by which mode the user picked: the
+     * layer can carry it exactly when the rectangle it starts at still
+     * fits inside the window it is drawn in. When it doesn't -- a mixer
+     * centered on the display, morphing out of a bar that was against the
+     * side of the screen, or that same mixer sent back to its anchor while
+     * it is up -- a layer translated out there is a layer outside its own
+     * window, and the compositor cuts it off. So the window travels
+     * instead. Either way the travel is the same single number, read off
+     * the same morph.
      */
-    private fun captureMixerMorphOrigin(target: View) {
+    private fun captureMixerMorphOrigin(target: View): MixerMorphOrigin? {
         val from = compactBounds
         compactBounds = null
-        val to = from?.let { viewBoundsOnScreen(target) } ?: return
-        val centered = manager.uiPreferences.panelPlacement(expanded = true).isCentered
+        val to = from?.let { viewBoundsOnScreen(target) } ?: return null
 
-        mixerMorphOrigin = MixerMorphOrigin(
+        val origin = MixerMorphOrigin(
             scaleX = (from.width().toFloat() / to.width()).coerceIn(0.05f, 3f),
             scaleY = (from.height().toFloat() / to.height()).coerceIn(0.05f, 3f),
-            translationX = if (centered) 0f else from.exactCenterX() - to.exactCenterX(),
-            translationY = if (centered) 0f else from.exactCenterY() - to.exactCenterY()
+            translationX = from.exactCenterX() - to.exactCenterX(),
+            translationY = from.exactCenterY() - to.exactCenterY(),
+            // `from` is exactly what the layer draws at morph 0, so this is
+            // literally "would the first frame of the morph be clipped".
+            travelsWithWindow = !to.contains(from)
         )
+        mixerMorphOrigin = origin
+        return origin
     }
 
     private fun showView() {

@@ -54,7 +54,6 @@ Three tiers, two channels, and nothing else:
 | `fast` | press, tick, thumb -- anything a finger steers | a fade keeping up with a finger |
 | `default` | a surface arriving, expanding or leaving | everything else that fades or tints |
 | `defaultSoft` | elements that follow rather than lead | -- |
-| `Ambient` | slow loops that never arrive: glass sheen, atmosphere spin and drift, grain | -- |
 
 `Spatial` may overshoot; a real object carries momentum past its mark.
 `Effects` is critically damped, always: an alpha that overshoots is a
@@ -66,8 +65,8 @@ flash, and a colour that overshoots is a frame of a colour nobody chose.
 - A spring invented at a call site, or one spring per file.
 - `scale` animated from (or to) `0`. Scale around the element's own size.
 - A fade as an element's *principal* entrance. Something has to move.
-- `tween` anywhere in the overlay. Only `Ambient` loops are duration-based,
-  and they live in `MotionTokens`.
+- `tween` anywhere in the overlay, and any loop at all. The overlay has one
+  clock: the arrival. Atmosphere and the glass beam are phases of it.
 - Rotating or scaling the glass pane. Glass is a still sheet; only the
   light on it moves.
 - Animating the Atmosphere *container*. Only the field inside it turns.
@@ -75,26 +74,39 @@ flash, and a colour that overshoots is a frame of a colour nobody chose.
 ### Reduced motion
 
 `MotionTokens.reducedMotion` reads the platform's "Remove animations"
-switch, per call. Travelling tokens collapse to `snap()`; `Ambient` loops
-are not started at all (an infinite spec has no snap to collapse to);
+switch, per call. Travelling tokens collapse to `snap()`;
 `press`/`tick`/`knock`/`shake` stay springs but lose their overshoot and
 tail, because a control that answers a finger with nothing reads as broken
 rather than as calm.
 
-### Ambient loops
+Anything phased off the arrival needs no check of its own: the arrival
+itself snaps, which lands the glass beam and the Atmosphere field on their
+settled values with nothing having travelled.
 
-Every `Ambient` loop is launched from a `LaunchedEffect`, so it is
-cancelled with the composition that started it -- a panel that goes away
-takes its laps with it. Each one is also gated twice: off under
-`reducedMotion`, and off when the thing it animates isn't being painted
-(the glass sheen doesn't run behind a solid panel).
+### Ambient
 
-An `Ambient` value read in the **draw phase** -- through a `() -> Float`,
+There are no loops. The glass beam and the Atmosphere field once turned
+forever on fixed-length laps; both are phases of the arrival now
+(`LocalArrival`), which is the difference between a panel that has settled
+and one that never quite finishes arriving -- and it is what stops a shader
+running behind an overlay nobody is looking at.
+
+- **Glass** (`GlassScrim.kt`): one flare of brightness as the panel starts
+  arriving, the lit band sweeping round to the angle the user chose as it
+  lands, and then nothing. The pane never turns and never scales; only the
+  light on it moves.
+- **Atmosphere** (`AtmosphereScrim.kt`): the field turns, its centre swings
+  along a short arc, and the grain dissolves through a dozen or so whole
+  fields -- all of it inside the arrival, all of it frozen from the frame
+  the panel lands. Never the container: only the field inside it.
+
+An arrival-phased value read in the **draw phase** -- through a `() -> Float`,
 the way `AtmosphereMotion` hands out all of its -- costs a float read and a
 shader uniform per frame and recomposes nothing. A value read in the
 **composition phase** costs a recomposition per distinct value, so quantise
 it to what the eye actually resolves (see `SHEEN_STEP_DEGREES` in
-`GlassScrim.kt`). Prefer the draw phase.
+`GlassScrim.kt`, which the glass beam needs because its brushes are built
+in composition). Prefer the draw phase.
 
 ### One arrival, one spring
 

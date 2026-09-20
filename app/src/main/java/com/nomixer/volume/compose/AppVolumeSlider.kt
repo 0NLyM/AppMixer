@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -71,17 +72,33 @@ fun AppVolumeSlider(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(16.dp, 8.dp)
             ) {
+                // An app at zero is silenced exactly the way a stream at
+                // zero is, so it wears exactly the same bar -- across its
+                // own icon's bounds, cutting its own channel through
+                // whatever colours are under it (see [muteBar]) -- at the
+                // one size every volume glyph in the mixer is drawn at.
+                val muteBarExtent = rememberMuteBarExtent(barred = app.volume <= 0f)
+                val barTint = LocalContentColor.current
+
                 if (app.icon != null) {
                     Image(
                         bitmap = app.icon!!,
                         contentDescription = "App icon",
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier
+                            .size(MixerGlyphSize)
+                            .muteBar(muteBarExtent, barTint),
                         contentScale = ContentScale.FillWidth
                     )
                 } else {
+                    // The bar before the fill, not after it: the channel
+                    // it cuts is punched through everything drawn inside
+                    // its own layer, and the placeholder block has to be
+                    // one of those things or the cut shows the block
+                    // instead of the panel behind it.
                     Box(
                         Modifier
-                            .size(32.dp)
+                            .size(MixerGlyphSize)
+                            .muteBar(muteBarExtent, barTint)
                             .background(Color.Gray)
                     )
                 }

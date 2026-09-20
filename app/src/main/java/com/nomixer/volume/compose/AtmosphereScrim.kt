@@ -2,10 +2,8 @@ package com.nomixer.volume.compose
 
 import android.graphics.RuntimeShader
 import android.util.Log
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,8 +21,6 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
 import com.nomixer.volume.ui.theme.LocalArrival
-import com.nomixer.volume.ui.theme.MotionTokens
-import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -37,7 +33,10 @@ import kotlin.random.Random
  * still -- the rotation is the whole character of it, the way Nothing's own
  * generator sweeps a field around rather than boiling it in place. An
  * earlier pass reshuffled the noise every frame instead, which read as
- * static going in every direction at once rather than one thing moving.
+ * static going in every direction at once rather than one thing moving; a
+ * later one left it turning forever on a lap of its own, which is a panel
+ * that never finishes arriving. It moves while the popup is arriving, and
+ * not otherwise -- see [rememberAtmosphereMotion].
  *
  * Its two colors are handed in by the caller ([colors], both here and in
  * [drawAtmosphereRing]) rather than sampled by this file at all -- see
@@ -145,25 +144,29 @@ private const val ATMOSPHERE_TURN_RADIANS = 2.1f
 private const val TWO_PI = 6.2831855f
 
 /**
- * How many whole grain fields the shader dissolves through per lap. How
- * long a lap takes is
- * [MotionTokens.Ambient.atmosphereGrainLapMillis]; together they set the
- * rate the grain resamples at -- cheap either way, since it is two extra
- * hashes per pixel rather than a second layer.
+ * How many whole grain fields the shader dissolves through on the way in.
+ *
+ * Enough that the field is visibly alive while the panel is arriving --
+ * real film grain is a *new* field of silver every frame, not one still
+ * field lit differently -- and it comes to rest on a single field the
+ * moment the panel does. Cheap either way: two extra hashes per pixel
+ * rather than a second layer.
  */
-private const val GRAIN_FIELDS_PER_LAP = 24f
+private const val GRAIN_FIELDS_ON_ENTER = 14f
 
 /** How far off the panel's own center a field's center may be thrown. */
 private const val ATMOSPHERE_DRIFT_SPAN = 0.22f
 
 /**
- * The radius of the small circle the field's center wanders round, once it
- * has been thrown -- as a fraction of the panel's longest side, same units
- * as [ATMOSPHERE_DRIFT_SPAN]. Small: this is a field settling rather than a
- * thing orbiting, and the only reason to notice it is that the painting is
- * never quite the one you last looked at.
+ * The radius of the arc the field's center travels along as the panel
+ * arrives, and how far round that arc it comes from -- as a fraction of the
+ * panel's longest side, same units as [ATMOSPHERE_DRIFT_SPAN]. Small: this
+ * is a field settling into place rather than a thing orbiting, and the only
+ * reason to notice it is that the painting is never quite the one you last
+ * looked at.
  */
 private const val ATMOSPHERE_ORBIT_RADIUS = 0.05f
+private const val ATMOSPHERE_ORBIT_RADIANS = 1.4f
 
 // Same reasoning as GlassScrim's own noiseBrush cache: compiling AGSL is far
 // too expensive to redo whenever a panel appears. Unlike that cache this one
@@ -253,39 +256,41 @@ internal class AtmosphereMotion(
     /** How far the field's center sits off the panel's, as fractions of its longest side. */
     val driftX: () -> Float,
     val driftY: () -> Float,
-    /** Which grain field the shader is dissolving through -- see [GRAIN_FIELDS_PER_LAP]. */
+    /** Which grain field the shader is dissolving through -- see [GRAIN_FIELDS_ON_ENTER]. */
     val grainPhase: () -> Float
 )
 
 /**
- * The turn the field makes as the popup arrives, the place it arrives at,
- * and everything that keeps moving once it has.
+ * The turn the field makes as the popup arrives, and the place it arrives
+ * at.
  *
- * The arrival turn is phased off [LocalArrival] rather than run on a curve
- * of its own, so it rides exactly the spring the panel rides and unwinds
- * the same way on the way out -- no second easing to keep in agreement with
- * the first. Where it settles is a fresh random angle every time the popup
- * appears, and the field's center is thrown off the panel's by a fresh
- * random amount with it, so the same panel over the same app never looks
- * like the same painting twice.
+ * Every part of it is phased off [LocalArrival] rather than run on a curve
+ * of its own, so all three ride exactly the spring the panel rides and
+ * unwind the same way on the way out -- no second easing to keep in
+ * agreement with the first, and no clock of their own to outlive the panel.
+ * Where it settles is a fresh random angle every time the popup appears,
+ * and the field's center is thrown off the panel's by a fresh random amount
+ * with it, so the same panel over the same app never looks like the same
+ * painting twice.
  *
- * Three things then never stop, and none of them is a transition: the field
- * turns slowly on its own axis, its center wanders round a small circle,
- * and the grain dissolves through one field after another. There is nothing
- * travelling from one state to another in any of them, so there is no
- * spring to reach for -- and an eased loop visibly pulses at its own seam.
- * They are [MotionTokens.Ambient] loops, linear and endless.
+ * **Nothing here loops.** The field turns, its center travels along a short
+ * arc, and the grain dissolves through a dozen or so whole fields -- all of
+ * it inside the arrival, and all of it completely still from the frame the
+ * panel has landed. A field that never stops turning is a panel that never
+ * finishes arriving; it also keeps a shader running behind an overlay
+ * nobody is looking at any more.
  *
  * All three are handed out as functions read in the caller's own draw
  * phase, so a whole panel of this costs three float reads and three shader
- * uniforms per frame: nothing recomposes, nothing relayouts, and no second
- * layer is drawn. None of them start at all under
- * [MotionTokens.reducedMotion], and all of them are cancelled with the
- * composition they were launched in.
+ * uniforms per frame while it is arriving: nothing recomposes, nothing
+ * relayouts, and no second layer is drawn. Under reduced motion the arrival
+ * collapses to a snap, which lands every one of them on its settled value
+ * with nothing having travelled -- so there is no check of its own to make
+ * here either.
  *
  * element:  the atmosphere field.
- * model:    a field of particles, turning and drifting.
- * token:    [MotionTokens.Ambient] -- spin, drift and grain laps.
+ * model:    a field of particles, settling as the panel arrives.
+ * token:    the panel's own arrival, borrowed through [LocalArrival].
  * property: shader rotation, shader center offset, shader grain phase.
  *           Never the container: the panel this is painted into is a
  *           rectangle that sits perfectly still.
@@ -294,66 +299,32 @@ internal class AtmosphereMotion(
 internal fun rememberAtmosphereMotion(): AtmosphereMotion {
     val arrival = LocalArrival.current
 
-    // One draw of the dice per appearance: where the field settles, and how
-    // far off center it sits when it gets there.
+    // One draw of the dice per appearance: where the field settles, how far
+    // off center it sits when it gets there, and which way round its own
+    // little arc it comes in from.
     val seed = remember { List(3) { Random.nextFloat() } }
 
-    val grain = remember { Animatable(0f) }
-    val spin = remember { Animatable(0f) }
-    val orbit = remember { Animatable(0f) }
+    return remember(seed, arrival) {
+        val settledAngle = seed[0] * TWO_PI
+        val settledDriftX = (seed[1] - 0.5f) * ATMOSPHERE_DRIFT_SPAN
+        val settledDriftY = (seed[2] - 0.5f) * ATMOSPHERE_DRIFT_SPAN
+        val orbitPhase = seed[0] * TWO_PI
+        val away = { (1f - arrival()).coerceIn(0f, 1f) }
 
-    // One effect for all three, so "is motion allowed at all" is answered
-    // once. Leaving it cancels every lap with it -- the coroutine this runs
-    // in belongs to the composition, so a panel that goes away takes its
-    // loops with it rather than leaving them turning behind an overlay
-    // nobody can see.
-    LaunchedEffect(Unit) {
-        if (MotionTokens.reducedMotion) {
-            return@LaunchedEffect
-        }
-        launch {
-            grain.animateTo(
-                targetValue = GRAIN_FIELDS_PER_LAP,
-                animationSpec = MotionTokens.Ambient.loop(
-                    MotionTokens.Ambient.atmosphereGrainLapMillis
-                )
-            )
-        }
-        launch {
-            spin.animateTo(
-                targetValue = TWO_PI,
-                animationSpec = MotionTokens.Ambient.loop(
-                    MotionTokens.Ambient.atmosphereSpinLapMillis
-                )
-            )
-        }
-        orbit.animateTo(
-            targetValue = TWO_PI,
-            animationSpec = MotionTokens.Ambient.loop(
-                MotionTokens.Ambient.atmosphereDriftLapMillis
-            )
-        )
-    }
-
-    return remember(grain, spin, orbit, arrival) {
         AtmosphereMotion(
-            rotation = {
-                val away = (1f - arrival()).coerceIn(0f, 1f)
-                // The arrival's own turn, and the slow one that never
-                // stops, added rather than sequenced: the field is always
-                // turning, and arriving simply gives it a further 2.1
-                // radians to unwind first.
-                seed[0] * TWO_PI + ATMOSPHERE_TURN_RADIANS * away + spin.value
-            },
+            rotation = { settledAngle + ATMOSPHERE_TURN_RADIANS * away() },
+            // The center comes in along a short arc rather than straight,
+            // so the field reads as being swung into place rather than slid
+            // -- and it lands exactly on the point the dice picked.
             driftX = {
-                (seed[1] - 0.5f) * ATMOSPHERE_DRIFT_SPAN +
-                    cos(orbit.value) * ATMOSPHERE_ORBIT_RADIUS
+                val turned = orbitPhase + ATMOSPHERE_ORBIT_RADIANS * away()
+                settledDriftX + (cos(turned) - cos(orbitPhase)) * ATMOSPHERE_ORBIT_RADIUS
             },
             driftY = {
-                (seed[2] - 0.5f) * ATMOSPHERE_DRIFT_SPAN +
-                    sin(orbit.value) * ATMOSPHERE_ORBIT_RADIUS
+                val turned = orbitPhase + ATMOSPHERE_ORBIT_RADIANS * away()
+                settledDriftY + (sin(turned) - sin(orbitPhase)) * ATMOSPHERE_ORBIT_RADIUS
             },
-            grainPhase = { grain.value }
+            grainPhase = { GRAIN_FIELDS_ON_ENTER * away() }
         )
     }
 }

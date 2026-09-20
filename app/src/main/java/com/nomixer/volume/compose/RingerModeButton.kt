@@ -55,17 +55,24 @@ private fun ringerDescription(mode: Int): Int = when (mode) {
 }
 
 /**
- * How far the button gives under a finger, and how deep the mode change's
- * own knock goes.
+ * How far a round glyph button gives under a finger, and how deep the ringer
+ * switch's own mode-change knock goes.
  *
- * Both are small on purpose. A button is a button, not a thing being
- * squeezed: the press bottoms out at 0.955 of its own size, inside the
- * 0.94..0.97 band that reads as "taken" rather than as "deformed", and the
- * knock is shallower still, because the character of that one comes from
+ * The press depth is shared with [ToggleButton] rather than chosen twice:
+ * the two sit side by side in the mixer's ring row, and a finger moving
+ * between them must not feel like it has crossed onto a different surface.
+ *
+ * The press bottoms out at 0.89 of the button's own size. That is a real
+ * give rather than a hint of one -- a control this small, with a finger
+ * covering most of it, has to move far enough that what is left visible
+ * around the fingertip still reads as taken. It is deep, not slow: the
+ * travel is the same tenth of a second it always was.
+ *
+ * The knock is far shallower, because the character of that one comes from
  * the spring crossing back out past rest rather than from how far in it
  * went.
  */
-private const val PRESS_SQUASH = 0.045f
+internal const val BUTTON_PRESS_SQUASH = 0.11f
 private const val POP_SQUASH = 0.07f
 
 /** How far the vibrating glyph travels sideways at the peak of its shake, in dp. */
@@ -82,9 +89,9 @@ private const val SHAKE_TRAVEL_DP = 2.4f
  * Every switch is one short pop of the button itself -- in, back out past
  * its own size, done -- and, on the glyph, whichever part of it the new
  * mode actually changes: the waves retracting into the speaker and the mute
- * bar drawing across where they were, or the phone shaking sideways. The
- * button never swaps one finished picture for another where the two share a
- * body.
+ * bar drawing itself across the cone they came out of, or the phone shaking
+ * sideways. The button never swaps one finished picture for another where
+ * the two share a body.
  */
 @Composable
 fun RingerModeButton(
@@ -185,7 +192,7 @@ fun RingerModeButton(
     // element:  the button, and the glyph on it.
     // model:    a button under a finger.
     // token:    MotionTokens.Spatial.press.
-    // property: uniform scale, 0.955 at the bottom.
+    // property: uniform scale, 0.89 at the bottom.
     //
     // One layer for both, deliberately: the glyph is a child of the
     // graphics layer this drives, so there is a single spatial animation
@@ -213,7 +220,7 @@ fun RingerModeButton(
                 // in while a finger is down, and the mode change's own
                 // impulse knocking it and springing back out past its
                 // resting size. The glyph inside inherits both.
-                val knocked = 1f - POP_SQUASH * impulse.value - PRESS_SQUASH * press.value
+                val knocked = 1f - POP_SQUASH * impulse.value - BUTTON_PRESS_SQUASH * press.value
                 scaleX = knocked
                 scaleY = knocked
             }
@@ -297,7 +304,7 @@ fun RingerModeButton(
                     imageVector = Icons.Default.Vibration,
                     contentDescription = description,
                     modifier = Modifier
-                        .size(size * 0.5f)
+                        .size(size * ButtonGlyphFraction)
                         .graphicsLayer {
                             // A phone buzzing on a table travels sideways,
                             // so the shake is translation rather than
@@ -311,7 +318,7 @@ fun RingerModeButton(
                 AnimatedSpeakerGlyph(
                     level = if (ringerMode == AudioManager.RINGER_MODE_SILENT) 0f else 1f,
                     muted = ringerMode == AudioManager.RINGER_MODE_SILENT,
-                    modifier = Modifier.size(size * 0.5f),
+                    modifier = Modifier.size(size * ButtonGlyphFraction),
                     contentDescription = description,
                     tint = contentColor
                 )

@@ -196,6 +196,11 @@ fun VolumeDisc(
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
     lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
     /**
+     * How hard that light is coming right now -- the flare the beam
+     * arrives on, see [rememberGlassBeam]. 1 is the settled strength.
+     */
+    lightStrength: Float = 1f,
+    /**
      * The ring's own real (RenderEffect) frost, ignored unless
      * [trackBackingGlass] -- see [GlassRingBackground]'s own parameter of
      * the same name, and [GlassBackground]'s for why this needs a graphics
@@ -382,6 +387,7 @@ fun VolumeDisc(
                 blurRadius = blurRadius,
                 lightAngle = lightAngle,
                 lightWidth = lightWidth,
+                lightStrength = lightStrength,
                 noiseColor = noiseColor,
                 noiseAlpha = noiseAlpha,
                 modifier = Modifier.matchParentSize()
@@ -530,7 +536,8 @@ fun VolumeDisc(
                         ringRadius = ringRadius,
                         ringWidth = ringWidth,
                         lightAngle = lightAngle,
-                        lightWidth = lightWidth
+                        lightWidth = lightWidth,
+                        lightStrength = lightStrength
                     )
                 } else if (trackBackingAtmosphere) {
                     drawAtmosphereRing(

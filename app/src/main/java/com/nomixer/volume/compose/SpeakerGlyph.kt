@@ -9,22 +9,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.MotionTokens
-
-/**
- * The glyph's own coordinate system: a 24-unit square, the same one the
- * Material icons are drawn in, so this carries the same optical weight as
- * the icons beside it at any size.
- */
-private const val GLYPH_UNITS = 24f
 
 /** The cone's mouth -- the pivot everything that isn't the body grows out of. */
 private const val MOUTH_X = 11f
@@ -48,8 +43,11 @@ private const val WAVE_OUTER_THRESHOLD = 0.5f
  * and throughout every transition. What moves is everything attached to
  * them -- a wave grows out of the cone's mouth as the level crosses into
  * its band and retracts back into it when the level falls out again, and
- * the mute bar draws itself across the space the waves occupy when the
- * level reaches zero, then un-draws the same way. Swapping two finished
+ * the mute bar draws itself across the speaker when the level reaches
+ * zero, then un-draws the same way. That bar is the shared one every other
+ * silenced glyph in the app wears (see [drawMuteBar]): the same stroke
+ * across the glyph's own bounds, cutting its own channel through the body
+ * it crosses rather than going round it. Swapping two finished
  * glyphs can only ever cross-dissolve; built this way the icon reads as one
  * object reacting to the level, which is also what keeps it legible while
  * the number under it is still moving.
@@ -73,15 +71,14 @@ fun AnimatedSpeakerGlyph(
     val arrival = LocalArrival.current
     val description = contentDescription
 
-    // element: the speaker's waves and its mute bar.
+    // element: the speaker's waves.
     // model:   a cone and the air in front of it -- the waves retract into
-    //          the cone and the bar draws across where they were; the cone
-    //          itself never moves.
+    //          the cone; the cone itself never moves.
     // token:   MotionTokens.Spatial.fast (a finger is on the slider that
-    //          drives this, so it settles on the same spring the fill does).
-    // property: wave extent and bar extent -- geometry, drawn from these
-    //          fractions. No alpha: a wave that fades reads as a rendering
-    //          artefact rather than as air going still.
+    //          drives this, so it settles on the same tier the fill does).
+    // property: wave extent -- geometry, drawn from these fractions. No
+    //          alpha: a wave that fades reads as a rendering artefact
+    //          rather than as air going still.
     val innerWave = animateFloatAsState(
         targetValue = if (!muted && level > WAVE_INNER_THRESHOLD) 1f else 0f,
         animationSpec = MotionTokens.Spatial.fast(),
@@ -92,18 +89,37 @@ fun AnimatedSpeakerGlyph(
         animationSpec = MotionTokens.Spatial.fast(),
         label = "speakerOuterWave"
     )
+    // element: the mute bar.
+    // model:   a stroke drawn across the glyph -- see [drawMuteBar].
+    // token:   MotionTokens.Spatial.default. Deliberately a tier slower
+    //          than the waves beside it: the waves answer a finger on a
+    //          slider, the bar answers the level reaching nothing, and at
+    //          the waves' own pace it was over before it could be read as
+    //          a mark being made.
+    // property: bar extent.
     val bar = animateFloatAsState(
         targetValue = if (muted) 1f else 0f,
-        animationSpec = MotionTokens.Spatial.fast(),
+        animationSpec = MotionTokens.Spatial.default(),
         label = "speakerMuteBar"
     )
 
     Canvas(
-        modifier = modifier.semantics {
-            if (description != null) {
-                this.contentDescription = description
+        modifier = modifier
+            .graphicsLayer {
+                // The bar knocks its own channel out of the speaker it
+                // crosses, which needs a layer to punch through -- and only
+                // while there is a bar. See [drawMuteBar].
+                compositingStrategy = if (bar.value > 0.001f) {
+                    CompositingStrategy.Offscreen
+                } else {
+                    CompositingStrategy.Auto
+                }
             }
-        }
+            .semantics {
+                if (description != null) {
+                    this.contentDescription = description
+                }
+            }
     ) {
         // Read here rather than in composition: all four of these are
         // springs, and the glyph should repaint as they travel without the
@@ -162,37 +178,5 @@ private fun DrawScope.drawWave(tint: Color, radius: Float, progress: Float) {
         topLeft = Offset(MOUTH_X - grown, MOUTH_Y - grown),
         size = Size(grown * 2f, grown * 2f),
         style = Stroke(width = 1.9f, cap = StrokeCap.Round)
-    )
-}
-
-/**
- * The mute bar, drawn on rather than switched on: the stroke grows from its
- * upper end to its lower one as [progress] runs to 1, and retracts back
- * into that same end on the way out. A bar that merely faded in would read
- * as a second icon arriving on top of the first.
- *
- * It crosses the space the waves come out of rather than the speaker
- * itself, so it needs no knocked-out gap behind it to stay readable -- on a
- * single-colour glyph a bar drawn over the body would simply disappear into
- * it.
- */
-private fun DrawScope.drawMuteBar(tint: Color, progress: Float) {
-    if (progress <= 0.001f) {
-        return
-    }
-
-    val startX = 12.6f
-    val startY = 6.4f
-    val endX = 20.6f
-    val endY = 17.6f
-    drawLine(
-        color = tint,
-        start = Offset(startX, startY),
-        end = Offset(
-            startX + (endX - startX) * progress,
-            startY + (endY - startY) * progress
-        ),
-        strokeWidth = 2.1f,
-        cap = StrokeCap.Round
     )
 }

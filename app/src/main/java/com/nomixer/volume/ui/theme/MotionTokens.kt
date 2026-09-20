@@ -4,14 +4,9 @@ import android.animation.ValueAnimator
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.InfiniteRepeatableSpec
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.SpringSpec
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 
@@ -51,17 +46,20 @@ import androidx.compose.ui.graphics.Color
  * |                     |                       |                             | and a haptic click per slot crossed   |
  * | Slider fill         | a thumb on a track    | [Spatial.fast]              | fill fraction                         |
  * | Follower sliders    | a thumb, following    | [Spatial.defaultSoft]       | fill fraction                         |
- * | Ringer button       | a button under a finger | [Spatial.press]           | uniform scale, 0.94..0.97             |
+ * | Ringer button       | a button under a finger | [Spatial.press]           | uniform scale, 0.89 at the bottom     |
+ * | Toggle button       | a button under a finger | [Spatial.press]           | uniform scale, the ringer's own band  |
  * | Ringer mode change  | a button knocked      | [Spatial.knock]             | uniform scale                         |
  * | Ringer icon         | the button's own face | [Effects.default]           | alpha only -- its scale is the        |
  * |                     |                       |                             | container's. Never a slide.           |
  * | Vibrate glyph       | a phone on a table    | [Spatial.shake]             | translationX                          |
- * | Speaker glyph       | a cone and the air    | [Spatial.fast]              | wave extent, mute bar                 |
+ * | Speaker glyph       | a cone and the air    | [Spatial.fast]              | wave extent                           |
+ * | Mute bar            | a stroke drawn across a glyph | [Spatial.default]   | bar extent, over the glyph's own      |
+ * |                     |                       |                             | bounds -- never a fade                |
  * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |
- * | Glass highlight     | a pane that is still  | [Ambient.glassSheenLapMillis] | light angle only -- never the pane  |
- * | Atmosphere spin     | a field of particles  | [Ambient.atmosphereSpinLapMillis] | shader rotation -- never the container |
- * | Atmosphere drift    | a field of particles  | [Ambient.atmosphereDriftLapMillis] | shader centre offset             |
- * | Atmosphere grain    | a texture             | [Ambient.atmosphereGrainLapMillis] | shader grain phase               |
+ * | Glass highlight     | a pane that is still, | the arrival, via [LocalArrival] | light angle and brightness --     |
+ * |                     | under a light arriving |                            | never the pane                        |
+ * | Atmosphere field    | a field of particles  | the arrival, via [LocalArrival] | shader rotation, centre offset    |
+ * |                     | settling as it arrives |                            | and grain phase -- never the container |
  * | Every colour role   | --                    | [Effects.color]             | colour                                |
  *
  * # Why springs, and why three tiers
@@ -75,9 +73,10 @@ import androidx.compose.ui.graphics.Color
  * be handed straight to a spring and simply continue as motion, rather than
  * the control stopping dead the instant the touch lifts.
  *
- * The exception is [Ambient], which is not travel at all: a loop has no
- * target to spring toward, and a spring's own settle would make its seam
- * visible once per lap. Those are linear by construction.
+ * Nothing is exempt, because nothing loops. The glass beam and the
+ * atmosphere field used to turn forever on fixed-length laps; they are
+ * phases of the arrival now (see [LocalArrival]), so the overlay has
+ * exactly one clock and comes to a complete stop when it has arrived.
  *
  * # Why two channels
  *
@@ -101,8 +100,9 @@ object MotionTokens {
      * turning the setting on takes effect on the next animation instead of
      * the next launch.
      *
-     * Public because [Ambient] loops can't be expressed as a snap -- a
-     * caller that owns one skips starting it entirely instead.
+     * Public because a caller may need to answer the question itself
+     * rather than by asking for a token -- a control that keeps a
+     * shortened spring where everything around it collapses to a snap.
      */
     val reducedMotion: Boolean
         get() = !ValueAnimator.areAnimatorsEnabled()
@@ -211,50 +211,6 @@ object MotionTokens {
 
         /** Colour roles crossfading when the user picks a new one. */
         val color: FiniteAnimationSpec<Color> = default()
-    }
-
-    /**
-     * Loops that never arrive anywhere: a reflection creeping across glass,
-     * a particle field turning on its own axis. Linear and endless by
-     * construction -- see this file's own note on why these aren't springs.
-     *
-     * Every one of them is a shader uniform or a single graphics-layer
-     * property on a layer that is already being drawn, so a lap costs no
-     * extra pass. None of them start at all under [reducedMotion]; callers
-     * check it before launching, because an infinite spec has no snap to
-     * collapse to.
-     */
-    object Ambient {
-        /**
-         * How long the glass reflection takes to creep once round the
-         * panel. Slow enough (about nine degrees a second) that nobody
-         * watches it move, long enough that the panel is never quite lit
-         * the way it was last time it was up.
-         */
-        const val glassSheenLapMillis = 42_000
-
-        /** How long the atmosphere field takes to turn once on its own axis. */
-        const val atmosphereSpinLapMillis = 48_000
-
-        /** How long its centre takes to wander once round its little orbit. */
-        const val atmosphereDriftLapMillis = 31_000
-
-        /**
-         * How long the grain takes to dissolve through a whole set of
-         * fields: fast enough to be alive, slow enough not to strobe.
-         */
-        const val atmosphereGrainLapMillis = 2_600
-
-        /**
-         * One lap, forever, at a constant rate. Linear and [RepeatMode.Restart]
-         * because every consumer of this is an angle or a phase that wraps
-         * -- the restart lands exactly where the lap ended, so there is no
-         * seam for an easing to draw attention to.
-         */
-        fun <T> loop(lapMillis: Int): InfiniteRepeatableSpec<T> = infiniteRepeatable(
-            animation = tween(durationMillis = lapMillis, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
     }
 
     /**

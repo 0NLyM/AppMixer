@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -153,6 +154,8 @@ fun StreamVolumeSlider(
         volume = audioManager.getStreamVolume(streamType)
     }
 
+    val muteBarExtent = rememberMuteBarExtent(barred = volume <= 0)
+
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -198,10 +201,17 @@ fun StreamVolumeSlider(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(16.dp, 8.dp)
             ) {
+                // A stream at zero wears the same bar the speaker in the
+                // compact popup does, across this icon's own bounds -- one
+                // mark for "silenced", whatever the glyph underneath it
+                // happens to be (see [muteBar]), at the one size every
+                // volume glyph in the mixer is drawn at.
                 Icon(
                     imageVector = icon,
                     contentDescription = name,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier
+                        .size(MixerGlyphSize)
+                        .muteBar(muteBarExtent, LocalContentColor.current),
                 )
                 StreamSliderTextContent(name = name, valueText = "$volume/${maxVolume.toInt()}")
             }

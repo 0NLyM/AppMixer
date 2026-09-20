@@ -2,12 +2,9 @@ package com.nomixer.volume.compose
 
 import android.graphics.RuntimeShader
 import android.util.Log
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,7 +34,6 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.ui.theme.LocalArrival
-import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -169,81 +165,85 @@ private const val EDGE_LIGHT_ALPHA = 0.55f
 private const val SHIMMER_ARC_DEGREES = 84f
 
 /**
- * How coarsely the ambient creep below is quantised, in degrees.
+ * How much brighter the beam is at the instant the panel starts arriving,
+ * as a multiple of its settled strength.
+ *
+ * This is the catch of the light as the sheet turns into place: brightest
+ * at the first frame, gone by the time the panel has stopped. It is on the
+ * arrival rather than on a curve of its own, so the flare and the sweep are
+ * the same event -- and so it cannot outlive the panel it belongs to.
+ */
+private const val ENTER_PEAK_STRENGTH = 2.1f
+
+/**
+ * How coarsely the arrival's own sweep is quantised, in degrees, and the
+ * flare above in multiples of its settled strength.
  *
  * The beam is a wide, soft gradient and the rim is a hairline, so a degree
  * either way is not a thing anyone can see -- but it *is* the difference
- * between rebuilding two gradient shaders sixty times a second forever and
- * rebuilding them about five. The angle is a composition-phase value (both
- * brushes are built from it, one of them inside a Modifier.border), so
- * every distinct value it takes costs a recomposition of the glass; there
- * is nothing to gain by taking more of them than the eye resolves.
+ * between rebuilding two gradient shaders on every frame of the arrival and
+ * rebuilding them a couple of dozen times over the whole of it. The angle
+ * and the strength are composition-phase values (both brushes are built
+ * from them, one of them inside a Modifier.border), so every distinct value
+ * they take costs a recomposition of the glass; there is nothing to gain by
+ * taking more of them than the eye resolves.
  */
 private const val SHEEN_STEP_DEGREES = 2f
+private const val STRENGTH_STEP = 0.04f
 
-/** One whole turn, which is the only lap length that joins back onto itself. */
-private const val FULL_TURN_DEGREES = 360f
+/** Rounds [value] down to whole [step]s -- see [SHEEN_STEP_DEGREES]. */
+private fun quantise(value: Float, step: Float): Float = (value / step).toInt() * step
 
 /**
- * The lit angle of the glass for the current frame: where the panel's
- * arrival has thrown the reflection, plus the slow creep it never stops
- * making.
+ * Where the light on the glass is, and how hard it is coming, for the
+ * current frame.
  *
- * Returned as one number for the caller to hand to *both* halves of the
- * effect -- [glassBeamBrush] across the face and [glassEdgeLightBrush]
- * around the rim -- because they are one beam. Sweeping the face's light
- * while the rim's stayed put would pull the effect in half.
+ * One value for the caller to hand to *both* halves of the effect --
+ * [glassBeamBrush] across the face and [glassEdgeLightBrush] around the rim
+ * -- because they are one beam. Lighting the face while the rim stayed put
+ * would pull the effect in half.
+ */
+@Immutable
+class GlassBeam(
+    /** The beam's axis, in degrees. */
+    val angle: Float,
+    /** Its brightness, as a multiple of the settled strength. */
+    val strength: Float
+)
+
+/**
+ * The glass's own light for this appearance: thrown bright and wide as the
+ * panel starts arriving, swept round to the angle the user actually chose
+ * as it lands, and then completely still.
  *
  * element:  the reflection on the glass.
- * model:    a pane lying still under a light that moves.
- * token:    [MotionTokens.Ambient.glassSheenLapMillis] for the creep;
- *           the panel's own spatial spring, borrowed through
- *           [LocalArrival], for the arrival sweep.
- * property: the beam's angle, and nothing else. **The pane itself never
- *           turns and never scales** -- that is the whole difference
- *           between glass and a sheet of paper, and it is why this
- *           returns an angle rather than a rotation for someone to put on
- *           a layer.
+ * model:    a pane lying still, catching a light as it turns into place.
+ * token:    the panel's own arrival, borrowed through [LocalArrival].
+ * property: the beam's angle and its brightness, and nothing else. **The
+ *           pane itself never turns and never scales** -- that is the whole
+ *           difference between glass and a sheet of paper, and it is why
+ *           this returns a light rather than a rotation for someone to put
+ *           on a layer.
  *
- * The arrival half is phased off [LocalArrival] rather than run as an
- * animation of its own, so it rides exactly the spring the panel rides and
- * gets its exit for free instead of needing a second curve kept in
- * agreement with the first by hand. The creep is an [MotionTokens.Ambient]
- * lap: linear, because it is not travelling anywhere and an eased loop
- * pulses at its own seam, and a whole turn, because only a whole turn joins
- * back onto itself invisibly. It doesn't start under
- * [MotionTokens.reducedMotion], and it is cancelled with the composition it
- * was launched in.
+ * Both halves are phased off [LocalArrival] rather than run as animations
+ * of their own, so they ride exactly the spring the panel rides and get
+ * their exit for free instead of needing a second curve kept in agreement
+ * with the first by hand. Nothing here loops: a reflection that creeps
+ * forever is a panel that never finishes arriving, and the light is at rest
+ * from the frame the panel is. Under reduced motion the arrival itself
+ * collapses to a snap, which lands this at the chosen angle and the settled
+ * strength with nothing having travelled -- no check of its own needed.
  *
  * Outside the overlay the arrival is simply 1, so the settings preview
- * shows the chosen angle with the creep and no sweep.
+ * shows the chosen angle, unlit by any flare and perfectly still.
  */
 @Composable
-fun rememberGlassShimmerAngle(lightAngle: Float, creeping: Boolean = true): Float {
+fun rememberGlassBeam(lightAngle: Float): GlassBeam {
     val arrival = LocalArrival.current
-
-    val sheen = remember { Animatable(0f) }
-    LaunchedEffect(creeping) {
-        // Nothing to light, nothing to creep across. Callers pass false
-        // when the panel is painted solid or with Atmosphere, so a lap that
-        // nobody can see never runs -- and never costs the recompositions
-        // [SHEEN_STEP_DEGREES] exists to ration.
-        if (!creeping || MotionTokens.reducedMotion) {
-            return@LaunchedEffect
-        }
-        sheen.animateTo(
-            targetValue = FULL_TURN_DEGREES,
-            animationSpec = MotionTokens.Ambient.loop(MotionTokens.Ambient.glassSheenLapMillis)
-        )
-    }
-    val crept by remember {
-        derivedStateOf {
-            (sheen.value / SHEEN_STEP_DEGREES).toInt() * SHEEN_STEP_DEGREES
-        }
-    }
-
     val away = (1f - arrival()).coerceIn(0f, 1f)
-    return lightAngle + away * SHIMMER_ARC_DEGREES + crept
+    val angle = lightAngle + quantise(away * SHIMMER_ARC_DEGREES, SHEEN_STEP_DEGREES)
+    val strength = 1f + quantise(away * (ENTER_PEAK_STRENGTH - 1f), STRENGTH_STEP)
+    return remember(angle, strength) { GlassBeam(angle, strength) }
 }
 
 /**
@@ -260,7 +260,8 @@ fun rememberGlassShimmerAngle(lightAngle: Float, creeping: Boolean = true): Floa
 fun glassBeamBrush(
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
     lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
-    peakAlpha: Float = FACE_LIGHT_ALPHA
+    strength: Float = 1f,
+    peakAlpha: Float = (FACE_LIGHT_ALPHA * strength).coerceIn(0f, 1f)
 ): Brush = BeamBrush(
     angleDegrees = lightAngle,
     colors = listOf(
@@ -288,11 +289,11 @@ fun glassEdgeLightBrush(
 ): Brush = BeamBrush(
     angleDegrees = lightAngle,
     colors = listOf(
-        Color.White.copy(alpha = 0.04f * strength),
-        Color.White.copy(alpha = 0.18f * strength),
-        Color.White.copy(alpha = EDGE_LIGHT_ALPHA * strength),
-        Color.White.copy(alpha = 0.18f * strength),
-        Color.White.copy(alpha = 0.04f * strength)
+        Color.White.copy(alpha = (0.04f * strength).coerceIn(0f, 1f)),
+        Color.White.copy(alpha = (0.18f * strength).coerceIn(0f, 1f)),
+        Color.White.copy(alpha = (EDGE_LIGHT_ALPHA * strength).coerceIn(0f, 1f)),
+        Color.White.copy(alpha = (0.18f * strength).coerceIn(0f, 1f)),
+        Color.White.copy(alpha = (0.04f * strength).coerceIn(0f, 1f))
     ),
     stops = beamStops(lightWidth)
 )
@@ -376,6 +377,8 @@ fun GlassBackground(
     blurRadius: Dp = 0.dp,
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
     lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    /** The beam's brightness for this frame -- see [rememberGlassBeam]. */
+    lightStrength: Float = 1f,
     noiseColor: Color = Color.White,
     noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT
 ) {
@@ -401,7 +404,7 @@ fun GlassBackground(
                 }
             )
             .drawWithCache {
-                val beam = glassBeamBrush(lightAngle, lightWidth)
+                val beam = glassBeamBrush(lightAngle, lightWidth, lightStrength)
                 onDrawBehind {
                     drawRect(baseColor)
                     drawRect(beam)
@@ -488,6 +491,8 @@ fun GlassRingBackground(
     blurRadius: Dp = 0.dp,
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
     lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    /** The beam's brightness for this frame -- see [rememberGlassBeam]. */
+    lightStrength: Float = 1f,
     noiseColor: Color = Color.White,
     noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT
 ) {
@@ -507,7 +512,7 @@ fun GlassRingBackground(
                 }
             )
             .drawWithCache {
-                val beam = glassBeamBrush(lightAngle, lightWidth)
+                val beam = glassBeamBrush(lightAngle, lightWidth, lightStrength)
                 onDrawBehind {
                     drawRect(baseColor)
                     drawRect(beam)
@@ -533,13 +538,15 @@ fun DrawScope.drawGlassRingRim(
     ringRadius: Float,
     ringWidth: Float,
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
-    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT
+    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
+    /** The beam's brightness for this frame -- see [rememberGlassBeam]. */
+    lightStrength: Float = 1f
 ) {
     // Stroking the same two-circle path an equivalent clip would use catches
     // both the ring's outer and inner rim in one call.
     drawPath(
         ringPath(center, ringRadius, ringWidth),
-        brush = glassEdgeLightBrush(lightAngle, lightWidth),
+        brush = glassEdgeLightBrush(lightAngle, lightWidth, lightStrength),
         style = Stroke(width = 1.5.dp.toPx())
     )
 }
