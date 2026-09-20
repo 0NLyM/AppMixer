@@ -37,30 +37,31 @@ import androidx.compose.ui.graphics.Color
  *
  * # The table
  *
- * | element             | model                | token                  | property                              |
- * |---------------------|----------------------|------------------------|---------------------------------------|
- * | Side bar / panel    | sheet on the edge    | [Spatial.default]      | translation, edge axis only           |
- * | Side bar reveal     | sheet on the edge    | (same value)           | clip outline, derived -- not a spring |
- * | Mixer morph         | sheet changing shape | [Spatial.default]      | translation + scale, matched geometry |
- * | Panel opacity       | --                   | [Effects.default]      | alpha (never a spatial spring)        |
- * | Disc pane           | knob                 | [Spatial.default]      | rotationZ (formation, anticlockwise)  |
- * | Disc hand           | knob                 | [Spatial.fast]         | rotationZ (steering, interruptible)   |
- * | Disc hand opacity   | --                   | [Effects.default]      | alpha                                 |
- * | Tick ring           | detent               | [Spatial.fast]         | angular snap (+ haptic)               |
- * | Slider fill         | thumb                | [Spatial.fast]         | fill fraction                         |
- * | Follower sliders    | thumb, following     | [Spatial.defaultSoft]  | fill fraction                         |
- * | Ringer button       | button               | [Spatial.press]        | uniform scale, 0.94..0.97             |
- * | Ringer mode change  | button knocked       | [Spatial.knock]        | uniform scale                         |
- * | Ringer icon         | button's own face    | [Spatial.press] +      | scale + alpha, one Transition,        |
- * |                     |                      | [Effects.default]      | no slide                              |
- * | Vibrate glyph       | phone on a table     | [Spatial.shake]        | translationX                          |
- * | Speaker glyph       | a cone and its waves | [Spatial.fast]         | wave extent, mute bar                 |
- * | Brand dot           | punctuation          | [Spatial.knock]        | uniform scale (never from 0)          |
- * | Glass highlight     | a pane that is still | [Ambient.glassSheen]   | light angle only -- never the pane    |
- * | Atmosphere field    | a field of particles | [Ambient.atmosphereSpin]| shader rotation -- never the container|
- * | Atmosphere drift    | a field of particles | [Ambient.atmosphereDrift]| shader centre offset                 |
- * | Atmosphere grain    | a texture            | [Ambient.atmosphereGrain]| shader grain phase                   |
- * | Every colour role   | --                   | [Effects.color]        | colour                                |
+ * | element             | model                 | token                       | property                              |
+ * |---------------------|-----------------------|-----------------------------|---------------------------------------|
+ * | Edge panel          | sheet on the edge     | [Spatial.default]           | translation, edge axis only -- no scale |
+ * | Edge panel reveal   | sheet on the edge     | (the same value)            | clip outline, derived -- not a spring |
+ * | Centered panel      | sheet expanding in place | [Spatial.default]        | uniform scale, never from 0           |
+ * | Mixer morph         | sheet changing shape  | [Spatial.default]           | translation + scale, matched geometry |
+ * | Panel opacity       | --                    | [Effects.default]           | alpha (never a spatial spring)        |
+ * | Disc pane           | a knob                | [Spatial.default]           | rotationZ (formation, anticlockwise)  |
+ * | Disc hand           | the mark on a dial    | [Effects.default]           | alpha, a later slice of the arrival   |
+ * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction, velocity-retargeted    |
+ * | Tick ring           | a detent              | [Spatial.tick]              | angular position (derived from fill)  |
+ * | Slider fill         | a thumb on a track    | [Spatial.fast]              | fill fraction                         |
+ * | Follower sliders    | a thumb, following    | [Spatial.defaultSoft]       | fill fraction                         |
+ * | Ringer button       | a button under a finger | [Spatial.press]           | uniform scale, 0.94..0.97             |
+ * | Ringer mode change  | a button knocked      | [Spatial.knock]             | uniform scale                         |
+ * | Ringer icon         | the button's own face | [Spatial.press] +           | scale + alpha, one Transition with    |
+ * |                     |                       | [Effects.default]           | the container. Never a slide.         |
+ * | Vibrate glyph       | a phone on a table    | [Spatial.shake]             | translationX                          |
+ * | Speaker glyph       | a cone and the air    | [Spatial.fast]              | wave extent, mute bar                 |
+ * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |
+ * | Glass highlight     | a pane that is still  | [Ambient.glassSheenLapMillis] | light angle only -- never the pane  |
+ * | Atmosphere spin     | a field of particles  | [Ambient.atmosphereSpinLapMillis] | shader rotation -- never the container |
+ * | Atmosphere drift    | a field of particles  | [Ambient.atmosphereDriftLapMillis] | shader centre offset             |
+ * | Atmosphere grain    | a texture             | [Ambient.atmosphereGrainLapMillis] | shader grain phase               |
+ * | Every colour role   | --                    | [Effects.color]             | colour                                |
  *
  * # Why springs, and why three tiers
  *
@@ -285,5 +286,26 @@ object MotionTokens {
  * A function rather than a value, so a reader can take it in its own draw
  * phase and repaint without recomposing. Defaults to fully arrived, for
  * anywhere outside the overlay (the settings screen's preview).
+ *
+ * This is the **spatial** half of the arrival, and only things that move
+ * may read it: a turn, a travel, a scale. Anything fading reads
+ * [LocalArrivalFade] instead -- see [MotionTokens] on why the two channels
+ * are never the same spring.
  */
 val LocalArrival = compositionLocalOf<() -> Float> { { 1f } }
+
+/**
+ * The effects half of the same arrival: how opaque the overlay is, 0 to 1,
+ * from its own critically damped spring.
+ *
+ * Separate from [LocalArrival] on purpose. They start together and are the
+ * same transition, but a fade has no mass -- an alpha carried by a spatial
+ * spring overshoots past 1, which the compositor clamps, so the panel sits
+ * at full opacity for the length of the overshoot and then eases off it.
+ * That reads as a flicker at the end of an otherwise clean arrival, and it
+ * is the whole reason alpha has a channel of its own.
+ *
+ * A function, and defaulting to fully opaque, for the same reasons
+ * [LocalArrival] is.
+ */
+val LocalArrivalFade = compositionLocalOf<() -> Float> { { 1f } }

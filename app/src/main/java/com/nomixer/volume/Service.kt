@@ -85,8 +85,10 @@ import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.MotionTokens
+import kotlinx.coroutines.launch
 import java.util.Objects
 import kotlin.math.roundToInt
 
@@ -175,6 +177,14 @@ private fun UiPreferences.panelPlacement(expanded: Boolean): PanelPlacement =
 
 /** How far a compact panel travels along that edge as it opens out of it. */
 private val ENTER_TRAVEL_DP = 14.dp
+
+/**
+ * How far under its final size a centered panel starts. Small, and
+ * deliberately not zero: a panel scaled to nothing has no size for its own
+ * spring to overshoot around, so it reads as being conjured rather than as
+ * opening out.
+ */
+private const val CENTER_EXPAND_SQUASH = 0.08f
 
 /**
  * Where the mixer starts its morph: the compact popup's own rectangle,
@@ -548,6 +558,15 @@ class Service : AccessibilityService() {
                     // a visible panel fire the lateral enter a second time.
                     val appear = remember { Animatable(0f) }
 
+                    // The same arrival on the effects channel. Outside the
+                    // key for the same reason [appear] is, and a spring of
+                    // its own because alpha is not a thing with mass: the
+                    // spatial spring overshoots past 1, and a clamped
+                    // overshoot on alpha is a panel that reaches full
+                    // opacity, sits there, and then eases off it -- a
+                    // flicker at the end of an otherwise clean arrival.
+                    val fade = remember { Animatable(0f) }
+
                     key(expanded) {
                         // Keyed, unlike [appear]: this one *is* about the
                         // current shape -- how far from the compact panel's
@@ -567,6 +586,18 @@ class Service : AccessibilityService() {
                                 if (!revealed) {
                                     return@LaunchedEffect
                                 }
+
+                                // element:  the whole panel.
+                                // model:    -- opacity is not an object.
+                                // token:    MotionTokens.Effects.default.
+                                // property: alpha.
+                                //
+                                // Launched rather than awaited: it starts
+                                // on the same frame as the spatial half
+                                // below, so the two are one transition,
+                                // and it is simply on the channel that
+                                // suits what it drives.
+                                launch { fade.animateTo(1f, MotionTokens.Effects.default()) }
 
                                 if (expanded && morphOrigin != null) {
                                     // The mixer doesn't arrive -- it is the
@@ -611,10 +642,17 @@ class Service : AccessibilityService() {
                                 // rectangle first, and only then does that
                                 // rectangle close back into the screen
                                 // edge it came out of.
+                                val fadingOut =
+                                    launch { fade.animateTo(0f, MotionTokens.Effects.default()) }
                                 if (expanded && morphOrigin != null) {
                                     morph.animateTo(0f, MotionTokens.Spatial.default())
                                 }
                                 appear.animateTo(0f, MotionTokens.Spatial.default())
+                                // Both channels, not just the travelling
+                                // one: tearing the window down while the
+                                // fade still had a frame to run is the
+                                // exit's own version of a snap.
+                                fadingOut.join()
                                 // Posted rather than called straight from
                                 // here: this coroutine belongs to the
                                 // composition the window is about to be
@@ -633,8 +671,12 @@ class Service : AccessibilityService() {
                         // Remembered, so providing it doesn't invalidate
                         // every reader on each recomposition.
                         val arrival = remember(appear) { { appear.value } }
+                        val arrivalFade = remember(fade) { { fade.value } }
 
-                        CompositionLocalProvider(LocalArrival provides arrival) {
+                        CompositionLocalProvider(
+                            LocalArrival provides arrival,
+                            LocalArrivalFade provides arrivalFade
+                        ) {
                         // One beam shared by the mixer's glass face and its
                         // rim, exactly as CollapsedVolumePopup does it.
                         // Taken inside the provider above, because the
@@ -662,26 +704,80 @@ class Service : AccessibilityService() {
                                     translationY = morphOrigin.translationY * away
                                 } else {
                                     val away = 1f - arrived
-                                    val grown = 1f - 0.08f * away
                                     transformOrigin = origin
-                                    scaleX = grown
-                                    scaleY = grown
 
-                                    // A short push along the same axis the
-                                    // panel is being uncovered on, so the
-                                    // reveal and the travel are one motion
-                                    // rather than two.
-                                    val travel = ENTER_TRAVEL_DP.toPx() * away
-                                    when (revealEdge) {
-                                        RevealEdge.Left -> translationX = -travel
-                                        RevealEdge.Right -> translationX = travel
-                                        RevealEdge.Top -> translationY = -travel
-                                        RevealEdge.Bottom -> translationY = travel
-                                        RevealEdge.None -> Unit
+                                    when {
+                                        // A sheet at a screen edge. It
+                                        // slides out of that edge and does
+                                        // nothing else: the push along the
+                                        // edge axis and the reveal below
+                                        // are the same number, so they are
+                                        // one motion rather than two.
+                                        //
+                                        // No scale. A panel that grows as
+                                        // it arrives reads as a thing being
+                                        // created; a sheet at an edge is a
+                                        // thing being uncovered, already
+                                        // full size behind the edge it is
+                                        // coming out from. The 8% it used
+                                        // to grow by also scaled the glass
+                                        // pane with it, which is the one
+                                        // thing glass may never do.
+                                        //
+                                        // element:  the compact panel.
+                                        // model:    a sheet on the edge.
+                                        // token:    MotionTokens.Spatial.default.
+                                        // property: translation, edge axis
+                                        //           only (+ the reveal
+                                        //           outline, derived from
+                                        //           the same value).
+                                        revealEdge != RevealEdge.None -> {
+                                            val travel = ENTER_TRAVEL_DP.toPx() * away
+                                            when (revealEdge) {
+                                                RevealEdge.Left -> translationX = -travel
+                                                RevealEdge.Right -> translationX = travel
+                                                RevealEdge.Top -> translationY = -travel
+                                                RevealEdge.Bottom -> translationY = travel
+                                                RevealEdge.None -> Unit
+                                            }
+                                        }
+
+                                        // No edge to be uncovered from, so
+                                        // there is nowhere to travel from
+                                        // either: it expands where it is,
+                                        // around its own centre.
+                                        //
+                                        // element:  a centered panel.
+                                        // model:    a sheet expanding in
+                                        //           place.
+                                        // token:    MotionTokens.Spatial.default.
+                                        // property: uniform scale, never
+                                        //           from 0 -- see
+                                        //           [CENTER_EXPAND_SQUASH].
+                                        placement.isCentered -> {
+                                            val grown = 1f - CENTER_EXPAND_SQUASH * away
+                                            scaleX = grown
+                                            scaleY = grown
+                                        }
+
+                                        // A laterally-anchored disc: no
+                                        // edge wipe (a straight-edged wipe
+                                        // across a circle fights its shape)
+                                        // and no scale either. It forms by
+                                        // turning -- see VolumeDisc's own
+                                        // formation turn, which rides this
+                                        // very spring through LocalArrival.
+                                        else -> Unit
                                     }
                                 }
 
-                                alpha = arrived
+                                // The effects channel, never [arrived].
+                                // Alpha has no mass, and a spatial spring's
+                                // overshoot past 1 is clamped by the
+                                // compositor -- so the panel would hold at
+                                // full opacity through the overshoot and
+                                // then ease back off it.
+                                alpha = fade.value.coerceIn(0f, 1f)
 
                                 // Only while there is something to reveal:
                                 // a clip left switched on at rest would cut

@@ -42,6 +42,7 @@ import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
 import kotlin.math.acos
@@ -59,6 +60,20 @@ private const val TICK_COUNT = 24
  * enough to be a settling rather than a spin.
  */
 private const val DISC_RADAR_DEGREES = 46f
+
+/**
+ * How far into the arrival the hand starts drawing itself onto the dial.
+ *
+ * Phased off the same curve as everything else rather than run as an
+ * animation of its own: there is no second spring here, only a later slice
+ * of the one the panel is already riding. The dial is most of the way round
+ * before its reading appears on it, and both are over together.
+ */
+private const val HAND_FADE_START = 0.45f
+
+/** The hand's own opacity at [arrived] -- nothing until [HAND_FADE_START]. */
+private fun handFadeFor(arrived: Float): Float =
+    ((arrived - HAND_FADE_START) / (1f - HAND_FADE_START)).coerceIn(0f, 1f)
 
 /**
  * How many tick slots either side of the level the taper reaches. The
@@ -260,9 +275,15 @@ fun VolumeDisc(
     // costs nothing while unused.
     val atmosphereMotion = rememberAtmosphereMotion()
 
-    // How far the popup has arrived, for the radar turn below. Read in the
-    // draw phase, so the dial turns without recomposing the disc.
+    // How far the popup has arrived, for the formation turn below. Read in
+    // the draw phase, so the dial turns without recomposing the disc.
     val arrival = LocalArrival.current
+
+    // The same arrival on the effects channel, for the one thing on this
+    // dial that fades: its hand. The pane -- track, ring, ticks -- forms by
+    // *turning*, which is what a dial does; only the reading written onto
+    // it arrives as a mark appearing. See [handFadeFor].
+    val arrivalFade = LocalArrivalFade.current
 
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
@@ -315,13 +336,23 @@ fun VolumeDisc(
             modifier = Modifier
                 .matchParentSize()
                 .graphicsLayer {
-                    // The whole dial -- track, arc, ticks -- turns into
-                    // place, counterclockwise, as the popup arrives, and
-                    // winds back out the same way. Only the painted ring
-                    // turns: the switch and the reading live outside this
-                    // Canvas and stay upright throughout. A pure
-                    // graphics-layer rotation, so it costs a matrix rather
-                    // than a repaint.
+                    // element:  the disc's pane -- track, arc, ticks.
+                    // model:    a knob.
+                    // token:    MotionTokens.Spatial.default, borrowed
+                    //           whole through LocalArrival rather than
+                    //           started again here.
+                    // property: rotationZ.
+                    //
+                    // The whole dial turns into place, counterclockwise, as
+                    // the popup arrives, and winds back out the same way.
+                    // Only the painted ring turns: the switch and the
+                    // reading live outside this Canvas and stay upright
+                    // throughout. A pure graphics-layer rotation, so it
+                    // costs a matrix rather than a repaint.
+                    //
+                    // The pane's entrance is this turn and nothing else --
+                    // it does not fade in on its own, and it must never
+                    // scale: a knob that grows is not a knob.
                     rotationZ = DISC_RADAR_DEGREES * (1f - arrival()).coerceIn(0f, 1f)
                 }
                 .pointerInput(range) {
@@ -507,9 +538,18 @@ fun VolumeDisc(
 
             val ringCap = if (ringRoundEnds) StrokeCap.Round else StrokeCap.Butt
 
-            if (fraction > 0f) {
+            // element:  the hand -- the arc that reads the level.
+            // model:    the mark on a dial, written on once the dial is
+            //           round.
+            // token:    MotionTokens.Effects.default, through
+            //           LocalArrivalFade and sliced by [handFadeFor].
+            // property: alpha, and nothing else. It never travels of its
+            //           own accord: where it sits is the level, and the
+            //           level is not an animation.
+            val handFade = handFadeFor(arrivalFade())
+            if (fraction > 0f && handFade > 0f) {
                 drawArc(
-                    color = fillColor,
+                    color = fillColor.copy(alpha = fillColor.alpha * handFade),
                     startAngle = visibleStartAngle,
                     sweepAngle = visibleSweepAngle * fraction,
                     useCenter = false,
