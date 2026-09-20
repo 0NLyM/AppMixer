@@ -31,7 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Typography
 
@@ -170,7 +170,7 @@ fun StreamVolumeSlider(
             valueRange = 0f..maxVolume,
             // See [AppVolumeSlider]: a row inside the mixer follows rather
             // than leads.
-            settleSpec = Motion.soft(),
+            settleSpec = MotionTokens.Spatial.defaultSoft(),
             onValueChange = { value ->
                 val target = value.toInt()
                 if (volume == target) {

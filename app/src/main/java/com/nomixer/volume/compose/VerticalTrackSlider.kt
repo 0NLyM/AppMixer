@@ -34,7 +34,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -61,7 +61,7 @@ fun VerticalTrackSlider(
     cornerRadius: Dp = LocalSliderCornerRadius.current,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     /** See [TrackSlider]'s own parameter of the same name. */
-    settleSpec: FiniteAnimationSpec<Float> = Motion.fast(),
+    settleSpec: FiniteAnimationSpec<Float> = MotionTokens.Spatial.fast(),
     content: @Composable BoxScope.() -> Unit = {}
 ) {
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -82,6 +82,10 @@ fun VerticalTrackSlider(
     // in fractions of the track per second, consumed by the settle.
     var releaseVelocity by remember { mutableFloatStateOf(0f) }
 
+    // element: the fill edge. model: a thumb pushed along a track.
+    // token:   [settleSpec] -- MotionTokens.Spatial.fast, or .defaultSoft
+    //          for a follower. property: fill fraction.
+    // Retargets from its current value and velocity; see TrackSlider.
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
             fill.snapTo(targetFraction)

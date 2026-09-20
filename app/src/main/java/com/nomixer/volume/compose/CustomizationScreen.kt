@@ -70,7 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
 import com.nomixer.volume.data.PopupAnchor
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 import com.nomixer.volume.ui.theme.PopupColors
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_MAX
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_MIN
@@ -333,8 +333,8 @@ private fun PositionPreview(preferences: UiPreferences) {
         PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd -> 1f
         else -> 0f
     }
-    val biasX by animateFloatAsState(targetBiasX, Motion.VolumeLevel, label = "previewBiasX")
-    val biasY by animateFloatAsState(targetBiasY, Motion.VolumeLevel, label = "previewBiasY")
+    val biasX by animateFloatAsState(targetBiasX, MotionTokens.Spatial.tick, label = "previewBiasX")
+    val biasY by animateFloatAsState(targetBiasY, MotionTokens.Spatial.tick, label = "previewBiasY")
     val alignment = BiasAlignment(biasX, biasY)
 
     // The preview is about a third of a phone's width, so shrink the
@@ -398,8 +398,8 @@ private fun PositionPreview(preferences: UiPreferences) {
                     // resize into the new shape rather than cutting to it.
                     .animateContentSize(
                         animationSpec = tween(
-                            durationMillis = Motion.MorphMillis,
-                            easing = Motion.Emphasized
+                            durationMillis = MotionTokens.Screen.morphMillis,
+                            easing = MotionTokens.Screen.emphasized
                         )
                     )
                     .padding(
@@ -1096,9 +1096,9 @@ fun CustomizationScreen(
 
             AnimatedVisibility(
                 visible = preferences.activeShowBackground(),
-                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                    fadeIn(tween(Motion.MorphMillis)),
-                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                enter = expandVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
+                    fadeIn(tween(MotionTokens.Screen.morphMillis)),
+                exit = shrinkVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
                     fadeOut(tween(160))
             ) {
               Column {
@@ -1314,9 +1314,9 @@ fun CustomizationScreen(
             // any of these.
             AnimatedVisibility(
                 visible = preferences.popupStyle != PopupStyle.Disc,
-                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                    fadeIn(tween(Motion.MorphMillis)),
-                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                enter = expandVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
+                    fadeIn(tween(MotionTokens.Screen.morphMillis)),
+                exit = shrinkVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
                     fadeOut(tween(160))
             ) {
                 Column {
@@ -1399,9 +1399,9 @@ fun CustomizationScreen(
 
             AnimatedVisibility(
                 visible = preferences.popupStyle != PopupStyle.Disc,
-                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                    fadeIn(tween(Motion.MorphMillis)),
-                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                enter = expandVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
+                    fadeIn(tween(MotionTokens.Screen.morphMillis)),
+                exit = shrinkVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
                     fadeOut(tween(160))
             ) {
                 Column {
@@ -1457,9 +1457,9 @@ fun CustomizationScreen(
 
             AnimatedVisibility(
                 visible = preferences.popupStyle == PopupStyle.Disc,
-                enter = expandVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
-                    fadeIn(tween(Motion.MorphMillis)),
-                exit = shrinkVertically(tween(Motion.MorphMillis, easing = Motion.Emphasized)) +
+                enter = expandVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
+                    fadeIn(tween(MotionTokens.Screen.morphMillis)),
+                exit = shrinkVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
                     fadeOut(tween(160))
             ) {
               Column {
@@ -1494,10 +1494,10 @@ fun CustomizationScreen(
                 AnimatedVisibility(
                     visible = preferences.discShowDots,
                     enter = expandVertically(
-                        tween(Motion.MorphMillis, easing = Motion.Emphasized)
-                    ) + fadeIn(tween(Motion.MorphMillis)),
+                        tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)
+                    ) + fadeIn(tween(MotionTokens.Screen.morphMillis)),
                     exit = shrinkVertically(
-                        tween(Motion.MorphMillis, easing = Motion.Emphasized)
+                        tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)
                     ) + fadeOut(tween(160))
                 ) {
                     Column {

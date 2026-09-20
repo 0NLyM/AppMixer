@@ -85,7 +85,7 @@ import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.NoMixerTheme
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 import java.util.Objects
 import kotlin.math.roundToInt
 
@@ -395,7 +395,7 @@ class Service : AccessibilityService() {
                                 alpha = preferences.paintedPanelAlpha()
                             )
                         },
-                        animationSpec = Motion.ColorShift,
+                        animationSpec = MotionTokens.Effects.color,
                         label = "mixerPanel"
                     )
                     val sliderShadowColor by animateColorAsState(
@@ -404,7 +404,7 @@ class Service : AccessibilityService() {
                         } else {
                             Color.Black.copy(alpha = preferences.shadowAlpha())
                         },
-                        animationSpec = Motion.ColorShift,
+                        animationSpec = MotionTokens.Effects.color,
                         label = "mixerSliderShadow"
                     )
                     // The panel's own shadow around its outer edge -- same
@@ -417,7 +417,7 @@ class Service : AccessibilityService() {
                     // CollapsedVolumePopup's own is.
                     val panelShadowColor by animateColorAsState(
                         targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
-                        animationSpec = Motion.ColorShift,
+                        animationSpec = MotionTokens.Effects.color,
                         label = "mixerPanelShadow"
                     )
 
@@ -482,10 +482,10 @@ class Service : AccessibilityService() {
                                     // is present from the first frame and
                                     // the morph is the entrance.
                                     appear.snapTo(1f)
-                                    morph.animateTo(1f, Motion.default())
+                                    morph.animateTo(1f, MotionTokens.Spatial.default())
                                 } else {
                                     morph.snapTo(1f)
-                                    appear.animateTo(1f, Motion.default())
+                                    appear.animateTo(1f, MotionTokens.Spatial.default())
                                 }
                             } else {
                                 // The exit runs the entrance backwards, in
@@ -495,9 +495,9 @@ class Service : AccessibilityService() {
                                 // rectangle close back into the screen
                                 // edge it came out of.
                                 if (expanded && morphOrigin != null) {
-                                    morph.animateTo(0f, Motion.default())
+                                    morph.animateTo(0f, MotionTokens.Spatial.default())
                                 }
-                                appear.animateTo(0f, Motion.default())
+                                appear.animateTo(0f, MotionTokens.Spatial.default())
                                 // Posted rather than called straight from
                                 // here: this coroutine belongs to the
                                 // composition the window is about to be

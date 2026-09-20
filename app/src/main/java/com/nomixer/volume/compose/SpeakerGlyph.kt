@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.nomixer.volume.ui.theme.LocalArrival
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 
 /**
  * The glyph's own coordinate system: a 24-unit square, the same one the
@@ -73,19 +73,28 @@ fun AnimatedSpeakerGlyph(
     val arrival = LocalArrival.current
     val description = contentDescription
 
+    // element: the speaker's waves and its mute bar.
+    // model:   a cone and the air in front of it -- the waves retract into
+    //          the cone and the bar draws across where they were; the cone
+    //          itself never moves.
+    // token:   MotionTokens.Spatial.fast (a finger is on the slider that
+    //          drives this, so it settles on the same spring the fill does).
+    // property: wave extent and bar extent -- geometry, drawn from these
+    //          fractions. No alpha: a wave that fades reads as a rendering
+    //          artefact rather than as air going still.
     val innerWave = animateFloatAsState(
         targetValue = if (!muted && level > WAVE_INNER_THRESHOLD) 1f else 0f,
-        animationSpec = Motion.fast(),
+        animationSpec = MotionTokens.Spatial.fast(),
         label = "speakerInnerWave"
     )
     val outerWave = animateFloatAsState(
         targetValue = if (!muted && level > WAVE_OUTER_THRESHOLD) 1f else 0f,
-        animationSpec = Motion.fast(),
+        animationSpec = MotionTokens.Spatial.fast(),
         label = "speakerOuterWave"
     )
     val bar = animateFloatAsState(
         targetValue = if (muted) 1f else 0f,
-        animationSpec = Motion.fast(),
+        animationSpec = MotionTokens.Spatial.fast(),
         label = "speakerMuteBar"
     )
 

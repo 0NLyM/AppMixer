@@ -42,7 +42,7 @@ import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.LocalArrival
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
@@ -271,9 +271,9 @@ fun VolumeDisc(
             val thrown = releaseVelocity
             releaseVelocity = 0f
             if (thrown != 0f) {
-                fill.animateTo(targetFraction, Motion.fast(), initialVelocity = thrown)
+                fill.animateTo(targetFraction, MotionTokens.Spatial.fast(), initialVelocity = thrown)
             } else {
-                fill.animateTo(targetFraction, Motion.fast())
+                fill.animateTo(targetFraction, MotionTokens.Spatial.fast())
             }
         }
     }

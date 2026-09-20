@@ -24,7 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 
 /**
  * Whether a Bluetooth sink is among the outputs this device can currently
@@ -144,9 +144,9 @@ fun AnimatedVolumeIcon(
         targetState = icon,
         modifier = modifier,
         transitionSpec = {
-            (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.62f))
+            (fadeIn(MotionTokens.Effects.default()) + scaleIn(MotionTokens.Spatial.fast(), initialScale = 0.62f))
                 .togetherWith(
-                    fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.62f)
+                    fadeOut(MotionTokens.Effects.default()) + scaleOut(MotionTokens.Spatial.fast(), targetScale = 0.62f)
                 )
         },
         label = "volumeIcon"

@@ -36,7 +36,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -64,7 +64,7 @@ fun TrackSlider(
      * micro-interaction tier; a slider that only moves because something
      * else did (the mixer's own rows) is handed the softer one instead.
      */
-    settleSpec: FiniteAnimationSpec<Float> = Motion.fast(),
+    settleSpec: FiniteAnimationSpec<Float> = MotionTokens.Spatial.fast(),
     content: @Composable BoxScope.() -> Unit = {}
 ) {
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -94,6 +94,15 @@ fun TrackSlider(
     // a volume key doesn't inherit a stale flick.
     var releaseVelocity by remember { mutableFloatStateOf(0f) }
 
+    // element: the fill edge.
+    // model:   a thumb being pushed along a track.
+    // token:   [settleSpec] -- MotionTokens.Spatial.fast by default, or
+    //          .defaultSoft for a row that only moves because the panel did.
+    // property: fill fraction.
+    //
+    // animateTo on an Animatable always departs from where the fill is and
+    // at the speed it is already carrying, so a volume key landing during a
+    // settle bends that settle rather than restarting it from a standstill.
     LaunchedEffect(targetFraction, dragging) {
         if (dragging) {
             // Exactly 1:1 under a finger: anything else reads as the bar

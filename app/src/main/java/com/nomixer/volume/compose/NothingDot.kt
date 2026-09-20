@@ -15,7 +15,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
+
+/** How far under its own size the dot starts, before the spring lets go. */
+private const val POP_SQUASH = 0.45f
 
 /**
  * The small solid dot Nothing OS scatters next to headers and status
@@ -24,6 +27,11 @@ import com.nomixer.volume.ui.theme.Motion
  * It pops in when it first appears, which is the whole of its animation: a
  * dot that fades in slowly reads as a rendering glitch, one that lands is
  * punctuation.
+ *
+ * Motion (see MotionTokens' own table):
+ *
+ * - element: the dot. model: punctuation being set down.
+ *   token: [MotionTokens.Spatial.knock]. property: uniform scale.
  */
 @Composable
 fun NothingDot(
@@ -31,18 +39,24 @@ fun NothingDot(
     size: Dp = 6.dp,
     color: Color = MaterialTheme.colorScheme.tertiary
 ) {
-    val pop = remember { Animatable(0f) }
+    // An impulse running back to rest, not a scale running up from zero: a
+    // dot scaled to 0 has no size for a spring to overshoot *around*, so it
+    // reads as an object being created rather than as one landing. Starting
+    // it displaced by [POP_SQUASH] and letting go means the dot is always a
+    // dot -- it arrives small, crosses past its own size and settles.
+    val pop = remember { Animatable(1f) }
 
     LaunchedEffect(Unit) {
-        pop.animateTo(1f, Motion.Nudge)
+        pop.animateTo(0f, MotionTokens.Spatial.knock)
     }
 
     Box(
         modifier = modifier
             .size(size)
             .graphicsLayer {
-                scaleX = pop.value
-                scaleY = pop.value
+                val landed = 1f - POP_SQUASH * pop.value
+                scaleX = landed
+                scaleY = landed
             }
             .clip(CircleShape)
             .background(color)

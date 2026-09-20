@@ -4,9 +4,6 @@ import android.graphics.RuntimeShader
 import android.util.Log
 import android.animation.ValueAnimator
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
 import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.random.Random
 
 /**
@@ -145,13 +143,13 @@ private const val ATMOSPHERE_TURN_RADIANS = 2.1f
 private const val TWO_PI = 6.2831855f
 
 /**
- * How many whole grain fields the shader dissolves through per lap, and how
- * long one lap takes. Together they set the rate the grain resamples at:
- * fast enough to be alive, slow enough not to strobe, and cheap either way
- * -- it is two extra hashes per pixel, not a second layer.
+ * How many whole grain fields the shader dissolves through per lap. How
+ * long a lap takes is
+ * [MotionTokens.Ambient.atmosphereGrainLapMillis]; together they set the
+ * rate the grain resamples at -- cheap either way, since it is two extra
+ * hashes per pixel rather than a second layer.
  */
 private const val GRAIN_FIELDS_PER_LAP = 24f
-private const val GRAIN_LAP_MILLIS = 2_600
 
 /** How far off the panel's own center a field's center may be thrown. */
 private const val ATMOSPHERE_DRIFT_SPAN = 0.22f
@@ -281,9 +279,7 @@ internal fun rememberAtmosphereMotion(): AtmosphereMotion {
         }
         grain.animateTo(
             targetValue = GRAIN_FIELDS_PER_LAP,
-            animationSpec = infiniteRepeatable(
-                animation = tween(GRAIN_LAP_MILLIS, easing = LinearEasing)
-            )
+            animationSpec = MotionTokens.Ambient.loop(MotionTokens.Ambient.atmosphereGrainLapMillis)
         )
     }
 

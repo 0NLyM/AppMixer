@@ -65,7 +65,7 @@ import com.nomixer.volume.data.activeShowValue
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -397,7 +397,7 @@ fun CollapsedVolumePopup(
                 alpha = preferences.paintedPanelAlpha()
             )
         },
-        animationSpec = Motion.ColorShift,
+        animationSpec = MotionTokens.Effects.color,
         label = "popupPanel"
     )
     val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
@@ -414,7 +414,7 @@ fun CollapsedVolumePopup(
     // how a switched-on shadow ended up looking switched off.
     val shadow by animateColorAsState(
         targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
-        animationSpec = Motion.ColorShift,
+        animationSpec = MotionTokens.Effects.color,
         label = "popupShadow"
     )
     val buttonShape = RoundedCornerShape(percent = preferences.activeButtonCornerRadius().coerceIn(0, 50))

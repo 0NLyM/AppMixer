@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,7 +41,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.R
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 import kotlinx.coroutines.launch
 import org.joor.Reflect
 import rikka.shizuku.Shizuku
@@ -111,12 +110,12 @@ fun RingerModeButton(
 
     val containerColor by animateColorAsState(
         targetValue = targetContainer,
-        animationSpec = Motion.ColorShift,
+        animationSpec = MotionTokens.Effects.color,
         label = "ringerContainer"
     )
     val contentColor by animateColorAsState(
         targetValue = targetContent,
-        animationSpec = Motion.ColorShift,
+        animationSpec = MotionTokens.Effects.color,
         label = "ringerContent"
     )
 
@@ -154,13 +153,13 @@ fun RingerModeButton(
                 shake.snapTo(1f)
                 shake.animateTo(
                     targetValue = 0f,
-                    animationSpec = spring(dampingRatio = 0.16f, stiffness = 3400f)
+                    animationSpec = MotionTokens.Spatial.shake
                 )
             }
         }
 
         impulse.snapTo(1f)
-        impulse.animateTo(targetValue = 0f, animationSpec = Motion.Pop)
+        impulse.animateTo(targetValue = 0f, animationSpec = MotionTokens.Spatial.knock)
     }
 
     // The press itself, separate from the mode change it causes: the button
@@ -171,7 +170,7 @@ fun RingerModeButton(
     val pressed by interactionSource.collectIsPressedAsState()
     val press = animateFloatAsState(
         targetValue = if (pressed) 1f else 0f,
-        animationSpec = Motion.fast(),
+        animationSpec = MotionTokens.Spatial.fast(),
         label = "ringerPress"
     )
 
@@ -248,9 +247,9 @@ fun RingerModeButton(
         AnimatedContent(
             targetState = vibrating,
             transitionSpec = {
-                (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.62f))
+                (fadeIn(MotionTokens.Effects.default()) + scaleIn(MotionTokens.Spatial.fast(), initialScale = 0.62f))
                     .togetherWith(
-                        fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.62f)
+                        fadeOut(MotionTokens.Effects.default()) + scaleOut(MotionTokens.Spatial.fast(), targetScale = 0.62f)
                     )
             },
             label = "ringerIcon"

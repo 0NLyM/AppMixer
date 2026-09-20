@@ -27,7 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
-import com.nomixer.volume.ui.theme.Motion
+import com.nomixer.volume.ui.theme.MotionTokens
 
 // Nothing OS glyph-button style, colored like the sliders it sits among:
 // the container color when idle, the fill color when active, with the same
@@ -53,7 +53,7 @@ fun ToggleButton(
         } else {
             MaterialTheme.colorScheme.primaryContainer
         },
-        animationSpec = Motion.ColorShift,
+        animationSpec = MotionTokens.Effects.color,
         label = "toggleContainer"
     )
     val contentColor by animateColorAsState(
@@ -62,7 +62,7 @@ fun ToggleButton(
         } else {
             MaterialTheme.colorScheme.onPrimaryContainer
         },
-        animationSpec = Motion.ColorShift,
+        animationSpec = MotionTokens.Effects.color,
         label = "toggleContent"
     )
     TooltipBox(
@@ -85,12 +85,19 @@ fun ToggleButton(
             // blinking from one shape to the other -- on the same springs
             // the ringer switch and the sliders use, so a tap and a swipe
             // settle with the same hand instead of on separate clocks.
+            // element: the glyph on the button. model: the button's own
+            // face changing, not two pictures swapping.
+            // token:   MotionTokens.Spatial.fast (scale) +
+            //          MotionTokens.Effects.default (alpha) -- the spatial
+            //          spring never touches the alpha.
+            // property: uniform scale and alpha. Never a slide: the glyph
+            //          has nowhere to travel from.
             AnimatedContent(
                 targetState = checked,
                 transitionSpec = {
-                    (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.62f))
+                    (fadeIn(MotionTokens.Effects.default()) + scaleIn(MotionTokens.Spatial.fast(), initialScale = 0.62f))
                         .togetherWith(
-                            fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.62f)
+                            fadeOut(MotionTokens.Effects.default()) + scaleOut(MotionTokens.Spatial.fast(), targetScale = 0.62f)
                         )
                 },
                 label = "toggleIcon"

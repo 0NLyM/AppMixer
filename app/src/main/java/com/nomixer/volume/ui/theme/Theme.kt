@@ -199,37 +199,41 @@ fun ColorScheme.withOverrides(preferences: UiPreferences): ColorScheme {
  * whole scheme would be a lot of state for colors nothing draws.
  */
 @Composable
+// element: every colour role the overlay paints with.
+// model:   -- colour is not an object and has no momentum.
+// token:   MotionTokens.Effects.color (critically damped, always).
+// property: colour.
 private fun ColorScheme.animated(): ColorScheme {
     // Locals are prefixed rather than named after the roles they animate:
     // `val primary by animateColorAsState(primary, ...)` would be a
     // declaration referring to itself.
-    val animatedPrimary by animateColorAsState(primary, Motion.ColorShift, label = "primary")
+    val animatedPrimary by animateColorAsState(primary, MotionTokens.Effects.color, label = "primary")
     val animatedOnPrimary by animateColorAsState(
-        onPrimary, Motion.ColorShift, label = "onPrimary"
+        onPrimary, MotionTokens.Effects.color, label = "onPrimary"
     )
     val animatedPrimaryContainer by animateColorAsState(
-        primaryContainer, Motion.ColorShift, label = "primaryContainer"
+        primaryContainer, MotionTokens.Effects.color, label = "primaryContainer"
     )
     val animatedOnPrimaryContainer by animateColorAsState(
-        onPrimaryContainer, Motion.ColorShift, label = "onPrimaryContainer"
+        onPrimaryContainer, MotionTokens.Effects.color, label = "onPrimaryContainer"
     )
     val animatedBackground by animateColorAsState(
-        background, Motion.ColorShift, label = "background"
+        background, MotionTokens.Effects.color, label = "background"
     )
     val animatedOnBackground by animateColorAsState(
-        onBackground, Motion.ColorShift, label = "onBackground"
+        onBackground, MotionTokens.Effects.color, label = "onBackground"
     )
-    val animatedSurface by animateColorAsState(surface, Motion.ColorShift, label = "surface")
+    val animatedSurface by animateColorAsState(surface, MotionTokens.Effects.color, label = "surface")
     val animatedOnSurface by animateColorAsState(
-        onSurface, Motion.ColorShift, label = "onSurface"
+        onSurface, MotionTokens.Effects.color, label = "onSurface"
     )
-    val animatedTertiary by animateColorAsState(tertiary, Motion.ColorShift, label = "tertiary")
+    val animatedTertiary by animateColorAsState(tertiary, MotionTokens.Effects.color, label = "tertiary")
     val animatedOnTertiary by animateColorAsState(
-        onTertiary, Motion.ColorShift, label = "onTertiary"
+        onTertiary, MotionTokens.Effects.color, label = "onTertiary"
     )
-    val animatedOutline by animateColorAsState(outline, Motion.ColorShift, label = "outline")
+    val animatedOutline by animateColorAsState(outline, MotionTokens.Effects.color, label = "outline")
     val animatedOutlineVariant by animateColorAsState(
-        outlineVariant, Motion.ColorShift, label = "outlineVariant"
+        outlineVariant, MotionTokens.Effects.color, label = "outlineVariant"
     )
 
     return copy(
