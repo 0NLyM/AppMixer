@@ -41,10 +41,13 @@ import androidx.compose.ui.graphics.Color
  * | Panel opacity       | --                    | [Effects.default]           | alpha (never a spatial spring)        |
  * | Disc pane           | a knob                | [Spatial.default]           | rotationZ (formation, anticlockwise)  |
  * | Disc hand           | the mark on a dial    | [Effects.default]           | alpha, a later slice of the arrival   |
- * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction, velocity-retargeted    |
+ * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction: 1:1 under a finger,    |
+ * |                     |                       |                             | magnetised to the nearest step on     |
+ * |                     |                       |                             | release, velocity-retargeted          |
  * | Tick ring           | a detent              | [Spatial.tick]              | angular position (derived from fill), |
  * |                     |                       |                             | and a haptic click per slot crossed   |
- * | Slider fill         | a thumb on a track    | [Spatial.fast]              | fill fraction                         |
+ * | Slider fill         | a thumb on a track    | [Spatial.fast]              | fill fraction, same gesture as the    |
+ * |                     |                       |                             | disc's -- see MagneticFill            |
  * | Follower sliders    | a thumb, following    | [Spatial.defaultSoft]       | fill fraction                         |
  * | Ringer button       | a button under a finger | [Spatial.press]           | uniform scale, 0.89 at the bottom     |
  * | Toggle button       | a button under a finger | [Spatial.press]           | uniform scale, the ringer's own band  |

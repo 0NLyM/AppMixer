@@ -9,12 +9,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -269,18 +267,6 @@ fun VolumeDisc(
 
     val latestValue by rememberUpdatedState(coercedValue)
 
-    // The arc sweeps to a new level instead of snapping, but follows a
-    // finger exactly while one is down.
-    var dragging by remember { mutableStateOf(false) }
-    val fill = remember { Animatable(targetFraction) }
-
-    // The speed the finger had when it left the glass, in fractions of the
-    // range per second. Handed to the settling spring as its own starting
-    // velocity, so the knob carries on turning the way it was thrown
-    // instead of stopping dead the instant the touch lifts -- which is the
-    // one place the ring's turn used to visibly step rather than flow.
-    var releaseVelocity by remember { mutableFloatStateOf(0f) }
-
     // Unconditional even though only Atmosphere mode ever uses it, and it
     // costs nothing while unused.
     val atmosphereMotion = rememberAtmosphereMotion()
@@ -307,31 +293,19 @@ fun VolumeDisc(
     // model:    a knob, and the detent it settles into.
     // token:    MotionTokens.Spatial.tick.
     // property: fill fraction (the tick ring's angle is derived from it,
-    //           never animated separately).
+    //           never animated separately -- one number turns both the
+    //           volume arc and the wheel of notches, so they cannot
+    //           disagree about where the knob is).
     //
-    // One spring for every source. A finger tracks 1:1 while it is down --
-    // anything else reads as the ring lagging behind the hand -- and
-    // everything that isn't a finger (a volume key, another app) settles on
-    // the tick spring. Because it is the same Animatable throughout, a key
-    // landing mid-settle retargets that settle from where it has got to and
-    // at the speed it is carrying: animateTo departs from the current
-    // velocity by default, so there is no restart from a standstill
-    // anywhere in here, and a thrown knob simply keeps turning.
-    LaunchedEffect(targetFraction, dragging) {
-        if (dragging) {
-            fill.snapTo(targetFraction)
-        } else {
-            val thrown = releaseVelocity
-            releaseVelocity = 0f
-            if (thrown != 0f) {
-                fill.animateTo(targetFraction, MotionTokens.Spatial.tick, initialVelocity = thrown)
-            } else {
-                fill.animateTo(targetFraction, MotionTokens.Spatial.tick)
-            }
-            // The throw has come to rest, so the knob is no longer being
-            // turned by anyone.
-            steering = false
-        }
+    // Exactly the gesture the bars use, on the detent tier rather than the
+    // slider one: 1:1 under a finger, then the finger's own speed handed
+    // to a spring aimed at the nearest step, which is what makes a thrown
+    // knob coast through its notches and click into one rather than
+    // stopping wherever the touch happened to end. See [MagneticFill].
+    val fill = rememberMagneticFill(targetFraction, MotionTokens.Spatial.tick) {
+        // The throw has come to rest, so the knob is no longer being
+        // turned by anyone.
+        steering = false
     }
 
     // element:  a tick passing under the thumb.
@@ -417,16 +391,19 @@ fun VolumeDisc(
                     rotationZ = DISC_RADAR_DEGREES * (1f - arrival()).coerceIn(0f, 1f)
                 }
                 .pointerInput(range) {
-                    var startValue = 0f
+                    // Measured from where the ring actually is when the
+                    // touch lands, so a knob caught while it is still
+                    // coasting is grabbed at that angle rather than
+                    // snapping round to the notch it was heading for.
+                    var startFraction = 0f
                     var startY = 0f
                     val tracker = VelocityTracker()
 
                     detectVerticalDragGestures(
                         onDragStart = { offset ->
-                            startValue = latestValue
+                            startFraction = fill.grab()
                             startY = offset.y
                             tracker.resetTracking()
-                            dragging = true
                             steering = true
                         },
                         onDragEnd = {
@@ -434,20 +411,26 @@ fun VolumeDisc(
                             // the tracker's own sign is flipped to match
                             // the direction the level moves in.
                             val height = size.height.toFloat()
-                            releaseVelocity =
+                            fill.release(
                                 if (height > 0f) -tracker.calculateVelocity().y / height else 0f
-                            dragging = false
+                            )
                         },
                         onDragCancel = {
-                            releaseVelocity = 0f
-                            dragging = false
+                            fill.cancel()
                             steering = false
                         }
                     ) { change, _ ->
                         tracker.addPosition(change.uptimeMillis, change.position)
-                        // Dragging up raises the volume.
-                        val dragAmount = startY - change.position.y
-                        val newValue = startValue + (dragAmount / size.height.toFloat()) * range
+                        val height = size.height.toFloat()
+                        if (height <= 0f) {
+                            return@detectVerticalDragGestures
+                        }
+
+                        // Dragging up raises the volume. The ring turns
+                        // with the finger continuously; the level it
+                        // reports is the step that angle falls on.
+                        fill.dragTo(startFraction + (startY - change.position.y) / height)
+                        val newValue = valueRange.start + fill.dragFraction * range
                         val coercedNewValue =
                             newValue.coerceIn(valueRange.start, valueRange.endInclusive)
                         if (coercedNewValue != latestValue) {

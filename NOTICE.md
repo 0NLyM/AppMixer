@@ -1485,6 +1485,54 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-20 — 1.0.62
+
+- The compact panel's entrance is measured from the *display's* edge now,
+  plus whatever gap the user's offset leaves between the two, so an offset
+  popup slides out from behind the side of the screen rather than from a
+  line in mid-air a few dp off its own edge. The gap is read off the
+  clamped, cutout-adjusted position the window really ended up at, so it is
+  the offset as worn rather than as asked for.
+- The centred mixer actually travels to the centre. Its morph always
+  carries the full translation, and which of the two carries it is decided
+  by geometry rather than by mode: the layer does it exactly when the
+  rectangle the morph starts at still fits inside the window it is drawn
+  in, and the window does it off the very same morph value when it doesn't
+  -- one number for both. That was the last teleport; the travel used to be
+  dropped outright for a centred mixer, because a layer translated out
+  there is a layer the compositor cuts off.
+- The ringer switch gives further under a finger, to 0.89 of its own size,
+  and the Do Not Disturb switch beside it is the same object now: the same
+  press depth, the same glyph size, and one glyph with a bar put on and
+  taken off rather than two pictures swapping.
+- **One gesture for every level control.** The slider bars, compact and
+  expanded, and the disc's ring and tick wheel now share a single
+  implementation, and it is magnetic:
+  - Under a finger the fill *is* the finger -- snapped to the touch
+    continuously, with nothing animating between the two and no step
+    quantisation on the way. The level reported to the system is still the
+    step that fraction falls on, so the audio follows in notches while the
+    bar stays under the thumb.
+  - Let go, and the finger's own speed at the moment it lifted becomes the
+    starting velocity of a spring aimed at the nearest step. A flick keeps
+    travelling and then clicks onto a notch instead of stopping dead
+    wherever the touch happened to end, and what it lands on is a real
+    level rather than an arbitrary fraction. Released exactly on a step
+    with nothing thrown, nothing runs at all.
+  - Touched again mid-flight, the settle is caught where it is and the new
+    drag continues from that exact fraction, so grabbing a moving bar never
+    makes it jump to meet the finger.
+  There is no seam between the three because there is no handover: the
+  finger and the spring drive the same value, so the spring departs from
+  the position and the speed the drag left behind. A volume key or another
+  app arriving mid-settle retargets that same spring rather than restarting
+  it.
+- The mixer's stream sliders pick the *nearest* step rather than truncating
+  toward zero, which is what the magnet needs to pull evenly in both
+  directions.
+- No new springs anywhere in this: the bars settle on the slider tier and
+  the disc on the detent tier, both named where they already were.
+
 ## 2026-09-20 — 1.0.61
 
 - Every spring, duration and easing in the overlay now lives in one file,

@@ -1,6 +1,5 @@
 package com.nomixer.volume.compose
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -14,13 +13,8 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,44 +74,16 @@ fun TrackSlider(
     val range = valueRange.endInclusive - valueRange.start
     val targetFraction = if (range <= 0f) 0f else (coercedValue - valueRange.start) / range
 
-    // The fill glides to a new level rather than jumping there -- except
-    // under a finger, where it has to track the touch exactly or dragging
-    // feels like the bar is lagging behind the hand.
-    var dragging by remember { mutableStateOf(false) }
-    val fill = remember { Animatable(targetFraction) }
-
-    // The speed the finger was carrying when it left the glass, in
-    // fractions of the track per second -- handed to the settling spring as
-    // its own initial velocity so the fill keeps travelling in the
-    // direction it was thrown instead of stopping dead where the touch
-    // ended. Consumed by the settle that reads it, so a later change from
-    // a volume key doesn't inherit a stale flick.
-    var releaseVelocity by remember { mutableFloatStateOf(0f) }
-
     // element: the fill edge.
-    // model:   a thumb being pushed along a track.
+    // model:   a thumb on a track, magnetised to the notches under it.
     // token:   [settleSpec] -- MotionTokens.Spatial.fast by default, or
     //          .defaultSoft for a row that only moves because the panel did.
     // property: fill fraction.
     //
-    // animateTo on an Animatable always departs from where the fill is and
-    // at the speed it is already carrying, so a volume key landing during a
-    // settle bends that settle rather than restarting it from a standstill.
-    LaunchedEffect(targetFraction, dragging) {
-        if (dragging) {
-            // Exactly 1:1 under a finger: anything else reads as the bar
-            // lagging behind the hand.
-            fill.snapTo(targetFraction)
-        } else {
-            val thrown = releaseVelocity
-            releaseVelocity = 0f
-            if (thrown != 0f) {
-                fill.animateTo(targetFraction, settleSpec, initialVelocity = thrown)
-            } else {
-                fill.animateTo(targetFraction, settleSpec)
-            }
-        }
-    }
+    // See [MagneticFill] for the whole of it: 1:1 under the finger, the
+    // finger's own speed carried into a spring aimed at the nearest step
+    // when it lifts, and a settle that can be caught again where it is.
+    val fill = rememberMagneticFill(targetFraction, settleSpec)
 
     Box(
         modifier = modifier
@@ -142,16 +108,20 @@ fun TrackSlider(
             )
             .pointerInput(enabled) {
                 if (enabled) {
-                    var startValue = 0f
+                    // Measured against where the fill actually *is* when
+                    // the touch lands, not against the level it represents:
+                    // a bar caught mid-settle is grabbed where the finger
+                    // found it rather than jumping to the step it was on
+                    // its way to.
+                    var startFraction = 0f
                     var startX = 0f
                     val tracker = VelocityTracker()
 
                     detectHorizontalDragGestures(
                         onDragStart = { offset ->
-                            startValue = latestValue
+                            startFraction = fill.grab()
                             startX = offset.x
                             tracker.resetTracking()
-                            dragging = true
                         },
                         onDragEnd = {
                             // px/s along the track, converted to the same
@@ -159,19 +129,25 @@ fun TrackSlider(
                             // the spring is handed a velocity in its own
                             // units rather than the screen's.
                             val width = size.width.toFloat()
-                            releaseVelocity =
+                            fill.release(
                                 if (width > 0f) tracker.calculateVelocity().x / width else 0f
-                            dragging = false
+                            )
                         },
-                        onDragCancel = {
-                            releaseVelocity = 0f
-                            dragging = false
-                        }
+                        onDragCancel = { fill.cancel() }
                     ) { change, _ ->
                         tracker.addPosition(change.uptimeMillis, change.position)
-                        val dragAmount = change.position.x - startX
-                        val changedPercentage = dragAmount / size.width.toFloat()
-                        val newValue = (startValue + changedPercentage * range)
+                        val width = size.width.toFloat()
+                        if (width <= 0f) {
+                            return@detectHorizontalDragGestures
+                        }
+
+                        // The fill follows the finger continuously while
+                        // the level it reports is whatever step that
+                        // fraction falls on -- so the bar is under the
+                        // thumb the whole way and the magnet has somewhere
+                        // to pull to when the thumb goes.
+                        fill.dragTo(startFraction + (change.position.x - startX) / width)
+                        val newValue = valueRange.start + fill.dragFraction * range
                         val coercedNewValue =
                             newValue.coerceIn(valueRange.start, valueRange.endInclusive)
                         if (coercedNewValue != latestValue) {

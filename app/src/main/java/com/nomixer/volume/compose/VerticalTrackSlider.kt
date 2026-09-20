@@ -1,6 +1,5 @@
 package com.nomixer.volume.compose
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -13,13 +12,8 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -74,31 +68,14 @@ fun VerticalTrackSlider(
     val range = valueRange.endInclusive - valueRange.start
     val targetFraction = if (range <= 0f) 0f else (coercedValue - valueRange.start) / range
 
-    // Glides to a new level, but tracks a finger exactly while one is down.
-    var dragging by remember { mutableStateOf(false) }
-    val fill = remember { Animatable(targetFraction) }
-
-    // See [TrackSlider]: the finger's own speed at the moment it lifts,
-    // in fractions of the track per second, consumed by the settle.
-    var releaseVelocity by remember { mutableFloatStateOf(0f) }
-
-    // element: the fill edge. model: a thumb pushed along a track.
+    // element: the fill edge.
+    // model:   a thumb on a track, magnetised to the notches under it.
     // token:   [settleSpec] -- MotionTokens.Spatial.fast, or .defaultSoft
-    //          for a follower. property: fill fraction.
-    // Retargets from its current value and velocity; see TrackSlider.
-    LaunchedEffect(targetFraction, dragging) {
-        if (dragging) {
-            fill.snapTo(targetFraction)
-        } else {
-            val thrown = releaseVelocity
-            releaseVelocity = 0f
-            if (thrown != 0f) {
-                fill.animateTo(targetFraction, settleSpec, initialVelocity = thrown)
-            } else {
-                fill.animateTo(targetFraction, settleSpec)
-            }
-        }
-    }
+    //          for a follower.
+    // property: fill fraction.
+    // The same gesture the horizontal bar and the disc use; see
+    // [MagneticFill].
+    val fill = rememberMagneticFill(targetFraction, settleSpec)
 
     val pillShape = GenericShape { size, _ ->
         addRoundRect(
@@ -115,36 +92,41 @@ fun VerticalTrackSlider(
             .border(BorderStroke(borderWidth, borderColor), pillShape)
             .pointerInput(enabled) {
                 if (enabled) {
-                    var startValue = 0f
+                    // Measured from where the fill is when the touch lands,
+                    // so a bar caught mid-settle is grabbed there rather
+                    // than jumping to the step it was heading for.
+                    var startFraction = 0f
                     var startY = 0f
                     val tracker = VelocityTracker()
 
                     detectVerticalDragGestures(
                         onDragStart = { offset ->
-                            startValue = latestValue
+                            startFraction = fill.grab()
                             startY = offset.y
                             tracker.resetTracking()
-                            dragging = true
                         },
                         onDragEnd = {
                             // Negated: screen y grows downward, the level
                             // grows upward, so a flick up has to arrive at
                             // the spring as a positive velocity.
                             val height = size.height.toFloat()
-                            releaseVelocity =
+                            fill.release(
                                 if (height > 0f) -tracker.calculateVelocity().y / height else 0f
-                            dragging = false
+                            )
                         },
-                        onDragCancel = {
-                            releaseVelocity = 0f
-                            dragging = false
-                        }
+                        onDragCancel = { fill.cancel() }
                     ) { change, _ ->
                         tracker.addPosition(change.uptimeMillis, change.position)
-                        // Dragging up raises the volume.
-                        val dragAmount = startY - change.position.y
-                        val changedPercentage = dragAmount / size.height.toFloat()
-                        val newValue = startValue + changedPercentage * range
+                        val height = size.height.toFloat()
+                        if (height <= 0f) {
+                            return@detectVerticalDragGestures
+                        }
+
+                        // Dragging up raises the volume. The fill follows
+                        // the finger continuously; the level it reports is
+                        // the step that fraction falls on.
+                        fill.dragTo(startFraction + (startY - change.position.y) / height)
+                        val newValue = valueRange.start + fill.dragFraction * range
                         val coercedNewValue =
                             newValue.coerceIn(valueRange.start, valueRange.endInclusive)
                         if (coercedNewValue != latestValue) {

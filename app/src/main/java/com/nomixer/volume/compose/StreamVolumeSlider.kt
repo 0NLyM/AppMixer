@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.ui.theme.MotionTokens
 import com.nomixer.volume.ui.theme.LocalSliderCornerRadius
 import com.nomixer.volume.ui.theme.Typography
+import kotlin.math.roundToInt
 
 private const val TAG = "NoMixer.StreamSlider"
 
@@ -175,7 +176,12 @@ fun StreamVolumeSlider(
             // than leads.
             settleSpec = MotionTokens.Spatial.defaultSoft(),
             onValueChange = { value ->
-                val target = value.toInt()
+                // Nearest, not truncated: the fill now follows the finger
+                // continuously and is magnetised to a step when it lifts
+                // (see [MagneticFill]), so the step this picks has to be
+                // the one the finger is actually closest to -- truncating
+                // makes every magnet pull downward.
+                val target = value.roundToInt()
                 if (volume == target) {
                     return@TrackSlider
                 }
