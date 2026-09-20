@@ -34,9 +34,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -82,6 +84,7 @@ import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.NoMixerTheme
+import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.Motion
 import java.util.Objects
 import kotlin.math.roundToInt
@@ -106,10 +109,11 @@ private fun PopupAnchor.transformOrigin(): TransformOrigin {
 }
 
 /**
- * Which way a panel travels as it arrives, as a unit vector: in from the
- * screen edge it's anchored to. A laterally anchored bar comes in sideways,
- * a top or bottom one comes down or up, and a centered popup has no edge to
- * have come from, so it only grows.
+ * Which way a panel travels as it arrives when nothing else decides for it,
+ * as a unit vector: in from the screen edge it's anchored to. Used only for
+ * a popup that appeared without a volume key behind it (the accessibility
+ * button); when a key *is* what brought it up, the volume's own direction
+ * wins -- see [volumeTravel].
  *
  * Sideways wins for a corner anchor: the vertical bar lives in corners and
  * still belongs to the side of the screen, not to the top of it.
@@ -143,11 +147,30 @@ private fun PopupAnchor.enterDirection(): Offset {
 private val ENTER_TRAVEL_DP = 20.dp
 
 /**
- * How far forward the disc starts before unwinding counterclockwise into
- * place. Enough to read as a turn on a round face -- a dial settling rather
- * than a card sliding in -- without spinning far enough to be a trick.
+ * Which way a bar popup travels when a volume key is what summoned it: with
+ * the volume itself. Raising it brings the panel up from below, lowering it
+ * brings the panel down from above, so the gesture and the thing it moves
+ * agree about which way is more. The exit runs the same spring backwards,
+ * which sends it back out the way it came.
  */
-private const val DISC_FORM_DEGREES = 22f
+private fun volumeTravel(direction: Int): Offset = when {
+    direction > 0 -> Offset(0f, 1f)
+    direction < 0 -> Offset(0f, -1f)
+    else -> Offset.Zero
+}
+
+/** Whether a popup at this anchor sits on the screen's own vertical midline. */
+private fun PopupAnchor.isHorizontallyCentered(): Boolean = when (this) {
+    PopupAnchor.TopCenter, PopupAnchor.Center, PopupAnchor.BottomCenter -> true
+    else -> false
+}
+
+/**
+ * How far the mixer turns as it flips out of a centered compact popup.
+ * A centered popup has no side for the mixer to grow out of, so instead of
+ * a direction it gets a face: the panel turns over into the bigger one.
+ */
+private const val MIXER_FLIP_DEGREES = 34f
 
 @SuppressLint("AccessibilityPolicy")
 class Service : AccessibilityService() {
@@ -240,6 +263,9 @@ class Service : AccessibilityService() {
 
         fun startRepeatAdjustVolume(direction: Int) {
             repeatAdjustVolumeDirection = direction
+            // Recorded before the popup is shown, so the arrival already
+            // knows which way it's meant to travel.
+            lastVolumeDirection = direction
             if (view != null) {
                 adjustVolume()
             }
@@ -421,19 +447,28 @@ class Service : AccessibilityService() {
                     // jumped to the full mixer's size before the mixer had
                     // faded in. Swapping outright and animating only what's
                     // on screen keeps the window's own size a single step.
-                    // See CollapsedVolumePopup: one drifting beam shared by
-                    // the mixer's glass face and its rim.
-                    val beamAngle = rememberGlassBeamAngle(preferences.glassLightAngle)
 
                     val anchor = preferences.activeAnchor()
                     val origin = anchor.transformOrigin()
-                    val fromEdge = anchor.enterDirection()
-                    // The disc forms by turning about its own axis instead of
-                    // arriving from an edge, and doesn't fade as a whole: its
-                    // needle carries the fade on its own (see [VolumeDisc]),
-                    // and fading the disc would take the needle's fade with
-                    // it. Only on the way in -- on the way out the whole
-                    // thing still goes, or it would simply vanish.
+                    // The compact popup travels with the volume when a key
+                    // is what brought it up, and falls back to its anchored
+                    // edge when nothing did. The mixer always grows out of
+                    // wherever the compact popup was instead: it's the same
+                    // panel getting bigger, not a new one arriving.
+                    val travelDirection = when {
+                        expanded -> Offset.Zero
+                        lastVolumeDirection != 0 -> volumeTravel(lastVolumeDirection)
+                        else -> anchor.enterDirection()
+                    }
+                    // A centered compact popup has no side for the mixer to
+                    // come out of, so the mixer turns over into place instead
+                    // of sliding out of a midline that isn't an edge.
+                    val mixerFlips = expanded && anchor.isHorizontallyCentered()
+                    // The disc doesn't fade as a whole: its own radar sweep
+                    // (see [VolumeDisc]) carries the arrival, and fading the
+                    // disc would take that sweep with it. Only on the way in
+                    // -- on the way out the whole thing still goes, or it
+                    // would simply vanish.
                     val discForms = !expanded && preferences.popupStyle == PopupStyle.Disc
                     val visible = contentVisible
 
@@ -456,6 +491,23 @@ class Service : AccessibilityService() {
                             )
                         }
 
+                        // Handed down so the pieces that phase their own
+                        // motion off the arrival -- the disc's sweep, the
+                        // glass reflection's turn -- run on this spring
+                        // rather than each starting one of their own.
+                        // Remembered so providing it doesn't invalidate
+                        // every reader on each recomposition.
+                        val arrival = remember(appear) { { appear.value } }
+
+                        CompositionLocalProvider(LocalArrival provides arrival) {
+                        // One beam shared by the mixer's glass face and its
+                        // rim, exactly as CollapsedVolumePopup does it. Taken
+                        // inside the provider above, because the turn it
+                        // carries is phased off that arrival: read outside it
+                        // the panel would arrive with its light already
+                        // settled.
+                        val beamAngle = rememberGlassBeamAngle(preferences.glassLightAngle)
+
                         Box(
                             modifier = Modifier.graphicsLayer {
                                 val arrived = appear.value
@@ -464,18 +516,24 @@ class Service : AccessibilityService() {
                                 val grown = 1f - 0.08f * away
                                 scaleX = grown
                                 scaleY = grown
-                                // A disc turns about its own centre; a bar
-                                // grows out of the screen edge it hugs.
+                                // A disc turns about its own centre; anything
+                                // else grows out of wherever the compact
+                                // popup sits, which for the mixer is the
+                                // panel it came from rather than a new place.
                                 transformOrigin =
                                     if (discForms) TransformOrigin.Center else origin
 
                                 val travel = ENTER_TRAVEL_DP.toPx() * away
-                                translationX = fromEdge.x * travel
-                                translationY = fromEdge.y * travel
+                                translationX = travelDirection.x * travel
+                                translationY = travelDirection.y * travel
 
-                                // Counterclockwise into place: it starts
-                                // turned forward and unwinds to true.
-                                rotationZ = if (discForms) away * DISC_FORM_DEGREES else 0f
+                                // A card turning over, not a spin: shallow,
+                                // and with a camera far enough back that the
+                                // near edge doesn't balloon on the way round.
+                                if (mixerFlips) {
+                                    cameraDistance = 14f * density
+                                    rotationY = away * MIXER_FLIP_DEGREES
+                                }
 
                                 alpha = if (discForms && visible) 1f else arrived.coerceIn(0f, 1f)
                             }
@@ -645,6 +703,7 @@ class Service : AccessibilityService() {
                                     onInteract = this@Service.handler::startIdleTimer
                                 )
                             }
+                        }
                         }
                     }
                 }
@@ -894,6 +953,26 @@ class Service : AccessibilityService() {
      */
     private var contentVisible by mutableStateOf(true)
 
+    /**
+     * Which way the volume was last pushed -- [AudioManager.ADJUST_RAISE] or
+     * [AudioManager.ADJUST_LOWER] -- so the compact popup can travel with
+     * it: up when the user is turning it up, down when they're turning it
+     * down. Zero when the popup was summoned by something other than a
+     * volume key, in which case it falls back to its anchored edge.
+     */
+    private var lastVolumeDirection by mutableIntStateOf(0)
+
+    /**
+     * Shown by something other than a volume key -- the accessibility
+     * button, or the app asking for it. There's no volume direction behind
+     * it for the panel to travel with, so the recorded one is cleared and
+     * the arrival falls back to the anchored screen edge.
+     */
+    private fun showViewWithoutKey() {
+        lastVolumeDirection = 0
+        showView()
+    }
+
     private fun showView() {
         // Set before the composition is built, so the arrival animation the
         // root reads is already pointed the right way, and before the
@@ -936,7 +1015,7 @@ class Service : AccessibilityService() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.i(TAG, "onReceive ${intent.action}")
             if (intent.action == ACTION_SHOW_VIEW) {
-                showView()
+                showViewWithoutKey()
             }
         }
     }
@@ -975,7 +1054,7 @@ class Service : AccessibilityService() {
             AccessibilityButtonCallback() {
             override fun onClicked(controller: AccessibilityButtonController?) {
                 if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
-                    showView()
+                    showViewWithoutKey()
                 } else {
                     warnShizukuDisconnected()
                 }

@@ -7,6 +7,7 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -103,3 +104,17 @@ object Motion {
     /** Color roles crossfading when the user picks a new one. */
     val ColorShift: FiniteAnimationSpec<Color> = color()
 }
+
+/**
+ * How far the overlay has arrived, 0 to 1, from the one spring that owns
+ * its whole appearance (see Service.kt). Anything inside the popup that
+ * wants to phase its own motion off the arrival -- the disc's radar sweep,
+ * the glass reflection's turn -- reads it from here rather than starting a
+ * second animation of its own, which is what keeps every part of the
+ * arrival on a single curve instead of several that merely begin together.
+ *
+ * A function rather than a value so a reader can take it in its own draw
+ * phase and repaint without recomposing. Defaults to fully arrived, for
+ * anywhere outside the overlay (the settings screen's preview).
+ */
+val LocalArrival = compositionLocalOf<() -> Float> { { 1f } }

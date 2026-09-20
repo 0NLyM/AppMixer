@@ -40,6 +40,7 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
+import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.Motion
 import kotlin.math.abs
 import kotlin.math.acos
@@ -49,6 +50,14 @@ import kotlin.math.sin
 
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
 private const val TICK_COUNT = 24
+
+/**
+ * One full turn of the arrival sweep, and how many degrees behind its front
+ * the index takes to come fully up. A short tail rather than an instant
+ * edge: a radar face lights up just behind the line, not exactly on it.
+ */
+private const val SWEEP_TURN_DEGREES = 360f
+private const val SWEEP_FADE_DEGREES = 52f
 
 /**
  * A volume disc: always a complete circle, positioned by the popup window
@@ -229,15 +238,14 @@ fun VolumeDisc(
     var releaseVelocity by remember { mutableFloatStateOf(0f) }
     val fill = remember { Animatable(targetFraction) }
 
-    // The one red mark on the face fades up as the disc turns into place
-    // (Service.kt owns that turn), so the disc forms rather than simply
-    // being there -- and it's this, not the disc itself, that carries the
-    // fade. Read in the draw phase below, so it repaints without
-    // recomposing anything.
-    val needle = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        needle.animateTo(1f, Motion.default())
-    }
+    // The disc arrives the way a radar face does: a sweep travels once
+    // counterclockwise around the ring and the index lights up behind it,
+    // rather than the whole disc fading in at once. Phased off the popup's
+    // own arrival spring (see [LocalArrival]) instead of an animation of
+    // its own, so the sweep and the panel carrying it are the same motion
+    // -- and the exit runs it backwards without a second curve to keep in
+    // agreement. Read in the draw phase, so it repaints without recomposing.
+    val arrival = LocalArrival.current
 
     // Unconditional even though only Atmosphere mode ever uses it, and it
     // costs nothing while unused.
@@ -339,15 +347,6 @@ fun VolumeDisc(
             val fraction = fill.value
             val chase = (abs(targetFraction - fraction) * 7f).coerceAtMost(1f)
 
-            // The index layer -- the ticks and the mark riding the fill's
-            // leading edge -- is the only thing on the disc that fades in.
-            // The face, its track and its arc are already turning into
-            // place; fading those as well would just be the whole disc
-            // fading, which is what the turn is there to replace.
-            val handColor = accentColor.copy(
-                alpha = accentColor.alpha * needle.value.coerceIn(0f, 1f)
-            )
-
             // The disc is inset inside its box so the shadow has a ring of
             // its own to fade across. Drawn edge to edge, the shadow ended
             // up entirely underneath the disc body and was invisible.
@@ -365,6 +364,32 @@ fun VolumeDisc(
             // going clockwise, all the way around.
             val startAngle = -90f
             val fullSweep = 360f
+
+            // The index layer -- the ticks and the mark riding the fill's
+            // leading edge -- is the only thing on the disc the sweep
+            // reveals. The face, its track and its arc are simply there:
+            // fading those as well would just be the whole disc fading,
+            // which is what the sweep is here to replace.
+            val swept = arrival().coerceIn(0f, 1f)
+            val sweepFront = SWEEP_TURN_DEGREES * swept
+
+            // How lit a mark at [markAngle] is: full once the sweep has
+            // gone past it, falling off over the last few degrees behind
+            // the front so the reveal has a soft edge rather than a hard
+            // one. Counterclockwise, so the angle *behind* the front is the
+            // one measured backwards from where the sweep started.
+            fun revealAt(markAngle: Float): Float {
+                if (swept >= 1f) {
+                    return 1f
+                }
+                val behind = (((startAngle - markAngle) % SWEEP_TURN_DEGREES) + SWEEP_TURN_DEGREES) %
+                    SWEEP_TURN_DEGREES
+                return ((sweepFront - behind) / SWEEP_FADE_DEGREES).coerceIn(0f, 1f)
+            }
+
+            fun handColorAt(markAngle: Float): Color = accentColor.copy(
+                alpha = accentColor.alpha * revealAt(markAngle)
+            )
 
             // When the disc is laterally cut by the physical screen edge,
             // remap that whole range onto just the arc still visible past
@@ -606,7 +631,7 @@ fun VolumeDisc(
 
                     rotate(degrees = angle, pivot = tickCenter) {
                         drawRoundRect(
-                            color = handColor,
+                            color = handColorAt(angle),
                             topLeft = Offset(
                                 tickCenter.x - length / 2f,
                                 tickCenter.y - thickness / 2f
@@ -623,7 +648,7 @@ fun VolumeDisc(
                 val markerRadians =
                     Math.toRadians((visibleStartAngle + visibleSweepAngle * fraction).toDouble())
                 drawCircle(
-                    color = handColor,
+                    color = handColorAt(visibleStartAngle + visibleSweepAngle * fraction),
                     radius = ringWidth * (0.34f + chase * 0.16f),
                     center = Offset(
                         center.x + (cos(markerRadians) * ringRadius).toFloat(),

@@ -4,6 +4,8 @@ import android.media.AudioManager
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,6 +16,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,6 +52,10 @@ import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuRemoteProcess
 
 private const val TAG = "NoMixer.RingerMode"
+
+/** How far the button gives under a finger, and the glyph under an impulse. */
+private const val PRESS_SQUASH = 0.06f
+private const val GLYPH_SQUASH = 0.1f
 
 /**
  * Icon and description for a ringer mode -- the same speaker glyph family
@@ -132,16 +140,33 @@ fun RingerModeButton(
         // Kicked to full displacement and released. Landing here mid-recovery
         // (two taps in a row) re-displaces from wherever it is rather than
         // waiting for the first one to finish.
+        //
+        // The recovery's own damping is what gives each mode its character,
+        // rather than a different animation per mode: vibrate is left loose
+        // enough to cross back and forth several times, which is a shake;
+        // silent is damped almost flat, which is something stopping; ringing
+        // sits between them and reads as a single confident knock.
         impulse.snapTo(1f)
-        impulse.animateTo(0f, Motion.Nudge)
+        impulse.animateTo(
+            targetValue = 0f,
+            animationSpec = when (ringerMode) {
+                AudioManager.RINGER_MODE_VIBRATE ->
+                    spring(dampingRatio = 0.22f, stiffness = 2600f)
+
+                AudioManager.RINGER_MODE_SILENT ->
+                    spring(dampingRatio = 0.9f, stiffness = 700f)
+
+                else -> Motion.Nudge
+            }
+        )
     }
 
-    // How each mode wears that one impulse. Ringing swings widest, vibrate
-    // shivers tighter and faster-reading, silent barely turns and takes the
-    // displacement into the button's own size instead -- it's the mode that
-    // stops rather than sounds.
+    // How far each mode wears that impulse. Ringing swings widest, vibrate
+    // shivers tighter (its many crossings do the work instead of its reach),
+    // silent barely turns and takes the displacement into size instead --
+    // it's the mode that stops rather than sounds.
     val glyphSwing = when (ringerMode) {
-        AudioManager.RINGER_MODE_VIBRATE -> 7f
+        AudioManager.RINGER_MODE_VIBRATE -> 6f
         AudioManager.RINGER_MODE_SILENT -> 2f
         else -> 13f
     }
@@ -149,6 +174,18 @@ fun RingerModeButton(
         AudioManager.RINGER_MODE_SILENT -> 0.13f
         else -> 0.07f
     }
+
+    // The press itself, separate from the mode change it causes: the button
+    // takes the finger the moment it lands and lets go the moment it lifts,
+    // on the same spring family a dragged slider settles on, so pressing and
+    // swiping feel like the same surface.
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val press by animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        animationSpec = Motion.fast(),
+        label = "ringerPress"
+    )
 
     // Deliberately not an IconButton: that applies its own 40dp size and a
     // 48dp minimum touch target *after* the caller's modifier, so asking for
@@ -158,16 +195,24 @@ fun RingerModeButton(
         modifier = modifier
             .size(size)
             .graphicsLayer {
-                // The button takes the impulse as size: knocked in, sprung
-                // back out past its own edge, settled.
-                val knocked = 1f - buttonSquash * impulse.value
+                // Two things at once, and deliberately: the press holding it
+                // in while a finger is down, and the mode change's own
+                // impulse knocking it and springing back out past its
+                // resting size before settling. That overshoot is the pop --
+                // it comes from the spring crossing zero, not from a pose
+                // written down somewhere.
+                val knocked = 1f - buttonSquash * impulse.value - PRESS_SQUASH * press
                 scaleX = knocked
                 scaleY = knocked
             }
             .clip(shape)
             .background(color = containerColor)
             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape)
-            .clickable(role = Role.Button) {
+            .clickable(
+                role = Role.Button,
+                interactionSource = interactionSource,
+                indication = null
+            ) {
                 val next = when (ringerMode) {
                     AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
                     AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
@@ -229,6 +274,13 @@ fun RingerModeButton(
                         // A bell swings from its crown, so the pivot sits at
                         // the top of the icon rather than its middle.
                         rotationZ = impulse.value * glyphSwing
+                        // The glyph rides the same impulse in size as the
+                        // button does, a touch deeper, so the two read as
+                        // one object reacting rather than a picture sitting
+                        // on something that moved.
+                        val popped = 1f - GLYPH_SQUASH * impulse.value
+                        scaleX = popped
+                        scaleY = popped
                         transformOrigin = TransformOrigin(0.5f, 0.1f)
                     },
                 tint = contentColor

@@ -1485,6 +1485,62 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-20 — 1.0.59
+
+- Second pass over the motion rebuilt in 1.0.58, still on the one shared
+  spring family and still with no fixed durations anywhere in the overlay.
+  Every part of an appearance is now phased off the *same* spring rather
+  than merely started at the same moment: the arrival is handed down the
+  composition, and anything that wants to time itself against it reads that
+  value instead of running an animation of its own. The practical effect is
+  that every exit is its own entrance played backwards, for free, instead
+  of a second curve that has to be kept in agreement with the first by
+  hand.
+- A bar popup now enters and leaves along the direction the *volume* went:
+  up when the user is turning it up, down when they're turning it down, so
+  the key and the thing it moves agree about which way is more. Summoned by
+  the accessibility button instead, with no key behind it, it falls back to
+  travelling in from the screen edge it's anchored to.
+- The mixer growing out of a popup that sits on the screen's midline has no
+  edge to come out of, so it turns over into place instead -- a shallow
+  flip about the panel's vertical axis, with the camera set far enough back
+  that the near edge doesn't balloon on the way round. Anchored to a side,
+  it still grows out of that side as before.
+- The disc now arrives the way a radar face does: a sweep travels once
+  counterclockwise around the ring and the index lights up just behind the
+  line rather than exactly on it. The face, its track and its arc don't
+  fade -- only the ticks and the mark riding the fill's leading edge are
+  revealed, which is what makes it read as a face coming alive rather than
+  as a picture fading in.
+- The volume glyph now reads the level rather than labelling it: crossing a
+  third of the range adds a wave to the speaker, crossing two thirds adds
+  the second, zero puts the bar across it, and each one springs in as it
+  arrives instead of the icon being exchanged between frames. Bluetooth
+  still takes precedence over all of them when a sink is connected.
+- Glass: the reflection's slow continuous drift is gone. The light now
+  swings into place as the panel arrives and swings back out the other way
+  as it leaves -- one short, physical turn shared by the face and the rim,
+  ending when the panel does. Nothing turns while the popup just sits
+  there, which also means the effect costs nothing while idle.
+- Atmosphere: three soft patches of the second colour are now pooled into
+  the field, placed randomly each time the popup appears and drifting past
+  each other on their own phases while it's up, so the background is never
+  quite the same painting twice. They're a falloff inside the existing
+  shader rather than a second layer or a blur pass, and the field's own
+  turn and lap are unchanged.
+- The ringer switch's character now comes from the recovery spring rather
+  than from a different animation per mode: vibrate is left loose enough to
+  cross back and forth several times, which is a shake; silent is damped
+  nearly flat, which is something stopping; ringing sits between them and
+  reads as one confident knock. The glyph rides the same impulse in size as
+  the button does, so the pop is the spring crossing its resting value
+  rather than a pose written down somewhere.
+- Buttons now answer the finger itself, separately from whatever the press
+  changes: they give as it lands and let go as it lifts, on the same spring
+  a dragged slider settles on -- so pressing a control and swiping one feel
+  like the same surface. The toggle buttons' own glyph swap moved onto
+  those shared springs too.
+
 ## 2026-09-20 — 1.0.58
 
 - Rebuilt the overlay's motion from the 1.0.56 code, dropping the previous

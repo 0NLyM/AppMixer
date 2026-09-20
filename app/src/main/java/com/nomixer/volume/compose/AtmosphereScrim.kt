@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
 import kotlin.math.cos
+import kotlin.random.Random
 import kotlin.math.sin
 
 /**
@@ -69,6 +70,11 @@ private const val ATMOSPHERE_SHADER_SRC = """
     uniform float3 colorB;
     uniform float grainIntensity;
     uniform float grainScale;
+    uniform float2 blobA;
+    uniform float2 blobB;
+    uniform float2 blobC;
+    uniform float blobRadius;
+    uniform float blobStrength;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
@@ -92,6 +98,22 @@ private const val ATMOSPHERE_SHADER_SRC = """
         float radius = length(turned) / longest;
         float sweep = fract(angle / 6.2831853 + radius * 0.9 + 1.0);
         float band = 0.5 - 0.5 * cos(sweep * 6.2831853);
+
+        // Soft patches of the second colour pooled over the sweep, in the
+        // same turned coordinates everything else reads -- so they travel
+        // with the field rather than sitting on top of it while it moves.
+        // smoothstep alone is the blur: no second pass, no extra layer,
+        // just a falloff wide enough that no edge of one is ever visible.
+        // Their centres come in already placed (and already drifting), so
+        // no two appearances pool in the same places.
+        if (blobStrength > 0.0) {
+            float2 tn = turned / longest;
+            float pooled =
+                smoothstep(blobRadius, 0.0, distance(tn, blobA)) +
+                smoothstep(blobRadius, 0.0, distance(tn, blobB)) +
+                smoothstep(blobRadius, 0.0, distance(tn, blobC));
+            band = clamp(band + (clamp(pooled, 0.0, 1.0) - 0.4) * blobStrength, 0.0, 1.0);
+        }
 
         // Grain in chunky cells rather than per pixel, so it reads as
         // actual grain at a glance instead of sensor noise. grainScale is
@@ -139,6 +161,25 @@ private const val ATMOSPHERE_DRIFT_MILLIS = 27_000
  */
 private const val ATMOSPHERE_DRIFT_FRACTION = 0.035f
 private const val ATMOSPHERE_OVERSCAN = 1.12f
+
+/**
+ * The three soft patches pooled over the sweep, as positions in the same
+ * turned, size-normalised space the shader samples in. Placed randomly per
+ * appearance and nudged around while the popup is up, so the field is never
+ * quite the same twice.
+ */
+internal class AtmosphereBlobs(
+    val ax: Float, val ay: Float,
+    val bx: Float, val by: Float,
+    val cx: Float, val cy: Float
+)
+
+/** How wide a patch is and how strongly it reads, in the shader's units. */
+private const val BLOB_RADIUS = 0.42f
+private const val BLOB_STRENGTH = 0.55f
+
+/** How far a patch wanders from where it was placed, in the same units. */
+private const val BLOB_DRIFT = 0.07f
 
 // Same reasoning as GlassScrim's own noiseBrush cache: compiling AGSL is far
 // too expensive to redo whenever a panel appears. Unlike that cache this one
@@ -193,7 +234,8 @@ private fun DrawScope.atmosphereBrush(
     fallback: Color,
     rotation: Float,
     grainIntensity: Float,
-    grainSize: Float
+    grainSize: Float,
+    blobs: AtmosphereBlobs? = null
 ): Brush? {
     val shader = atmosphereShaderOrNull() ?: return null
     return try {
@@ -204,6 +246,19 @@ private fun DrawScope.atmosphereBrush(
         shader.setFloatUniform("colorB", second.red, second.green, second.blue)
         shader.setFloatUniform("grainIntensity", grainIntensity.coerceIn(0f, 1f))
         shader.setFloatUniform("grainScale", grainScaleFor(grainSize))
+        if (blobs == null) {
+            shader.setFloatUniform("blobStrength", 0f)
+            shader.setFloatUniform("blobA", 0f, 0f)
+            shader.setFloatUniform("blobB", 0f, 0f)
+            shader.setFloatUniform("blobC", 0f, 0f)
+            shader.setFloatUniform("blobRadius", 1f)
+        } else {
+            shader.setFloatUniform("blobStrength", BLOB_STRENGTH)
+            shader.setFloatUniform("blobA", blobs.ax, blobs.ay)
+            shader.setFloatUniform("blobB", blobs.bx, blobs.by)
+            shader.setFloatUniform("blobC", blobs.cx, blobs.cy)
+            shader.setFloatUniform("blobRadius", BLOB_RADIUS)
+        }
         ShaderBrush(shader)
     } catch (e: Throwable) {
         Log.w("GlassScrim", "Atmosphere shader failed to update", e)
@@ -292,6 +347,10 @@ fun AtmosphereBackground(
 ) {
     val spin = rememberAtmosphereSpin()
     val drift = rememberAtmosphereDrift()
+    // Placed once per appearance, so the patches pool somewhere different
+    // every time the popup comes up rather than the panel always looking
+    // like the same painting.
+    val blobSeed = remember { List(6) { Random.nextFloat() } }
 
     Box(modifier.clip(shape)) {
         Box(
@@ -314,7 +373,20 @@ fun AtmosphereBackground(
                     scaleY = ATMOSPHERE_OVERSCAN
                 }
                 .drawBehind {
-                    val brush = atmosphereBrush(colors, baseColor.copy(alpha = 1f), spin.value, grainIntensity, grainSize)
+                    // Each patch takes the lap at its own phase, so they
+                    // wander past each other instead of moving as one.
+                    val lap = drift.value
+                    val blobs = AtmosphereBlobs(
+                        ax = (blobSeed[0] - 0.5f) * 0.9f + cos(lap) * BLOB_DRIFT,
+                        ay = (blobSeed[1] - 0.5f) * 0.9f + sin(lap) * BLOB_DRIFT,
+                        bx = (blobSeed[2] - 0.5f) * 0.9f + cos(lap + 2.1f) * BLOB_DRIFT,
+                        by = (blobSeed[3] - 0.5f) * 0.9f + sin(lap + 2.1f) * BLOB_DRIFT,
+                        cx = (blobSeed[4] - 0.5f) * 0.9f + cos(lap + 4.2f) * BLOB_DRIFT,
+                        cy = (blobSeed[5] - 0.5f) * 0.9f + sin(lap + 4.2f) * BLOB_DRIFT
+                    )
+                    val brush = atmosphereBrush(
+                        colors, baseColor.copy(alpha = 1f), spin.value, grainIntensity, grainSize, blobs
+                    )
                     if (brush != null) {
                         drawRect(brush, alpha = baseColor.alpha)
                     } else {

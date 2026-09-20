@@ -2,7 +2,6 @@ package com.nomixer.volume.compose
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -83,13 +82,15 @@ fun ToggleButton(
                 )
         ) {
             // The glyph itself swaps with a small pop rather than
-            // blinking from one shape to the other.
+            // blinking from one shape to the other -- on the same springs
+            // the ringer switch and the sliders use, so a tap and a swipe
+            // settle with the same hand instead of on separate clocks.
             AnimatedContent(
                 targetState = checked,
                 transitionSpec = {
-                    (fadeIn(tween(180)) + scaleIn(tween(220), initialScale = 0.65f))
+                    (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.6f))
                         .togetherWith(
-                            fadeOut(tween(120)) + scaleOut(tween(160), targetScale = 0.65f)
+                            fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.6f)
                         )
                 },
                 label = "toggleIcon"

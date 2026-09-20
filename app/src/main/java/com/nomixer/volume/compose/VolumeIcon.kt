@@ -4,13 +4,14 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BluetoothAudio
@@ -25,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.nomixer.volume.ui.theme.Motion
 
 /**
  * Whether a Bluetooth sink is among the outputs this device can currently
@@ -63,26 +65,42 @@ private fun AudioManager.hasBluetoothOutput(): Boolean =
 
 /**
  * The glyph a volume control should show for its current state: muted beats
- * everything else, then a connected Bluetooth sink, then the plain speaker
- * icon otherwise. [volume] is read rather than a boolean so a caller with
- * the level already at hand doesn't need to compute mute itself.
+ * everything else, then a connected Bluetooth sink, then the speaker -- and
+ * the speaker itself comes in three, by how many waves are coming off it.
+ *
+ * Those three are what makes the icon read as a *level* rather than as a
+ * label: crossing a third of the range adds a wave, crossing two thirds
+ * adds the second, and [AnimatedVolumeIcon] springs each one in as it
+ * arrives. The glyphs are the platform's own, so the waves sit exactly
+ * where the speaker they belong to expects them, which is not something a
+ * hand-drawn arc laid over a Material speaker manages reliably.
+ *
+ * [maxVolume] is what those thirds are measured against; at or below zero
+ * the level can't be placed, so the plain full speaker stands in.
  */
 @Composable
-fun rememberVolumeIcon(audioManager: AudioManager, volume: Int): ImageVector {
+fun rememberVolumeIcon(
+    audioManager: AudioManager,
+    volume: Int,
+    maxVolume: Int = 0
+): ImageVector {
     val bluetoothActive = rememberBluetoothAudioActive(audioManager)
     return when {
         volume <= 0 -> Icons.AutoMirrored.Filled.VolumeOff
         bluetoothActive -> Icons.Default.BluetoothAudio
+        maxVolume <= 0 -> Icons.AutoMirrored.Filled.VolumeUp
+        volume <= maxVolume / 3 -> Icons.AutoMirrored.Filled.VolumeMute
+        volume <= maxVolume * 2 / 3 -> Icons.AutoMirrored.Filled.VolumeDown
         else -> Icons.AutoMirrored.Filled.VolumeUp
     }
 }
 
 /**
- * Swaps to a new glyph with the same fade/scale pop [RingerModeButton] uses
- * for its own icon, instead of snapping straight to it -- for wherever
- * [rememberVolumeIcon] feeds an `Icon` directly, so going mute, connecting
- * to Bluetooth, or coming back to plain media reads as a transition rather
- * than a jump cut.
+ * Swaps to a new glyph with the same spring pop [RingerModeButton] uses for
+ * its own, instead of snapping straight to it -- so a wave arriving as the
+ * level crosses a third, the bar landing across a muted speaker, or the
+ * switch to a Bluetooth sink all read as the icon reacting rather than as
+ * one picture being exchanged for another between frames.
  */
 @Composable
 fun AnimatedVolumeIcon(
@@ -100,8 +118,10 @@ fun AnimatedVolumeIcon(
         targetState = icon,
         modifier = modifier,
         transitionSpec = {
-            (fadeIn(tween(180)) + scaleIn(tween(220), initialScale = 0.65f))
-                .togetherWith(fadeOut(tween(120)) + scaleOut(tween(160), targetScale = 0.65f))
+            (fadeIn(Motion.color()) + scaleIn(Motion.fast(), initialScale = 0.6f))
+                .togetherWith(
+                    fadeOut(Motion.color()) + scaleOut(Motion.fast(), targetScale = 0.6f)
+                )
         },
         label = "volumeIcon"
     ) { currentIcon ->

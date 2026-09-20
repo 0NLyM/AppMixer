@@ -280,7 +280,7 @@ fun CollapsedVolumePopup(
     val valueText = volume.toString()
     // Mute beats a Bluetooth-connected glyph beats the plain speaker, shared
     // by every style below instead of each hardcoding the speaker icon.
-    val volumeIcon = rememberVolumeIcon(audioManager, volume)
+    val volumeIcon = rememberVolumeIcon(audioManager, volume, maxVolume.toInt())
     val scale = preferences.activeScale()
     val buttonSize = (BUTTON_SIZE_DP * scale).dp
     val discDiameter = (220 * scale).dp
