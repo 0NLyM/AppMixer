@@ -38,6 +38,9 @@ import androidx.compose.ui.graphics.Color
  * | Edge panel reveal   | sheet on the edge     | (the same value)            | clip outline, derived -- not a spring |
  * | Centered panel      | sheet expanding in place | [Spatial.default]        | uniform scale, never from 0           |
  * | Mixer morph         | sheet changing shape  | [Spatial.default]           | translation + scale, matched geometry |
+ * | Morph hand-over     | --                    | [Effects.default]           | alpha, on both faces at once -- the   |
+ * |                     |                       |                             | compact panel's going as the mixer's  |
+ * |                     |                       |                             | arrives, over the morph above         |
  * | Panel opacity       | --                    | [Effects.default]           | alpha (never a spatial spring)        |
  * | Disc pane           | a knob                | [Spatial.default]           | rotationZ (formation, anticlockwise)  |
  * | Disc hand           | the mark on a dial    | [Effects.default]           | alpha, a later slice of the arrival   |
@@ -51,14 +54,19 @@ import androidx.compose.ui.graphics.Color
  * | Round glyph button  | a button under a finger | [Spatial.press]           | uniform scale, 0.89 at the bottom --  |
  * |                     |                       |                             | ringer, Do Not Disturb, every toggle  |
  * | Button state change | a button knocked      | [Spatial.knock]             | uniform scale, to the same 0.89       |
- * | Ringer icon         | the button's own face | [Effects.default]           | alpha only -- its scale is the        |
- * |                     |                       |                             | container's. Never a slide.           |
+ * | Ringer icon         | the button's own face | [Effects.default]           | alpha only, and only for vibrate --   |
+ * |                     |                       |                             | ringing and silent are one speaker    |
+ * |                     |                       |                             | wearing the mute bar below. Its scale |
+ * |                     |                       |                             | is the container's. Never a slide.    |
  * | Glyph swap          | two pictures, not one | [Spatial.fast] (scale)      | uniform scale, from and to the press's |
  * |                     | object changing state | + [Effects.default] (alpha) | own 0.89 floor -- never from 0        |
  * | Vibrate glyph       | a phone on a table    | [Spatial.shake]             | translationX                          |
  * | Speaker glyph       | a cone and the air    | [Spatial.fast]              | wave extent                           |
  * | Mute bar            | a stroke drawn across a glyph | [Spatial.default]   | bar extent, over the glyph's own      |
- * |                     |                       |                             | bounds -- never a fade                |
+ * |                     |                       |                             | bounds -- never a fade. One mark for  |
+ * |                     |                       |                             | every glyph that is crossed out: a    |
+ * |                     |                       |                             | silenced stream, a silenced ringer,   |
+ * |                     |                       |                             | a prohibition that is not in force    |
  * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |
  * | Glass highlight     | a pane that is still, | the arrival, via [LocalArrival] | light angle and brightness --     |
  * |                     | under a light arriving |                            | never the pane                        |
@@ -251,14 +259,26 @@ object MotionTokens {
 }
 
 /**
- * How far the overlay has arrived, 0 to 1, from the one spring that owns
- * its whole appearance (see Service.kt). Anything inside the popup that
+ * How far the overlay has arrived, 0 to 1, from the spring that owns its
+ * whole appearance (see Service.kt). Anything inside the popup that
  * phases its own motion off the arrival -- the disc's formation turn, the
  * glass beam's entering sweep, Atmosphere's entering rotation -- reads it
  * from here rather than starting a second animation of its own. That is
  * what keeps every part of the arrival on a single curve instead of several
  * that merely begin at the same moment, and it makes every exit the same
  * entrance backwards for free.
+ *
+ * **Whichever entrance the panel on screen is actually playing.** The popup
+ * has two shapes and one of them arrives by morphing rather than by coming
+ * out of an edge, so there are two springs -- and at any moment exactly one
+ * of them is travelling while the other is parked at 1. A compact panel
+ * slides out of its edge on the appearance spring with the morph snapped to
+ * 1; a mixer morphing out of that panel travels on the morph with the
+ * appearance snapped to 1. This is their product, which is why it is still
+ * one curve and still one spring at a time: reading only the first of them
+ * is what left the mixer's glass lit as if it had already settled and its
+ * Atmosphere field already still, through the whole of the one entrance the
+ * mixer has.
  *
  * A function rather than a value, so a reader can take it in its own draw
  * phase and repaint without recomposing. Defaults to fully arrived, for

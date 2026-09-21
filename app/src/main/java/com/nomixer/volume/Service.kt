@@ -28,8 +28,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -45,10 +45,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.palette.graphics.Palette
@@ -251,6 +255,96 @@ private fun PopupAnchor.transformOrigin(): TransformOrigin {
         else -> 0.5f
     }
     return TransformOrigin(x, y)
+}
+
+/**
+ * The mixer's glass face: the tint, the beam across it and the grain, under
+ * the panel's own content.
+ *
+ * It takes the light itself rather than being handed it, and so does the
+ * rim below, for one reason: the beam is a **composition-phase** value --
+ * both its brushes are built from the angle and the strength, one of them
+ * inside a `Modifier.border` -- so whichever scope reads it recomposes on
+ * every step of the arrival. Read in the panel's own scope, as it was, that
+ * scope is the whole mixer, app list included, forty-odd times over a
+ * transition that is also morphing: a light that costs a relayout of every
+ * row it shines on.
+ *
+ * Two calls, still one beam. [rememberGlassBeam] is a pure function of the
+ * arrival both of them read, so the face and the rim cannot land on
+ * different lights however often either is recomposed -- which is the thing
+ * sharing one value was ever for.
+ */
+@Composable
+private fun MixerGlassFace(
+    shape: Shape,
+    baseColor: Color,
+    lightAngle: Float,
+    lightWidth: Float,
+    blurRadius: Dp,
+    noiseColor: Color,
+    noiseAlpha: Float,
+    modifier: Modifier = Modifier
+) {
+    val beam = rememberGlassBeam(lightAngle = lightAngle)
+    GlassBackground(
+        shape = shape,
+        baseColor = baseColor,
+        blurRadius = blurRadius,
+        lightAngle = beam.angle,
+        lightWidth = lightWidth,
+        lightStrength = beam.strength,
+        noiseColor = noiseColor,
+        noiseAlpha = noiseAlpha,
+        modifier = modifier
+    )
+}
+
+/** The rim that catches the same beam [MixerGlassFace] lays across the face. */
+@Composable
+private fun MixerGlassRim(
+    shape: Shape,
+    lightAngle: Float,
+    lightWidth: Float,
+    modifier: Modifier = Modifier
+) {
+    val beam = rememberGlassBeam(lightAngle = lightAngle)
+    Box(
+        modifier.border(
+            1.dp,
+            glassEdgeLightBrush(beam.angle, lightWidth, beam.strength),
+            shape
+        )
+    )
+}
+
+/**
+ * An arrival that has already happened.
+ *
+ * For the one thing inside the overlay that is *not* arriving: the compact
+ * panel still on screen underneath the mixer that is morphing out of it
+ * (see the hand-over in [Service.createView]). It has arrived already --
+ * handing it the arrival the mixer is riding would re-form its disc and
+ * re-flare its glass at the exact moment it is standing still and leaving.
+ */
+private val SettledArrival: () -> Float = { 1f }
+
+/**
+ * Makes a subtree ignore touch entirely: every change is taken on the
+ * initial pass, on the way down, so nothing inside ever sees it.
+ *
+ * For a panel that is only a picture of itself -- the compact popup handed
+ * over to the mixer above it. It is a real, live popup with real sliders on
+ * it for the length of the morph, and a finger landing in a gap between the
+ * mixer's own rows would otherwise reach straight through and move a volume
+ * on a panel nobody can interact with any more.
+ */
+private fun Modifier.untouchable(): Modifier = this.pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+        }
+    }
 }
 
 @SuppressLint("AccessibilityPolicy")
@@ -608,6 +702,47 @@ class Service : AccessibilityService() {
                         // genuinely starts a new one.
                         val morph = remember { Animatable(0f) }
 
+                        // The same morph on the effects channel: how far
+                        // the mixer's own face has replaced the compact
+                        // panel's, 0 to 1.
+                        //
+                        // One transition, two channels -- exactly as
+                        // [appear] and [fade] are, and for the same reason.
+                        // The crossfade between the two faces starts on the
+                        // very frame the morph does and is over when it is,
+                        // but an alpha carried by [morph]'s own spatial
+                        // spring overshoots past 1, and a clamped overshoot
+                        // on alpha is a face that reaches full opacity,
+                        // sits there and then eases back off it.
+                        //
+                        // element:  the panel's face, changing.
+                        // model:    -- opacity is not an object.
+                        // token:    MotionTokens.Effects.default.
+                        // property: alpha, on both faces at once.
+                        val morphFade = remember { Animatable(0f) }
+
+                        // Whether the compact panel is still on screen --
+                        // true from the frame a morph starts until the
+                        // frame it finishes, either way round.
+                        //
+                        // The mixer does not replace the compact panel: it
+                        // *is* the compact panel, changed shape, so the
+                        // panel it grew out of stays composed underneath it
+                        // for as long as the change is still happening and
+                        // hands its face over on [morphFade]. A flag
+                        // flipped once at each end of the morph rather than
+                        // a `morph.value < 1f` read, which would recompose
+                        // the whole mixer on every frame of it.
+                        //
+                        // Starts true for the mixer, so the very first
+                        // frame it is composed for already has the compact
+                        // panel under it and its own face still at nothing.
+                        // Started false and flipped by the effect below, it
+                        // would be a frame of the mixer alone, at full
+                        // opacity, squashed into the compact panel's own
+                        // rectangle.
+                        var morphing by remember { mutableStateOf(expanded) }
+
                         // The geometry the morph running right now is
                         // travelling out of. A *different* one means a
                         // different journey -- the mixer that just opened,
@@ -681,11 +816,42 @@ class Service : AccessibilityService() {
                                     if (morphOrigin !== startedFrom) {
                                         // A journey this one hasn't run
                                         // yet: back to its start, which is
-                                        // where the panel currently is.
+                                        // where the panel currently is --
+                                        // its shape *and* its face, since
+                                        // what is on screen at the start of
+                                        // this journey is the compact panel
+                                        // itself.
                                         startedFrom = morphOrigin
                                         morph.snapTo(0f)
+                                        morphFade.snapTo(0f)
                                     }
+                                    // The compact panel stays composed for
+                                    // the whole of it: it is what the first
+                                    // frame of the morph actually shows.
+                                    morphing = true
+                                    // Launched rather than awaited, so the
+                                    // face and the shape are one transition
+                                    // starting on one frame -- each simply
+                                    // on the channel that suits what it
+                                    // drives.
+                                    val handingOver =
+                                        launch { morphFade.animateTo(1f, MotionTokens.Effects.default()) }
                                     morph.animateTo(1f, MotionTokens.Spatial.default())
+                                    // Both channels, not just the
+                                    // travelling one. Under reduced motion
+                                    // the morph collapses to a snap while
+                                    // the crossfade stays a spring (a fade
+                                    // carries no travel for that setting to
+                                    // object to), so dropping the compact
+                                    // panel when the *shape* was done would
+                                    // leave the mixer fading up out of
+                                    // nothing -- with the panel it is
+                                    // supposed to be crossfading from
+                                    // already gone.
+                                    handingOver.join()
+                                    // Nothing left of the panel it came
+                                    // out of, so nothing left to keep.
+                                    morphing = false
                                 } else {
                                     // element:  the panel arriving.
                                     // model:    a sheet uncovered at the
@@ -704,6 +870,10 @@ class Service : AccessibilityService() {
                                     // from where it is rather than jumping
                                     // back to the start.
                                     morph.snapTo(1f)
+                                    morphFade.snapTo(1f)
+                                    // No matched geometry to morph out of,
+                                    // so nothing to hand over from either.
+                                    morphing = false
                                     appear.animateTo(1f, MotionTokens.Spatial.default())
                                 }
                             } else {
@@ -716,6 +886,13 @@ class Service : AccessibilityService() {
                                 val fadingOut =
                                     launch { fade.animateTo(0f, MotionTokens.Effects.default()) }
                                 if (expanded && morphOrigin != null) {
+                                    // The compact panel comes back for the
+                                    // fold: the exit is the entrance
+                                    // backwards, so the face it handed over
+                                    // is handed back on the same two
+                                    // channels it left on.
+                                    morphing = true
+                                    launch { morphFade.animateTo(0f, MotionTokens.Effects.default()) }
                                     morph.animateTo(0f, MotionTokens.Spatial.default())
                                 }
                                 appear.animateTo(0f, MotionTokens.Spatial.default())
@@ -807,21 +984,27 @@ class Service : AccessibilityService() {
                         // spring instead of each starting one of their own.
                         // Remembered, so providing it doesn't invalidate
                         // every reader on each recomposition.
-                        val arrival = remember(appear) { { appear.value } }
-                        val arrivalFade = remember(fade) { { fade.value } }
+                        //
+                        // **Both springs, not just [appear].** Whichever of
+                        // the two is the entrance this panel is actually
+                        // playing, the other is parked at 1: a compact
+                        // panel coming out of its edge travels on [appear]
+                        // with [morph] snapped to 1, and a mixer morphing
+                        // out of that panel travels on [morph] with
+                        // [appear] snapped to 1. Reading only [appear] is
+                        // why the mixer's glass came up with its light
+                        // already settled and its Atmosphere field already
+                        // still -- the arrival those two phase off was
+                        // never moving for the one entrance the mixer has.
+                        // The product is the arrival either way, and it is
+                        // still one spring at a time.
+                        val arrival = remember(appear, morph) { { appear.value * morph.value } }
+                        val arrivalFade = remember(fade, morphFade) { { fade.value * morphFade.value } }
 
                         CompositionLocalProvider(
                             LocalArrival provides arrival,
                             LocalArrivalFade provides arrivalFade
                         ) {
-                        // One beam shared by the mixer's glass face and its
-                        // rim, exactly as CollapsedVolumePopup does it.
-                        // Taken inside the provider above, because the
-                        // shimmer it carries is phased off that arrival:
-                        // read outside it, the panel would come up with its
-                        // light already settled.
-                        val beam = rememberGlassBeam(lightAngle = preferences.glassLightAngle)
-
                         Box(
                             modifier = Modifier.graphicsLayer {
                                 val arrived = appear.value.coerceIn(0f, 1f)
@@ -950,6 +1133,87 @@ class Service : AccessibilityService() {
                         ) {
                             if (expanded) {
                                 val mixerShape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+
+                                // The panel this one is still becoming.
+                                //
+                                // The mixer does not appear in place of the
+                                // compact popup -- it *is* the compact
+                                // popup, changed shape -- so for as long as
+                                // the change is still running, the panel it
+                                // came out of is still here, underneath it,
+                                // handing its face over. Without this the
+                                // transition was the one thing a matched
+                                // morph is supposed to rule out: one panel
+                                // removed and another one drawn, with only
+                                // the rectangle they were drawn in agreeing
+                                // about what had happened.
+                                //
+                                // It carries no motion of its own. The
+                                // layer below cancels, exactly, the scale
+                                // the morphing container is applying -- so
+                                // the compact panel sits at its own true
+                                // size, over the very pixels it occupied a
+                                // frame ago, and travels only because the
+                                // container's centre does. What changes is
+                                // its alpha, on the morph's own effects
+                                // channel.
+                                //
+                                // element:  the compact panel's face,
+                                //           handing over.
+                                // model:    -- opacity is not an object.
+                                // token:    MotionTokens.Effects.default,
+                                //           through [morphFade].
+                                // property: alpha. Its scale is the
+                                //           container's own, inverted, and
+                                //           so is not an animation of its
+                                //           own at all.
+                                val morphedOutOf = morphOrigin
+                                if (morphing && morphedOutOf != null) {
+                                    CompositionLocalProvider(
+                                        // Settled, deliberately: this panel
+                                        // has already arrived -- it is the
+                                        // one the user has been looking at.
+                                        // Handing it the arrival the mixer
+                                        // is riding would re-form its disc
+                                        // and re-flare its glass at the
+                                        // very moment it is supposed to be
+                                        // standing still and going.
+                                        LocalArrival provides SettledArrival,
+                                        LocalArrivalFade provides SettledArrival
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .wrapContentSize(unbounded = true)
+                                                .graphicsLayer {
+                                                    val morphed = morph.value
+                                                    val containerX =
+                                                        morphedOutOf.scaleX + (1f - morphedOutOf.scaleX) * morphed
+                                                    val containerY =
+                                                        morphedOutOf.scaleY + (1f - morphedOutOf.scaleY) * morphed
+                                                    transformOrigin = TransformOrigin.Center
+                                                    scaleX = if (containerX > 0.001f) 1f / containerX else 1f
+                                                    scaleY = if (containerY > 0.001f) 1f / containerY else 1f
+                                                    alpha = (1f - morphFade.value).coerceIn(0f, 1f)
+                                                }
+                                                .untouchable()
+                                        ) {
+                                            CollapsedVolumePopup(
+                                                audioManager = manager.audioManager,
+                                                preferences = preferences,
+                                                atmosphereColors = atmosphereColorsState,
+                                                // Nothing to expand into --
+                                                // it is already happening --
+                                                // and nothing to keep awake:
+                                                // the mixer on top of this
+                                                // owns both now.
+                                                onExpand = {},
+                                                onInteract = {}
+                                            )
+                                        }
+                                    }
+                                }
+
                                 // A real blur needs a genuinely separate
                                 // graphics layer from whatever it isn't
                                 // supposed to blur (see GlassBackground's own
@@ -964,7 +1228,22 @@ class Service : AccessibilityService() {
                                 // -- this panel never had one of its own
                                 // before, only its individual sliders did
                                 // once the panel itself was switched off.
-                                Box {
+                                Box(
+                                    // The other half of the same crossfade:
+                                    // the mixer's own face arriving as the
+                                    // compact panel's goes. Only while
+                                    // there is a morph to arrive on -- with
+                                    // no matched geometry to run out of
+                                    // there is no hand-over either, and the
+                                    // panel is simply present.
+                                    modifier = Modifier.graphicsLayer {
+                                        alpha = if (morphOrigin != null) {
+                                            morphFade.value.coerceIn(0f, 1f)
+                                        } else {
+                                            1f
+                                        }
+                                    }
+                                ) {
                                     if (showBackground) {
                                         PanelShadow(
                                             color = panelShadowColor,
@@ -974,13 +1253,12 @@ class Service : AccessibilityService() {
                                         )
                                     }
                                     if (panelGlass) {
-                                        GlassBackground(
+                                        MixerGlassFace(
                                             shape = mixerShape,
                                             baseColor = panelColor,
-                                            blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                                            lightAngle = beam.angle,
+                                            lightAngle = preferences.glassLightAngle,
                                             lightWidth = preferences.glassLightWidth,
-                                            lightStrength = beam.strength,
+                                            blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                                             noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
                                             noiseAlpha = preferences.glassNoiseAlpha,
                                             modifier = Modifier.matchParentSize()
@@ -1001,47 +1279,53 @@ class Service : AccessibilityService() {
                                         contentColor = MaterialTheme.colorScheme.onBackground,
                                         shape = mixerShape
                                     ) {
-                                        Column(
-                                            // One inset all round: the sides
-                                            // used to be wider than the top
-                                            // and bottom.
-                                            modifier = Modifier.padding(16.dp)
+                                        // One inset all round, and it is
+                                        // the *list's* own content padding
+                                        // rather than a Column's around it.
+                                        //
+                                        // A lazy list clips to its own
+                                        // bounds along the axis it scrolls,
+                                        // and padding it from outside puts
+                                        // that clip line exactly on the
+                                        // rows' own edges: a row arriving
+                                        // or leaving (see animateItem) was
+                                        // cut in half at the top and bottom
+                                        // of the list by an edge with
+                                        // nothing drawn on it, and every
+                                        // row's shadow was cut off along
+                                        // the same line. Moved inside, the
+                                        // clip sits at the panel's own edge
+                                        // and the inset is sixteen dp of
+                                        // room the animations and the
+                                        // shadows can actually use.
+                                        AppVolumeList(
+                                            apps = manager.apps.values,
+                                            showAll = false,
+                                            contentPadding = PaddingValues(16.dp),
+                                            shadowColor = sliderShadowColor,
+                                            onChange = this@Service.handler::startIdleTimer
                                         ) {
-                                            AppVolumeList(
-                                                apps = manager.apps.values,
-                                                showAll = false,
-                                                shadowColor = sliderShadowColor,
-                                                onChange = this@Service.handler::startIdleTimer
-                                            ) {
-                                                item("system_volume_panel") {
-                                                    SystemVolumePanel(
-                                                        audioManager = manager.audioManager,
-                                                        notificationManagerProxy = manager.notificationManagerProxy,
-                                                        showCallVolumeAlways = false,
-                                                        applyVisibilityFilter = true,
-                                                        allowVisibilityConfig = false,
-                                                        isSliderVisible = manager::isSystemSliderVisible,
-                                                        onSliderVisibilityChange = manager::setSystemSliderVisible,
-                                                        shadowColor = sliderShadowColor,
-                                                        onChange = this@Service.handler::startIdleTimer
-                                                    )
-                                                }
+                                            item("system_volume_panel") {
+                                                SystemVolumePanel(
+                                                    audioManager = manager.audioManager,
+                                                    notificationManagerProxy = manager.notificationManagerProxy,
+                                                    showCallVolumeAlways = false,
+                                                    applyVisibilityFilter = true,
+                                                    allowVisibilityConfig = false,
+                                                    isSliderVisible = manager::isSystemSliderVisible,
+                                                    onSliderVisibilityChange = manager::setSystemSliderVisible,
+                                                    shadowColor = sliderShadowColor,
+                                                    onChange = this@Service.handler::startIdleTimer
+                                                )
                                             }
                                         }
                                     }
                                     if (panelGlass) {
-                                        Box(
-                                            Modifier
-                                                .matchParentSize()
-                                                .border(
-                                                    1.dp,
-                                                    glassEdgeLightBrush(
-                                                        beam.angle,
-                                                        preferences.glassLightWidth,
-                                                        beam.strength
-                                                    ),
-                                                    mixerShape
-                                                )
+                                        MixerGlassRim(
+                                            shape = mixerShape,
+                                            lightAngle = preferences.glassLightAngle,
+                                            lightWidth = preferences.glassLightWidth,
+                                            modifier = Modifier.matchParentSize()
                                         )
                                     }
                                     if (panelAtmosphere) {

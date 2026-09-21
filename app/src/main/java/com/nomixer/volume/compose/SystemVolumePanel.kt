@@ -219,7 +219,14 @@ private fun RingFooter(
         // Not Disturb pictures swapping. A notification bell said "there
         // are notifications"; the circle says what the switch actually
         // does, and the bar crossing it is the one mark this app uses for
-        // "silenced", whatever glyph is underneath it.
+        // a thing that is not in force, whatever glyph is underneath it.
+        //
+        // Which is why the bar is on when Do Not Disturb is **off**, the
+        // opposite way round to the speaker's. The speaker is a thing that
+        // makes sound, so crossing it out silences it; this is already a
+        // "no", so crossing it out cancels it. A prohibition sign wearing
+        // a bar while the prohibition is in force reads as the switch
+        // saying no twice.
         //
         // The same body and the same size as the ringer switch it sits
         // beside, so the pair reads as one row of one control repeated --
@@ -228,7 +235,8 @@ private fun RingFooter(
             checked = interruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL,
             checkedDescription = stringResource(R.string.disable_do_not_disturb),
             uncheckedDescription = stringResource(R.string.enable_do_not_disturb),
-            icon = Icons.Default.DoNotDisturbOn
+            icon = Icons.Default.DoNotDisturbOn,
+            barred = interruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL
         ) {
             notificationManagerProxy.setInterruptionFilter(
                 if (it) NotificationManager.INTERRUPTION_FILTER_NONE else NotificationManager.INTERRUPTION_FILTER_ALL

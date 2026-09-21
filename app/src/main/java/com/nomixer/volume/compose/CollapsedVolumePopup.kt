@@ -86,6 +86,25 @@ internal val PANEL_SHADOW_BLUR_DP = 12.dp
 private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp
 
 /**
+ * How much clear room an element wearing [ELEMENT_SHADOW_ELEVATION_DP] of
+ * [softShadow] needs around itself inside the panel.
+ *
+ * The panel is a [Surface], and a Surface clips its content to its own
+ * shape -- so a shadow that reaches further past its element than the
+ * panel's padding is a shadow cut off along the panel's edge, and cut worst
+ * exactly at its rounded corners, where the clip comes closest. The
+ * platform's elevation model throws its spot light downward as well as
+ * spreading ambiently, so the reach is half again the elevation rather than
+ * the elevation itself.
+ *
+ * Only added when there are element shadows to make room for -- with the
+ * panel showing they are transparent and it paints its own halo instead
+ * ([PanelShadow]), and an inset for a shadow nobody asked for is just a
+ * bigger window.
+ */
+private val ELEMENT_SHADOW_CLEARANCE_DP = ELEMENT_SHADOW_ELEVATION_DP * 1.5f
+
+/**
  * A soft shadow via the platform's own elevation renderer -- proper ambient
  * falloff around the shape, not a hand-drawn approximation -- tinted with
  * [color] instead of the default black, so it stays the same light,
@@ -294,10 +313,29 @@ fun CollapsedVolumePopup(
     // around the disc regardless of how big the disc itself is scaled.
     val discPanelCornerRadius = discDiameter / 2 + DISC_PANEL_MARGIN_DP.dp
     val panelShape = RoundedCornerShape(if (isDisc) discPanelCornerRadius else cornerRadius)
+
+    // A dedicated switch, not just Solid at 0% or Translucent with nothing
+    // granted: those still left window blur requested and a panel object
+    // present (if invisible), which is what let the shadow meant for a
+    // hidden panel visibly catch its edge. With the panel off outright,
+    // there's nothing for the shadow to sit on, so it moves to the ringer
+    // button and slider themselves instead (below).
+    val showBackground = preferences.activeShowBackground()
+
+    // Room for those element shadows to be drawn whole, inside the clip the
+    // panel's own Surface imposes -- see [ELEMENT_SHADOW_CLEARANCE_DP]. The
+    // disc never takes it: its shadow is painted inside VolumeDisc's own
+    // canvas rather than hung off an element in here.
+    val elementShadowClearance =
+        if (!isDisc && !showBackground && preferences.shadowAlpha() > 0f) {
+            ELEMENT_SHADOW_CLEARANCE_DP
+        } else {
+            0.dp
+        }
     val panelPadding = if (isDisc) {
         PaddingValues(DISC_PANEL_MARGIN_DP.dp)
     } else {
-        PaddingValues(10.dp)
+        PaddingValues(10.dp + elementShadowClearance)
     }
 
     // How far the disc's own center content (ringer switch, value label)
@@ -366,14 +404,6 @@ fun CollapsedVolumePopup(
     } else {
         null
     }
-
-    // A dedicated switch, not just Solid at 0% or Translucent with nothing
-    // granted: those still left window blur requested and a panel object
-    // present (if invisible), which is what let the shadow meant for a
-    // hidden panel visibly catch its edge. With the panel off outright,
-    // there's nothing for the shadow to sit on, so it moves to the ringer
-    // button and slider themselves instead (below).
-    val showBackground = preferences.activeShowBackground()
 
     // Whether [panelColor] below gets the full glass treatment (gradient,
     // grain, blur and edge light -- see [GlassBackground]) instead of a flat

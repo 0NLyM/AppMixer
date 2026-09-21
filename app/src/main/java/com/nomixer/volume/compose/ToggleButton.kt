@@ -244,16 +244,20 @@ fun ToggleButton(
 }
 
 /**
- * A [ToggleButton] whose two states are one glyph, silenced or not: the
- * shared mute bar is drawn across [icon] when [checked] and un-drawn when
- * it isn't (see [muteBar]), instead of exchanging one finished picture for
+ * A [ToggleButton] whose two states are one glyph, crossed out or not: the
+ * shared mute bar is drawn across [icon] when [barred] and un-drawn when it
+ * isn't (see [muteBar]), instead of exchanging one finished picture for
  * another.
  *
- * That is what Do Not Disturb actually is -- notifications, crossed out --
- * and using the same bar the speaker wears is what makes "silenced" one
- * idea across the whole popup rather than a different mark per control.
- * The glyph is drawn at [ButtonGlyphSize], the size every glyph on a round
- * control in the mixer is.
+ * [barred] is its own parameter rather than [checked] itself, because which
+ * of a switch's two states wears the bar is a fact about the *glyph*, not
+ * about the switch. A speaker is crossed out when it is silenced; a
+ * prohibition sign is crossed out when the prohibition is *off*, since a
+ * crossed-out "no" is a "no" that isn't in force. Using the same bar the
+ * speaker wears is what makes one mark carry that idea across the whole
+ * popup rather than a different mark per control. The glyph is drawn at
+ * [ButtonGlyphSize], the size every glyph on a round control in the mixer
+ * is.
  */
 @Composable
 fun BarredToggleButton(
@@ -261,11 +265,12 @@ fun BarredToggleButton(
     checkedDescription: String,
     uncheckedDescription: String,
     icon: ImageVector,
+    barred: Boolean = checked,
     onCheckedChange: (Boolean) -> Unit
 ) {
     val description = if (checked) checkedDescription else uncheckedDescription
     val contentColor = toggleContentColor(checked)
-    val bar = rememberMuteBarExtent(checked)
+    val bar = rememberMuteBarExtent(barred)
 
     ToggleButtonShell(
         checked = checked,

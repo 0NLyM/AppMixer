@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -98,10 +99,10 @@ private const val SHAKE_TRAVEL_DP = 2.4f
  *
  * Every switch is one short pop of the button itself -- in, back out past
  * its own size, done -- and, on the glyph, whichever part of it the new
- * mode actually changes: the waves retracting into the speaker and the mute
- * bar drawing itself across the cone they came out of, or the phone shaking
- * sideways. The button never swaps one finished picture for another where
- * the two share a body.
+ * mode actually changes: the shared mute bar drawing itself across the
+ * speaker, or the phone shaking sideways. The button never swaps one
+ * finished picture for another where the two share a body, and ringing and
+ * silent share one: the media slider's own speaker, crossed out or not.
  */
 @Composable
 fun RingerModeButton(
@@ -287,14 +288,31 @@ fun RingerModeButton(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Ringing and silent are the *same* glyph in two states, so they
-        // are one composable that animates its own parts: the waves retract
-        // into the cone and the mute bar draws itself across where they
-        // were, on a speaker that never moves. Only vibrate is a genuinely
-        // different object, so only vibrate is a swap -- and the swap runs
-        // on the shared springs rather than on lengths of its own.
+        // Ringing and silent are the *same* glyph, silenced or not: the
+        // speaker the media slider already wears, with the shared mute bar
+        // drawn across it. Not a second speaker of this button's own --
+        // the switch sits in the mixer's ring row directly beside that
+        // slider, and a ringer that answered "silent" with a different
+        // picture of a speaker than the one next to it is two glyphs for
+        // one object. Only vibrate is a genuinely different thing, so only
+        // vibrate is a swap.
         val vibrating = ringerMode == AudioManager.RINGER_MODE_VIBRATE
         val description = stringResource(ringerDescription(ringerMode))
+
+        // element:  the mute bar across the ringer's speaker.
+        // model:    a stroke drawn across a glyph -- the shared one, laid
+        //           over the glyph rather than built into it.
+        // token:    MotionTokens.Spatial.default, times the arrival --
+        //           see [rememberMuteBarExtent].
+        // property: bar extent, over the glyph's own bounds. Never a fade.
+        //
+        // Hoisted out of the swap below deliberately: one bar for the
+        // whole control, so going silent while the speaker is already on
+        // screen draws the stroke on across it rather than handing a fresh
+        // one to a new [AnimatedContent] slot.
+        val silentBar = rememberMuteBarExtent(
+            barred = ringerMode == AudioManager.RINGER_MODE_SILENT
+        )
 
         // element:  the glyph, swapping between two different objects.
         // model:    the button's own face changing.
@@ -332,11 +350,16 @@ fun RingerModeButton(
                     tint = contentColor
                 )
             } else {
-                AnimatedSpeakerGlyph(
-                    level = if (ringerMode == AudioManager.RINGER_MODE_SILENT) 0f else 1f,
-                    muted = ringerMode == AudioManager.RINGER_MODE_SILENT,
-                    modifier = Modifier.size(size * ButtonGlyphFraction),
+                // The media slider's own glyph, at this button's size,
+                // wearing the app's one mute bar as an overlay (see
+                // [muteBar]) -- the same mark, over the same bounds, that
+                // a stream at zero and the Do Not Disturb switch wear.
+                Icon(
+                    imageVector = Icons.Default.VolumeUp,
                     contentDescription = description,
+                    modifier = Modifier
+                        .size(size * ButtonGlyphFraction)
+                        .muteBar(silentBar, contentColor),
                     tint = contentColor
                 )
             }
