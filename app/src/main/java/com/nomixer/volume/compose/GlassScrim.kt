@@ -159,19 +159,42 @@ private const val EDGE_LIGHT_ALPHA = 0.55f
 /**
  * How far round the panel the reflection is thrown before it settles on the
  * angle the user actually chose. Wide enough that the lit band visibly
- * travels across the face on the way in rather than merely tilting, short
- * enough to be over before anyone looks for it.
+ * travels across the face rather than merely tilting.
  */
 private const val SHIMMER_ARC_DEGREES = 84f
+
+/**
+ * How far into the panel's arrival the light waits before it begins to
+ * move at all.
+ *
+ * The sweep used to run over the whole arrival, which meant it happened
+ * *while* the panel was still sliding out of the edge of the screen -- a
+ * reflection travelling across a sheet that is itself travelling, over the
+ * few dozen milliseconds a spring takes to cover its distance. Nobody could
+ * see it: it was too fast, and it was hidden behind the bigger motion
+ * carrying it.
+ *
+ * Taking only the back of the arrival fixes both at once, and without a
+ * second clock to keep in agreement with the first. A spring covers its
+ * distance early and then spends most of its *time* creeping the last
+ * little way in -- so the tail of one arrival is long in seconds while
+ * being nearly still on screen. The light holds its thrown angle while the
+ * panel does the travelling, and then sweeps home across that tail: slowly,
+ * over a panel that has visibly already arrived, finishing just after it
+ * comes to rest. Which is where a catch of light belongs -- you see the
+ * thing, and then you see the light on it.
+ */
+private const val SHEEN_BEGINS_AT = 0.45f
 
 /**
  * How much brighter the beam is at the instant the panel starts arriving,
  * as a multiple of its settled strength.
  *
- * This is the catch of the light as the sheet turns into place: brightest
- * at the first frame, gone by the time the panel has stopped. It is on the
- * arrival rather than on a curve of its own, so the flare and the sweep are
- * the same event -- and so it cannot outlive the panel it belongs to.
+ * This is the catch of the light as the sheet settles into place: brightest
+ * when the sweep sets off, gone as it lands. It rides the very same slice
+ * of the arrival the sweep does (see [SHEEN_BEGINS_AT]), so the flare and
+ * the sweep are one event rather than two, and it holds at its peak through
+ * the panel's own travel instead of being spent during it.
  */
 private const val ENTER_PEAK_STRENGTH = 2.1f
 
@@ -212,9 +235,10 @@ class GlassBeam(
 )
 
 /**
- * The glass's own light for this appearance: thrown bright and wide as the
- * panel starts arriving, swept round to the angle the user actually chose
- * as it lands, and then completely still.
+ * The glass's own light for this appearance: thrown bright and wide, held
+ * there while the panel travels, then swept round to the angle the user
+ * actually chose across the back of the same arrival -- finishing just
+ * after the panel itself has come to rest, and then completely still.
  *
  * element:  the reflection on the glass.
  * model:    a pane lying still, catching a light as it turns into place.
@@ -240,7 +264,15 @@ class GlassBeam(
 @Composable
 fun rememberGlassBeam(lightAngle: Float): GlassBeam {
     val arrival = LocalArrival.current
-    val away = (1f - arrival()).coerceIn(0f, 1f)
+
+    // The back of the arrival, not the whole of it -- see [SHEEN_BEGINS_AT].
+    // Below that point this is 0, which is the light sitting still at its
+    // thrown angle while the panel travels; above it, it runs to 1 across
+    // the spring's own long tail.
+    val arrived = arrival().coerceIn(0f, 1f)
+    val swept = ((arrived - SHEEN_BEGINS_AT) / (1f - SHEEN_BEGINS_AT)).coerceIn(0f, 1f)
+    val away = 1f - swept
+
     val angle = lightAngle + quantise(away * SHIMMER_ARC_DEGREES, SHEEN_STEP_DEGREES)
     val strength = 1f + quantise(away * (ENTER_PEAK_STRENGTH - 1f), STRENGTH_STEP)
     return remember(angle, strength) { GlassBeam(angle, strength) }

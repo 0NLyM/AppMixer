@@ -1485,6 +1485,45 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-21 — 1.0.64
+
+- **The mixer is the compact panel changed shape, not a replacement for
+  it.** The panel it grows out of now stays composed underneath for the
+  whole morph and hands its face over on the morph's own effects channel,
+  so the two are one element changing shape rather than one removed and
+  another drawn with only the rectangle agreeing about what happened. The
+  outgoing face's layer cancels the container's morph scale exactly, so it
+  sits at true size over the pixels it occupied a frame ago and travels
+  only because the container's centre does. The exit runs it backwards.
+- Glass and Atmosphere were invisible on the mixer, because the arrival
+  they phase off was the appearance spring -- which is snapped straight to
+  1 for the one entrance the mixer has. The arrival is the product of both
+  springs now, with exactly one of them travelling at a time, so the beam
+  flares and sweeps and the field turns as the mixer morphs in, then
+  freezes.
+- **The reflection on the glass takes the back of the arrival rather than
+  all of it.** It used to sweep across the whole entrance, which meant it
+  happened *while* the panel was still sliding out of the side of the
+  screen, over the few dozen milliseconds a spring needs to cover its
+  distance: too fast to follow, and hidden behind the larger motion
+  carrying it. A spring covers its distance early and then spends most of
+  its time creeping the last little way in, so the tail of one arrival is
+  long in seconds while being almost still on screen. The light now holds
+  its thrown angle and its flare while the panel does the travelling, and
+  sweeps home across that tail -- slowly, over a panel that has visibly
+  already arrived, finishing just after it comes to rest. No second clock:
+  it is the same single arrival, read from a later point.
+- The ringer switch's silent face is the media slider's own speaker wearing
+  the app's one mute bar, rather than a second speaker drawn differently
+  beside it -- ringing and silent are one picture crossed out. The same bar
+  on the Do Not Disturb switch is inverted, because a prohibition sign is
+  crossed out when the prohibition is *not* in force.
+- Shadows and item animations that were being cut by clips with nothing
+  drawn on them: the mixer's inset is the list's own content padding now,
+  so the scroll container's clip sits at the panel's edge instead of on the
+  rows, and the compact panel makes room for the element shadows its
+  Surface was otherwise cutting off at the corners.
+
 ## 2026-09-21 — 1.0.63
 
 Two separate reasons the last round's changes weren't visible, and both are

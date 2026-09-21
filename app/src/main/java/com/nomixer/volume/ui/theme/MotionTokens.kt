@@ -68,8 +68,10 @@ import androidx.compose.ui.graphics.Color
  * |                     |                       |                             | silenced stream, a silenced ringer,   |
  * |                     |                       |                             | a prohibition that is not in force    |
  * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |
- * | Glass highlight     | a pane that is still, | the arrival, via [LocalArrival] | light angle and brightness --     |
- * |                     | under a light arriving |                            | never the pane                        |
+ * | Glass highlight     | a pane that is still, | the arrival's *back*, via   | light angle and brightness --         |
+ * |                     | under a light arriving | [LocalArrival]              | never the pane. Held still while the  |
+ * |                     |                       |                             | panel travels, swept home across the  |
+ * |                     |                       |                             | spring's tail -- see SHEEN_BEGINS_AT  |
  * | Atmosphere field    | a field of particles  | the arrival, via [LocalArrival] | shader rotation, centre offset    |
  * |                     | settling as it arrives |                            | and grain phase -- never the container |
  * | Every colour role   | --                    | [Effects.color]             | colour                                |
