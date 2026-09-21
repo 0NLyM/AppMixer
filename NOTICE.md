@@ -1485,6 +1485,39 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-21 — 1.0.63
+
+Two separate reasons the last round's changes weren't visible, and both are
+fixed here.
+
+- **Most of them were never in a build.** The haptics, the shared speaker
+  glyph, the mute bar as one overlay on every volume icon, the Do Not
+  Disturb switch sharing the ringer's body and press, and the deeper
+  press itself were all written after 1.0.62 was cut, so the APK carrying
+  that version predates every one of them. They ship here for the first
+  time.
+- **The compact panel's entrance really was broken.** It was supposed to
+  come out from behind the *display's* edge, travelling the gap the user's
+  own offset leaves between the panel and the side of the screen. It did
+  that by translating its own graphics layer -- inside a window sized by
+  WRAP_CONTENT to exactly the panel's own bounds. A layer pushed past the
+  edge of its window is a layer the compositor throws away, which is the
+  very rule this codebase already follows for the centred mixer, so every
+  pixel of that journey happened where nobody could see it. The bigger the
+  offset, the longer the journey and the more of it was discarded: at any
+  real offset the panel simply appeared where it belonged.
+
+  On top of that it wiped itself open through a rounded window clipped to
+  its own bounds -- a wipe that starts at the panel's own edge by
+  construction, which is exactly the thing it was not supposed to look
+  like.
+
+  The travel is now the *window's*, read off the same arrival spring and
+  pushed the same way the centred mixer's already was, and the local wipe
+  is gone with it. The panel genuinely starts off the side of the display,
+  and the display is what uncovers it -- the only edge that was ever meant
+  to.
+
 ## 2026-09-20 — 1.0.62
 
 - The compact panel's entrance is measured from the *display's* edge now,

@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.AbstractComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.palette.graphics.Palette
@@ -60,7 +61,6 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
-import com.nomixer.volume.compose.EdgeRevealShape
 import com.nomixer.volume.compose.RevealEdge
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.AtmosphereBackground
@@ -574,7 +574,10 @@ class Service : AccessibilityService() {
                     // fight that.
                     val compactIsDisc = !expanded && preferences.popupStyle == PopupStyle.Disc
                     val revealEdge = if (compactIsDisc) RevealEdge.None else placement.revealEdge
-                    val panelCornerRadius = preferences.popupCornerRadius.dp
+                    // How far past the display's own edge the panel starts,
+                    // resolved here because the effect that pushes the
+                    // window is a coroutine with no density of its own.
+                    val enterTravelPx = with(LocalDensity.current) { ENTER_TRAVEL_DP.toPx() }
                     val morphOrigin = mixerMorphOrigin
                     val revealed = windowRevealed
                     val visible = contentVisible
@@ -765,6 +768,38 @@ class Service : AccessibilityService() {
                             }
                         }
 
+                        // element:  the compact panel arriving.
+                        // model:    a sheet behind the side of the screen,
+                        //           slid out of it -- so the travel is the
+                        //           window's, for the same reason the
+                        //           centered mixer's is: a layer pushed
+                        //           outside its own window is cut off by
+                        //           the compositor, and this window is
+                        //           exactly the panel's size.
+                        // token:    MotionTokens.Spatial.default -- read
+                        //           off [appear], the arrival itself,
+                        //           rather than animated a second time.
+                        // property: the window's own x/y.
+                        //
+                        // Outward is negative on both axes whichever edge
+                        // the panel hugs, because LayoutParams.x and .y are
+                        // measured from the anchored edge inward -- the
+                        // same convention the lateral disc's own offset
+                        // already relies on.
+                        LaunchedEffect(revealEdge, expanded) {
+                            if (expanded || revealEdge == RevealEdge.None) {
+                                return@LaunchedEffect
+                            }
+                            snapshotFlow { appear.value }.collect { arrived ->
+                                val away = (1f - arrived).coerceIn(0f, 1f)
+                                val travel = (enterTravelPx + edgeGapPx) * away
+                                this@Service.displaceWindow(
+                                    dx = if (revealEdge.isHorizontal) -travel else 0f,
+                                    dy = if (revealEdge.isHorizontal) 0f else -travel
+                                )
+                            }
+                        }
+
                         // Handed down so the parts that phase their own
                         // motion off the arrival -- the disc's formation
                         // turn, the glass beam's entering sweep,
@@ -843,26 +878,25 @@ class Service : AccessibilityService() {
                                         //           outline, derived from
                                         //           the same value).
                                         revealEdge != RevealEdge.None -> {
-                                            // Out of the *display's* edge,
-                                            // whatever offset the user has
-                                            // pushed the panel in by: the
-                                            // gap that offset leaves is
-                                            // part of the journey, so the
-                                            // panel comes from the side of
-                                            // the screen rather than from a
-                                            // line in mid-air a few dp off
-                                            // its own edge. At zero offset
-                                            // the gap is zero and this is
-                                            // exactly what it always was.
-                                            val travel =
-                                                (ENTER_TRAVEL_DP.toPx() + edgeGapPx) * away
-                                            when (revealEdge) {
-                                                RevealEdge.Left -> translationX = -travel
-                                                RevealEdge.Right -> translationX = travel
-                                                RevealEdge.Top -> translationY = -travel
-                                                RevealEdge.Bottom -> translationY = travel
-                                                RevealEdge.None -> Unit
-                                            }
+                                            // Nothing here, deliberately.
+                                            // This travel is carried by the
+                                            // window, not by the layer --
+                                            // see the effect below. A layer
+                                            // pushed out past the edge of a
+                                            // WRAP_CONTENT window is a
+                                            // layer the compositor cuts
+                                            // off, and this window is
+                                            // exactly the panel's own size,
+                                            // so every pixel of the journey
+                                            // happened somewhere nobody
+                                            // could see it. The further the
+                                            // user's offset pushed the
+                                            // panel in, the longer that
+                                            // journey was and the more of
+                                            // it was thrown away: at any
+                                            // real offset the panel simply
+                                            // appeared where it belonged.
+                                            Unit
                                         }
 
                                         // No edge to be uncovered from, so
@@ -902,19 +936,16 @@ class Service : AccessibilityService() {
                                 // then ease back off it.
                                 alpha = fade.value.coerceIn(0f, 1f)
 
-                                // Only while there is something to reveal:
-                                // a clip left switched on at rest would cut
-                                // the panel's own shadow halo, which is
-                                // deliberately drawn outside its bounds.
-                                val revealing = arrived < 0.999f && revealEdge != RevealEdge.None
-                                clip = revealing
-                                if (revealing) {
-                                    shape = EdgeRevealShape(
-                                        progress = arrived,
-                                        edge = revealEdge,
-                                        cornerRadiusPx = panelCornerRadius.toPx()
-                                    )
-                                }
+                                // No clip of its own. Uncovering the
+                                // panel by wiping it open inside its own
+                                // bounds is a wipe that always starts at
+                                // the panel's own edge -- which is the one
+                                // thing this is not supposed to look like.
+                                // Now that the window is what travels, the
+                                // panel is genuinely off the side of the
+                                // display at the start of its entrance and
+                                // the *display* does the uncovering, which
+                                // is the only edge that was ever meant to.
                             }
                         ) {
                             if (expanded) {
