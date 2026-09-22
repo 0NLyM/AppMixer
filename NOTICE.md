@@ -1485,6 +1485,41 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-22 — 1.0.65
+
+- **The disc's ring arrives whole.** It used to turn into place -- a
+  rotation on the Canvas that paints the track, the arc, the rim and the
+  ticks. But that Canvas does not paint the whole ring: when the backing is
+  Glass, the lit sheet behind it is a *sibling* layer, because a real blur
+  needs a graphics layer of its own, and that sibling did not turn. For the
+  whole of the entrance a still sheet sat under a rotating arc, and the
+  further through the turn it got the worse the two disagreed. Turning them
+  together is not the fix either -- that rotates the glass pane, and a pane
+  of glass that turns is a picture of glass on a piece of card. So nothing
+  turns: the ring arrives at its final angle, and the only thing on the
+  dial with an entrance is the hand written onto it.
+- **Glass and Atmosphere have their own spring, and it is slow.** Both used
+  to ride the panel's arrival, which meant they were over in the few dozen
+  milliseconds a panel takes to slide out of an edge -- underneath the much
+  larger motion doing the sliding. Nobody saw either of them. A light
+  settling on a sheet is not the sheet arriving a second time; it is what
+  happens to the sheet once it is there, and it takes longer. They now run
+  on an `Ambient.enter` token an order of magnitude softer than anything
+  else in the file, so the panel shows up and *then* you watch the light
+  find its angle and the field turn to where it comes to rest. It still
+  runs once and freezes -- no loops -- and it has no exit, because by then
+  the panel is fading. Visible on the compact panel and on the mixer alike.
+- **One volume glyph everywhere.** The mixer's media row drew a plain
+  Material speaker while the compact popup and the ringer switch drew the
+  shared one whose waves follow the level. It draws the shared one now, at
+  the same size, with the same mute bar.
+- **The Bluetooth mark wears the mute bar too,** and it no longer
+  disappears at zero. Routed to a sink and silenced, the icon used to turn
+  back into a speaker to borrow its bar -- which says the output device has
+  changed when only the level has. One mark for "silenced", whatever the
+  glyph underneath happens to be. The mark also shows in the expanded
+  mixer's media row now, not just in the compact popup.
+
 ## 2026-09-21 — 1.0.64
 
 - **The mixer is the compact panel changed shape, not a replacement for

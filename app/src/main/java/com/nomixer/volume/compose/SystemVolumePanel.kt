@@ -13,9 +13,7 @@ import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.RingVolume
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -103,7 +101,12 @@ fun SystemVolumePanel(
         if (!applyVisibilityFilter || isSliderVisible(SystemSliderIds.Media)) {
             StreamVolumeSlider(
                 streamType = AudioManager.STREAM_MUSIC,
-                icon = Icons.Default.VolumeUp,
+                // The one stream whose glyph is the shared volume one --
+                // waves that follow the level, the Bluetooth mark when
+                // media is routed to a sink, and the app's mute bar over
+                // either. Every other row here is a fixed mark for a fixed
+                // thing (a bell, a clock) and keeps its own.
+                useVolumeGlyph = true,
                 name = stringResource(R.string.stream_media),
                 audioManager = audioManager,
                 shadowColor = shadowColor,

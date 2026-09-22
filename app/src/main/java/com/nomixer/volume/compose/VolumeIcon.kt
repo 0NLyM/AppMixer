@@ -91,6 +91,13 @@ fun rememberVolumeIcon(audioManager: AudioManager, volume: Int): ImageVector {
  * all -- it's a different device -- so there is no shared body for one
  * state to become the other on. Everything that *is* a level (nothing,
  * quiet, loud) happens on the one speaker.
+ *
+ * It wears the app's one mute bar all the same. Whatever the glyph
+ * underneath happens to be, "this is silenced" is one mark: a sink at zero
+ * gets crossed out exactly like a speaker at zero, rather than quietly
+ * turning back into a speaker to borrow its bar -- which is what used to
+ * happen, and which said the output device had changed when only the level
+ * had.
  */
 @Composable
 fun VolumeGlyph(
@@ -103,11 +110,11 @@ fun VolumeGlyph(
 ) {
     val bluetoothActive = rememberBluetoothAudioActive(audioManager)
 
-    if (bluetoothActive && volume > 0) {
+    if (bluetoothActive) {
         AnimatedVolumeIcon(
             icon = Icons.Default.BluetoothAudio,
             contentDescription = contentDescription,
-            modifier = modifier,
+            modifier = modifier.muteBar(rememberMuteBarExtent(barred = volume <= 0), tint),
             tint = tint
         )
         return

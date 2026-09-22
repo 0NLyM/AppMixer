@@ -125,10 +125,23 @@ internal object VolumeChangeObserver {
 @Composable
 fun StreamVolumeSlider(
     streamType: Int,
-    icon: ImageVector,
     name: String,
     audioManager: AudioManager,
     modifier: Modifier = Modifier,
+    /**
+     * The row's glyph, for a stream whose icon is a fixed mark of its own
+     * (the ringer's bell, the alarm's clock). Ignored when
+     * [useVolumeGlyph] is on.
+     */
+    icon: ImageVector? = null,
+    /**
+     * True for the media stream, whose glyph is the *shared* one every
+     * other volume control in the app draws -- the speaker whose waves
+     * follow the level, or the Bluetooth mark when media is routed to a
+     * sink (see [VolumeGlyph]). It reads the level itself, so it needs
+     * nothing handed to it that this row doesn't already hold.
+     */
+    useVolumeGlyph: Boolean = false,
     /** Painted only when the mixer's own panel background is off. */
     shadowColor: Color = Color.Transparent,
     footer: (@Composable () -> Unit)? = null,
@@ -218,13 +231,28 @@ fun StreamVolumeSlider(
                 // mark for "silenced", whatever the glyph underneath it
                 // happens to be (see [muteBar]), at the one size every
                 // volume glyph in the mixer is drawn at.
-                Icon(
-                    imageVector = icon,
-                    contentDescription = name,
-                    modifier = Modifier
-                        .size(MixerGlyphSize)
-                        .muteBar(muteBarExtent, LocalContentColor.current),
-                )
+                if (useVolumeGlyph) {
+                    // The same glyph, at the same size, as the compact
+                    // popup and the ringer switch draw -- including its own
+                    // mute bar, which is why this one isn't given the
+                    // row's.
+                    VolumeGlyph(
+                        audioManager = audioManager,
+                        volume = volume,
+                        maxVolume = maxVolume.toInt(),
+                        contentDescription = name,
+                        modifier = Modifier.size(MixerGlyphSize),
+                        tint = LocalContentColor.current
+                    )
+                } else if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = name,
+                        modifier = Modifier
+                            .size(MixerGlyphSize)
+                            .muteBar(muteBarExtent, LocalContentColor.current),
+                    )
+                }
                 StreamSliderTextContent(name = name, valueText = "$volume/${maxVolume.toInt()}")
             }
         }

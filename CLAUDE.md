@@ -55,6 +55,11 @@ Three tiers, two channels, and nothing else:
 | `default` | a surface arriving, expanding or leaving | everything else that fades or tints |
 | `defaultSoft` | elements that follow rather than lead | -- |
 
+Plus `Ambient.enter`, which is neither: the light on the glass and the
+Atmosphere field, settling on a surface that has already arrived. It is the
+one tier slower than the panel, and the one thing that does not ride the
+arrival -- see **Ambient** below.
+
 `Spatial` may overshoot; a real object carries momentum past its mark.
 `Effects` is critically damped, always: an alpha that overshoots is a
 flash, and a colour that overshoots is a frame of a colour nobody chose.
@@ -65,8 +70,9 @@ flash, and a colour that overshoots is a frame of a colour nobody chose.
 - A spring invented at a call site, or one spring per file.
 - `scale` animated from (or to) `0`. Scale around the element's own size.
 - A fade as an element's *principal* entrance. Something has to move.
-- `tween` anywhere in the overlay, and any loop at all. The overlay has one
-  clock: the arrival. Atmosphere and the glass beam are phases of it.
+- `tween` anywhere in the overlay, and any loop at all. Atmosphere and the
+  glass beam run once on `Ambient.enter` and freeze; everything else is a
+  phase of the arrival.
 - Rotating or scaling the glass pane. Glass is a still sheet; only the
   light on it moves.
 - Animating the Atmosphere *container*. Only the field inside it turns.
@@ -80,27 +86,39 @@ tail, because a control that answers a finger with nothing reads as broken
 rather than as calm.
 
 Anything phased off the arrival needs no check of its own: the arrival
-itself snaps, which lands the glass beam and the Atmosphere field on their
-settled values with nothing having travelled.
+itself snaps. `Ambient.enter` snaps for the same reason, which lands the
+glass beam and the Atmosphere field on their settled values with nothing
+having travelled.
 
 ### Ambient
 
 There are no loops. The glass beam and the Atmosphere field once turned
-forever on fixed-length laps; both are phases of the arrival now
-(`LocalArrival`), which is the difference between a panel that has settled
-and one that never quite finishes arriving -- and it is what stops a shader
-running behind an overlay nobody is looking at.
+forever on fixed-length laps; they run **once** now, on `Ambient.enter`,
+and freeze where they land.
 
-- **Glass** (`GlassScrim.kt`): one flare of brightness as the panel starts
-  arriving, the lit band sweeping round to the angle the user chose as it
-  lands, and then nothing. The pane never turns and never scales; only the
-  light on it moves.
+They are the one thing in the overlay that does not ride `LocalArrival`,
+and deliberately so: they are slower than the panel. A light settling on a
+sheet is not the sheet arriving a second time -- it is what happens to the
+sheet once it is there. Phased off the arrival both effects were over in
+the few dozen milliseconds a panel takes to slide out of an edge,
+underneath the much larger motion doing the sliding, and neither was ever
+visible. They read `LocalAmbientEnter` instead, which runs on its own
+spring an order of magnitude softer than `Spatial.default` and outlasts the
+panel's own entrance.
+
+Enter-only, and with no exit: by the time the popup leaves, the panel is
+fading, and a light retreating under a fading panel is motion nobody asked
+to see.
+
+- **Glass** (`GlassScrim.kt`): a flare of brightness as the panel shows up,
+  the lit band settling round to the angle the user chose while the panel
+  simply sits there, and then nothing. The pane never turns and never
+  scales; only the light on it moves.
 - **Atmosphere** (`AtmosphereScrim.kt`): the field turns, its centre swings
   along a short arc, and the grain dissolves through a dozen or so whole
-  fields -- all of it inside the arrival, all of it frozen from the frame
-  the panel lands. Never the container: only the field inside it.
+  fields -- once, then still. Never the container: only the field inside it.
 
-An arrival-phased value read in the **draw phase** -- through a `() -> Float`,
+An ambient value read in the **draw phase** -- through a `() -> Float`,
 the way `AtmosphereMotion` hands out all of its -- costs a float read and a
 shader uniform per frame and recomposes nothing. A value read in the
 **composition phase** costs a recomposition per distinct value, so quantise

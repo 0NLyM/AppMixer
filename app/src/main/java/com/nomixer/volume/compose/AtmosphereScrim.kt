@@ -20,7 +20,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
-import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.LocalAmbientEnter
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -264,52 +264,52 @@ internal class AtmosphereMotion(
  * The turn the field makes as the popup arrives, and the place it arrives
  * at.
  *
- * Every part of it is phased off [LocalArrival] rather than run on a curve
- * of its own, so all three ride exactly the spring the panel rides and
- * unwind the same way on the way out -- no second easing to keep in
- * agreement with the first, and no clock of their own to outlive the panel.
+ * All three ride one spring, [MotionTokens.Ambient.enter] through
+ * [LocalAmbientEnter] -- deliberately slower than the panel's own arrival,
+ * because a field settling is not the panel arriving a second time. On the
+ * arrival it was over in the time the panel takes to slide out of an edge,
+ * underneath the motion doing the sliding, and nobody saw it.
  * Where it settles is a fresh random angle every time the popup appears,
  * and the field's center is thrown off the panel's by a fresh random amount
  * with it, so the same panel over the same app never looks like the same
  * painting twice.
  *
  * **Nothing here loops.** The field turns, its center travels along a short
- * arc, and the grain dissolves through a dozen or so whole fields -- all of
- * it inside the arrival, and all of it completely still from the frame the
- * panel has landed. A field that never stops turning is a panel that never
- * finishes arriving; it also keeps a shader running behind an overlay
- * nobody is looking at any more.
+ * arc, and the grain dissolves through a dozen or so whole fields -- once,
+ * and then completely still. A field that never stops turning is a panel
+ * that never finishes arriving; it also keeps a shader running behind an
+ * overlay nobody is looking at any more.
  *
  * All three are handed out as functions read in the caller's own draw
  * phase, so a whole panel of this costs three float reads and three shader
  * uniforms per frame while it is arriving: nothing recomposes, nothing
- * relayouts, and no second layer is drawn. Under reduced motion the arrival
+ * relayouts, and no second layer is drawn. Under reduced motion the token
  * collapses to a snap, which lands every one of them on its settled value
  * with nothing having travelled -- so there is no check of its own to make
  * here either.
  *
  * element:  the atmosphere field.
- * model:    a field of particles, settling as the panel arrives.
- * token:    the panel's own arrival, borrowed through [LocalArrival].
+ * model:    a field of particles, settling once the panel is there.
+ * token:    [MotionTokens.Ambient.enter], through [LocalAmbientEnter].
  * property: shader rotation, shader center offset, shader grain phase.
  *           Never the container: the panel this is painted into is a
  *           rectangle that sits perfectly still.
  */
 @Composable
 internal fun rememberAtmosphereMotion(): AtmosphereMotion {
-    val arrival = LocalArrival.current
+    val settling = LocalAmbientEnter.current
 
     // One draw of the dice per appearance: where the field settles, how far
     // off center it sits when it gets there, and which way round its own
     // little arc it comes in from.
     val seed = remember { List(3) { Random.nextFloat() } }
 
-    return remember(seed, arrival) {
+    return remember(seed, settling) {
         val settledAngle = seed[0] * TWO_PI
         val settledDriftX = (seed[1] - 0.5f) * ATMOSPHERE_DRIFT_SPAN
         val settledDriftY = (seed[2] - 0.5f) * ATMOSPHERE_DRIFT_SPAN
         val orbitPhase = seed[0] * TWO_PI
-        val away = { (1f - arrival()).coerceIn(0f, 1f) }
+        val away = { (1f - settling()).coerceIn(0f, 1f) }
 
         AtmosphereMotion(
             rotation = { settledAngle + ATMOSPHERE_TURN_RADIANS * away() },

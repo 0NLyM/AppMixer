@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
-import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.LocalAmbientEnter
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -163,28 +163,6 @@ private const val EDGE_LIGHT_ALPHA = 0.55f
  */
 private const val SHIMMER_ARC_DEGREES = 84f
 
-/**
- * How far into the panel's arrival the light waits before it begins to
- * move at all.
- *
- * The sweep used to run over the whole arrival, which meant it happened
- * *while* the panel was still sliding out of the edge of the screen -- a
- * reflection travelling across a sheet that is itself travelling, over the
- * few dozen milliseconds a spring takes to cover its distance. Nobody could
- * see it: it was too fast, and it was hidden behind the bigger motion
- * carrying it.
- *
- * Taking only the back of the arrival fixes both at once, and without a
- * second clock to keep in agreement with the first. A spring covers its
- * distance early and then spends most of its *time* creeping the last
- * little way in -- so the tail of one arrival is long in seconds while
- * being nearly still on screen. The light holds its thrown angle while the
- * panel does the travelling, and then sweeps home across that tail: slowly,
- * over a panel that has visibly already arrived, finishing just after it
- * comes to rest. Which is where a catch of light belongs -- you see the
- * thing, and then you see the light on it.
- */
-private const val SHEEN_BEGINS_AT = 0.45f
 
 /**
  * How much brighter the beam is at the instant the panel starts arriving,
@@ -192,9 +170,8 @@ private const val SHEEN_BEGINS_AT = 0.45f
  *
  * This is the catch of the light as the sheet settles into place: brightest
  * when the sweep sets off, gone as it lands. It rides the very same slice
- * of the arrival the sweep does (see [SHEEN_BEGINS_AT]), so the flare and
- * the sweep are one event rather than two, and it holds at its peak through
- * the panel's own travel instead of being spent during it.
+ * of the settling the sweep does, so the flare and the sweep are one event
+ * rather than two.
  */
 private const val ENTER_PEAK_STRENGTH = 2.1f
 
@@ -235,43 +212,42 @@ class GlassBeam(
 )
 
 /**
- * The glass's own light for this appearance: thrown bright and wide, held
- * there while the panel travels, then swept round to the angle the user
- * actually chose across the back of the same arrival -- finishing just
- * after the panel itself has come to rest, and then completely still.
+ * The glass's own light for this appearance: thrown bright and wide as the
+ * panel shows up, then settling slowly onto the angle the user actually
+ * chose while the panel simply sits there -- and then completely still.
  *
  * element:  the reflection on the glass.
  * model:    a pane lying still, catching a light as it turns into place.
- * token:    the panel's own arrival, borrowed through [LocalArrival].
+ * token:    [MotionTokens.Ambient.enter], through [LocalAmbientEnter].
  * property: the beam's angle and its brightness, and nothing else. **The
  *           pane itself never turns and never scales** -- that is the whole
  *           difference between glass and a sheet of paper, and it is why
  *           this returns a light rather than a rotation for someone to put
  *           on a layer.
  *
- * Both halves are phased off [LocalArrival] rather than run as animations
- * of their own, so they ride exactly the spring the panel rides and get
- * their exit for free instead of needing a second curve kept in agreement
- * with the first by hand. Nothing here loops: a reflection that creeps
- * forever is a panel that never finishes arriving, and the light is at rest
- * from the frame the panel is. Under reduced motion the arrival itself
- * collapses to a snap, which lands this at the chosen angle and the settled
- * strength with nothing having travelled -- no check of its own needed.
+ * Both halves ride one spring, [MotionTokens.Ambient.enter] through
+ * [LocalAmbientEnter], so the flare and the sweep are a single event.
+ * Deliberately *not* the panel's own arrival: on that it was over in the
+ * time a panel takes to slide out of an edge, underneath the much larger
+ * motion doing the sliding, and nobody ever saw it. Nothing here loops --
+ * it runs once and freezes, and it has no exit, because by then the panel
+ * is fading and a light retreating under a fading panel is motion nobody
+ * asked to see. Under reduced motion the token itself collapses to a snap,
+ * which lands this at the chosen angle and the settled strength with
+ * nothing having travelled -- no check of its own needed.
  *
  * Outside the overlay the arrival is simply 1, so the settings preview
  * shows the chosen angle, unlit by any flare and perfectly still.
  */
 @Composable
 fun rememberGlassBeam(lightAngle: Float): GlassBeam {
-    val arrival = LocalArrival.current
+    val settling = LocalAmbientEnter.current
 
-    // The back of the arrival, not the whole of it -- see [SHEEN_BEGINS_AT].
-    // Below that point this is 0, which is the light sitting still at its
-    // thrown angle while the panel travels; above it, it runs to 1 across
-    // the spring's own long tail.
-    val arrived = arrival().coerceIn(0f, 1f)
-    val swept = ((arrived - SHEEN_BEGINS_AT) / (1f - SHEEN_BEGINS_AT)).coerceIn(0f, 1f)
-    val away = 1f - swept
+    // Its own spring, not a slice of the panel's -- see
+    // [MotionTokens.Ambient]. The panel is already on screen for most of
+    // this, which is the point: the sheet arrives, and *then* you watch the
+    // light find its angle on it.
+    val away = (1f - settling()).coerceIn(0f, 1f)
 
     val angle = lightAngle + quantise(away * SHIMMER_ARC_DEGREES, SHEEN_STEP_DEGREES)
     val strength = 1f + quantise(away * (ENTER_PEAK_STRENGTH - 1f), STRENGTH_STEP)

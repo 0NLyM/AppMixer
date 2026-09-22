@@ -35,7 +35,6 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
-import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
@@ -46,14 +45,6 @@ import kotlin.math.sin
 
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
 private const val TICK_COUNT = 24
-
-/**
- * How far the dial is turned aside before the popup has arrived. The ring
- * unwinds counterclockwise into place as the panel comes in and winds back
- * the same way as it leaves -- a radar face coming round to its mark, short
- * enough to be a settling rather than a spin.
- */
-private const val DISC_RADAR_DEGREES = 46f
 
 /**
  * How far into the arrival the hand starts drawing itself onto the dial.
@@ -262,14 +253,12 @@ fun VolumeDisc(
     // costs nothing while unused.
     val atmosphereMotion = rememberAtmosphereMotion()
 
-    // How far the popup has arrived, for the formation turn below. Read in
-    // the draw phase, so the dial turns without recomposing the disc.
-    val arrival = LocalArrival.current
-
-    // The same arrival on the effects channel, for the one thing on this
-    // dial that fades: its hand. The pane -- track, ring, ticks -- forms by
-    // *turning*, which is what a dial does; only the reading written onto
-    // it arrives as a mark appearing. See [handFadeFor].
+    // The arrival, on the effects channel, for the one thing on this dial
+    // that has an entrance at all: its hand. The pane -- track, ring,
+    // ticks -- arrives whole and at its final angle, because half of it is
+    // a sibling layer that cannot be turned with the rest and the half
+    // that could is glass. See the Canvas below. Read in the draw phase,
+    // so the hand appears without recomposing the disc.
     val arrivalFade = LocalArrivalFade.current
 
     // element:  the disc's fill, and the tick ring read off it.
@@ -333,29 +322,27 @@ fun VolumeDisc(
                 modifier = Modifier.matchParentSize()
             )
         }
+        // The pane has no entrance of its own, deliberately.
+        //
+        // It used to turn into place: a rotationZ on this Canvas, read off
+        // the arrival. But the ring is not painted by this Canvas alone.
+        // Its glass backing is a *sibling* composable above -- it has to
+        // be, because a real blur needs a graphics layer of its own -- and
+        // that sibling did not turn with it. So for the whole of the
+        // entrance the lit sheet sat still under an arc, a rim and a wheel
+        // of ticks that were rotating across it: the ring visibly came
+        // apart, and the further through the turn it was the worse the two
+        // disagreed.
+        //
+        // Turning them together is not the fix either. That would rotate
+        // the glass pane, and a pane of glass that turns is not glass --
+        // it is a picture of glass on a piece of card. So nothing here
+        // turns at all: the ring arrives whole, at its final angle, and
+        // the only thing on the dial with an entrance is the hand written
+        // onto it (see [handFadeFor]).
         Canvas(
             modifier = Modifier
                 .matchParentSize()
-                .graphicsLayer {
-                    // element:  the disc's pane -- track, arc, ticks.
-                    // model:    a knob.
-                    // token:    MotionTokens.Spatial.default, borrowed
-                    //           whole through LocalArrival rather than
-                    //           started again here.
-                    // property: rotationZ.
-                    //
-                    // The whole dial turns into place, counterclockwise, as
-                    // the popup arrives, and winds back out the same way.
-                    // Only the painted ring turns: the switch and the
-                    // reading live outside this Canvas and stay upright
-                    // throughout. A pure graphics-layer rotation, so it
-                    // costs a matrix rather than a repaint.
-                    //
-                    // The pane's entrance is this turn and nothing else --
-                    // it does not fade in on its own, and it must never
-                    // scale: a knob that grows is not a knob.
-                    rotationZ = DISC_RADAR_DEGREES * (1f - arrival()).coerceIn(0f, 1f)
-                }
                 .pointerInput(range) {
                     // Measured from where the ring actually is when the
                     // touch lands, so a knob caught while it is still

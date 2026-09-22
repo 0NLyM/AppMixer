@@ -68,12 +68,10 @@ import androidx.compose.ui.graphics.Color
  * |                     |                       |                             | silenced stream, a silenced ringer,   |
  * |                     |                       |                             | a prohibition that is not in force    |
  * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |
- * | Glass highlight     | a pane that is still, | the arrival's *back*, via   | light angle and brightness --         |
- * |                     | under a light arriving | [LocalArrival]              | never the pane. Held still while the  |
- * |                     |                       |                             | panel travels, swept home across the  |
- * |                     |                       |                             | spring's tail -- see SHEEN_BEGINS_AT  |
- * | Atmosphere field    | a field of particles  | the arrival, via [LocalArrival] | shader rotation, centre offset    |
- * |                     | settling as it arrives |                            | and grain phase -- never the container |
+ * | Glass highlight     | a pane that is still, | [Ambient.enter], via        | light angle and brightness --         |
+ * |                     | under a light settling | [LocalAmbientEnter]        | never the pane                        |
+ * | Atmosphere field    | a field of particles  | [Ambient.enter], via        | shader rotation, centre offset        |
+ * |                     | settling once it is there | [LocalAmbientEnter]     | and grain phase -- never the container |
  * | Every colour role   | --                    | [Effects.color]             | colour                                |
  *
  * # Why springs, and why three tiers
@@ -87,10 +85,17 @@ import androidx.compose.ui.graphics.Color
  * be handed straight to a spring and simply continue as motion, rather than
  * the control stopping dead the instant the touch lifts.
  *
- * Nothing is exempt, because nothing loops. The glass beam and the
- * atmosphere field used to turn forever on fixed-length laps; they are
- * phases of the arrival now (see [LocalArrival]), so the overlay has
- * exactly one clock and comes to a complete stop when it has arrived.
+ * Nothing loops. The glass beam and the atmosphere field used to turn
+ * forever on fixed-length laps; they run once now and freeze (see
+ * [Ambient]), so a panel that has arrived is a panel that has completely
+ * stopped.
+ *
+ * They are the one thing that does not ride the panel's own arrival, and
+ * for a reason worth stating: they are slower than it on purpose. A light
+ * settling on a sheet is not the sheet arriving a second time -- it is
+ * what happens to the sheet once it is there. Phased off the arrival they
+ * were over before anyone could see them, hidden behind the larger motion
+ * carrying them.
  *
  * # What is felt rather than seen
  *
@@ -239,6 +244,48 @@ object MotionTokens {
     }
 
     /**
+     * The light on the glass and the Atmosphere field: the two things in
+     * the overlay that are neither a surface moving nor a colour changing,
+     * but a *condition* of a surface settling down.
+     *
+     * Its own tier because it is the one thing here that has to be slower
+     * than the panel carrying it. Both effects used to ride the arrival
+     * itself, which meant they were over in the few dozen milliseconds a
+     * panel takes to slide out of an edge -- underneath the much bigger
+     * motion doing the sliding. Nobody saw either of them. A light settling
+     * on a sheet is not the sheet's own arrival happening again; it is what
+     * happens *to* the sheet once it is there, and it takes longer.
+     *
+     * Critically damped, because the end of this is a position the user
+     * chose: an angle that overshoots is the light going past the setting
+     * and coming back, which reads as a mistake rather than as momentum.
+     *
+     * **Enter-only, and it never loops.** It runs once as the panel
+     * appears, freezes where it lands, and does not run backwards on the
+     * way out -- the panel is fading by then and a light retreating under a
+     * fading panel is motion nobody asked to see. That is the difference
+     * between this and the ambient laps this tier replaced: those never
+     * finished, which is what made a panel that had arrived still look
+     * busy.
+     */
+    object Ambient {
+        /**
+         * One settling of the light, or one turn of the field. Roughly a
+         * second and a half -- long enough to watch, short enough to be
+         * over before the popup's own idle timeout is anywhere near.
+         */
+        fun <T> enter(): FiniteAnimationSpec<T> =
+            if (reducedMotion) snap() else spring(dampingRatio = 1f, stiffness = AMBIENT_STIFFNESS)
+
+        /**
+         * Deliberately an order of magnitude below every other spring in
+         * this file. [Spatial.default] is 300; this is what "slower than
+         * the panel" actually costs once it is a number.
+         */
+        private const val AMBIENT_STIFFNESS = 26f
+    }
+
+    /**
      * The settings screen's own transitions -- a full-screen navigation
      * between two pages, which is the one thing in this app that genuinely
      * is a duration rather than an object with mass. Not used by the
@@ -308,3 +355,20 @@ val LocalArrival = compositionLocalOf<() -> Float> { { 1f } }
  * [LocalArrival] is.
  */
 val LocalArrivalFade = compositionLocalOf<() -> Float> { { 1f } }
+
+/**
+ * How far the overlay's *ambient* entrance has run, 0 to 1 -- the light on
+ * the glass settling onto the angle the user chose, and the Atmosphere
+ * field turning to where it comes to rest.
+ *
+ * A second value rather than a slice of [LocalArrival], because this one is
+ * deliberately slower than the panel and outlasts it: the panel is already
+ * there and still this is finishing. It runs once per appearance and then
+ * holds -- it has no exit, because by then the panel is fading and a light
+ * retreating under a fading panel is motion nobody asked to see.
+ *
+ * A function rather than a value, so a reader can take it in its own draw
+ * phase and repaint without recomposing. Defaults to fully settled, for
+ * anywhere outside the overlay (the settings screen's preview).
+ */
+val LocalAmbientEnter = compositionLocalOf<() -> Float> { { 1f } }

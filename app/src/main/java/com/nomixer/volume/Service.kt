@@ -91,6 +91,7 @@ import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.LocalAmbientEnter
 import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.MotionTokens
@@ -1001,9 +1002,39 @@ class Service : AccessibilityService() {
                         val arrival = remember(appear, morph) { { appear.value * morph.value } }
                         val arrivalFade = remember(fade, morphFade) { { fade.value * morphFade.value } }
 
+                        // element:  the light on the glass, and the
+                        //           Atmosphere field.
+                        // model:    a condition of a surface settling down
+                        //           once that surface is there -- not the
+                        //           surface arriving a second time.
+                        // token:    MotionTokens.Ambient.enter.
+                        // property: the beam's angle and brightness, and
+                        //           the field's rotation, centre and grain
+                        //           phase. Never the pane, never the
+                        //           container.
+                        //
+                        // Its own spring, and the only thing in the overlay
+                        // that does not ride the arrival. It is meant to
+                        // outlast the panel: on the arrival both effects
+                        // were over in the time a panel takes to slide out
+                        // of an edge, underneath the much larger motion
+                        // doing the sliding, and neither was ever visible.
+                        // Enter-only -- it runs once as the panel shows up
+                        // and freezes where it lands. No exit: by then the
+                        // panel is fading, and a light retreating under a
+                        // fading panel is motion nobody asked to see.
+                        val settling = remember { Animatable(0f) }
+                        LaunchedEffect(revealed) {
+                            if (revealed) {
+                                settling.animateTo(1f, MotionTokens.Ambient.enter())
+                            }
+                        }
+                        val ambientEnter = remember(settling) { { settling.value } }
+
                         CompositionLocalProvider(
                             LocalArrival provides arrival,
-                            LocalArrivalFade provides arrivalFade
+                            LocalArrivalFade provides arrivalFade,
+                            LocalAmbientEnter provides ambientEnter
                         ) {
                         Box(
                             modifier = Modifier.graphicsLayer {
@@ -1179,7 +1210,13 @@ class Service : AccessibilityService() {
                                         // very moment it is supposed to be
                                         // standing still and going.
                                         LocalArrival provides SettledArrival,
-                                        LocalArrivalFade provides SettledArrival
+                                        LocalArrivalFade provides SettledArrival,
+                                        // Its light settled too: this panel
+                                        // has been on screen long enough to
+                                        // have finished settling, and
+                                        // re-flaring it on the way out is a
+                                        // thing nobody asked for.
+                                        LocalAmbientEnter provides SettledArrival
                                     ) {
                                         Box(
                                             modifier = Modifier
