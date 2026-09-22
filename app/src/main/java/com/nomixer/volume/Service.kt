@@ -94,14 +94,13 @@ import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.LocalAmbientEnter
+import com.nomixer.volume.ui.theme.LocalCompactTurn
 import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlinx.coroutines.launch
 import java.util.Objects
-import kotlin.math.PI
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 /**
  * Where the panel actually sits right now -- **the one position state**, read
@@ -206,15 +205,6 @@ private val ENTER_TRAVEL_DP = 14.dp
  * opening out.
  */
 private const val CENTER_EXPAND_SQUASH = 0.08f
-
-/**
- * How far the panel turns mid-morph when it grew out of a vertical bar --
- * see the "Mixer morph turn" row in MotionTokens' own table. A vertical
- * bar is the one compact shape whose own long axis doesn't already match
- * the media row's horizontal one, so it turns face-up as it moves into
- * place rather than being squashed into the row's aspect directly.
- */
-private const val MIXER_TURN_DEGREES = 90f
 
 /**
  * Deliberately oversized: [RoundedCornerShape] clamps a corner radius to
@@ -857,6 +847,25 @@ class Service : AccessibilityService() {
                         // property: alpha, on both faces at once.
                         val morphFade = remember { Animatable(0f) }
 
+                        // element:  the compact bar, lying down.
+                        // model:    a bar hinged on the ringer switch it
+                        //           hangs from.
+                        // token:    MotionTokens.Spatial.turn.
+                        // property: rotationZ, 0 to a right angle, about
+                        //           that switch's own centre -- applied
+                        //           inside the compact panel itself, which
+                        //           is the only scope that knows where its
+                        //           own switch actually is. See
+                        //           [LocalCompactTurn].
+                        //
+                        // Its own value rather than a slice of the morph,
+                        // because it is not part of it: it runs to
+                        // completion *first* and the mixer only starts
+                        // opening once it has. A bar still turning while
+                        // the panel behind it is already growing reads as
+                        // two things happening to two different objects.
+                        val turn = remember { Animatable(0f) }
+
                         // Whether the compact panel is still on screen --
                         // true from the frame a morph starts until the
                         // frame it finishes, either way round.
@@ -960,11 +969,26 @@ class Service : AccessibilityService() {
                                         startedFrom = morphOrigin
                                         morph.snapTo(0f)
                                         morphFade.snapTo(0f)
+                                        turn.snapTo(0f)
                                     }
                                     // The compact panel stays composed for
                                     // the whole of it: it is what the first
                                     // frame of the morph actually shows.
                                     morphing = true
+
+                                    // The bar lies down first, and nothing
+                                    // else happens while it does: awaited,
+                                    // not launched, so the mixer below
+                                    // genuinely starts from a finished
+                                    // right angle rather than overlapping
+                                    // the last of it. Only the vertical bar
+                                    // has an orientation to change -- a
+                                    // horizontal one already lies the way
+                                    // the mixer's rows do, and a disc has
+                                    // no long axis to turn.
+                                    if (morphOrigin.originStyle == PopupStyle.VerticalBar) {
+                                        turn.animateTo(1f, MotionTokens.Spatial.turn())
+                                    }
                                     // Launched rather than awaited, so the
                                     // face and the shape are one transition
                                     // starting on one frame -- each simply
@@ -972,7 +996,7 @@ class Service : AccessibilityService() {
                                     // drives.
                                     val handingOver =
                                         launch { morphFade.animateTo(1f, MotionTokens.Effects.default()) }
-                                    morph.animateTo(1f, MotionTokens.Spatial.default())
+                                    morph.animateTo(1f, MotionTokens.Spatial.travel())
                                     // Both channels, not just the
                                     // travelling one. Under reduced motion
                                     // the morph collapses to a snap while
@@ -1010,7 +1034,7 @@ class Service : AccessibilityService() {
                                     // No matched geometry to morph out of,
                                     // so nothing to hand over from either.
                                     morphing = false
-                                    appear.animateTo(1f, MotionTokens.Spatial.default())
+                                    appear.animateTo(1f, MotionTokens.Spatial.travel())
                                 }
                             } else {
                                 // The exit runs the entrance backwards, in
@@ -1022,16 +1046,32 @@ class Service : AccessibilityService() {
                                 val fadingOut =
                                     launch { fade.animateTo(0f, MotionTokens.Effects.default()) }
                                 if (expanded && morphOrigin != null) {
-                                    // The compact panel comes back for the
-                                    // fold: the exit is the entrance
-                                    // backwards, so the face it handed over
-                                    // is handed back on the same two
-                                    // channels it left on.
-                                    morphing = true
-                                    launch { morphFade.animateTo(0f, MotionTokens.Effects.default()) }
-                                    morph.animateTo(0f, MotionTokens.Spatial.default())
+                                    // The expanded panel leaves as itself.
+                                    //
+                                    // It used to hand its face back to the
+                                    // compact panel on the way out, which
+                                    // meant re-composing that panel
+                                    // underneath and crossfading to it --
+                                    // and since nothing follows this exit
+                                    // but the window being torn down, all
+                                    // that ever did was flash a bar nobody
+                                    // asked for across the middle of the
+                                    // dismissal. So [morphing] stays false
+                                    // and [morphFade] stays where it is:
+                                    // there is no second panel in this
+                                    // animation at all.
+                                    //
+                                    // What runs instead is the row reveal
+                                    // backwards, off this very value: the
+                                    // rows retract one at a time from the
+                                    // bottom up, each behind the one above
+                                    // it, and the panel's own border closes
+                                    // down after them at the same gap it
+                                    // keeps at rest. See
+                                    // SystemVolumePanel's mixerRowReveal.
+                                    morph.animateTo(0f, MotionTokens.Spatial.travel())
                                 }
-                                appear.animateTo(0f, MotionTokens.Spatial.default())
+                                appear.animateTo(0f, MotionTokens.Spatial.travel())
                                 // Both channels, not just the travelling
                                 // one: tearing the window down while the
                                 // fade still had a frame to run is the
@@ -1067,9 +1107,17 @@ class Service : AccessibilityService() {
                         //           *is* the morph above, read off the very
                         //           same value rather than animated again.
                         // property: the window's own x/y.
-                        LaunchedEffect(morphOrigin) {
+                        LaunchedEffect(morphOrigin, visible) {
                             val travel = morphOrigin ?: return@LaunchedEffect
                             if (!travel.travelsWithWindow) {
+                                return@LaunchedEffect
+                            }
+                            // Entering only, for the same reason the layer
+                            // above stops applying the matched geometry on
+                            // the way out: the exit doesn't travel back to
+                            // where the compact panel was, so neither does
+                            // the window it is drawn in.
+                            if (!visible) {
                                 return@LaunchedEffect
                             }
                             snapshotFlow { morph.value }.collect { morphed ->
@@ -1166,10 +1214,13 @@ class Service : AccessibilityService() {
                         }
                         val ambientEnter = remember(settling) { { settling.value } }
 
+                        val compactTurn = remember(turn) { { turn.value } }
+
                         CompositionLocalProvider(
                             LocalArrival provides arrival,
                             LocalArrivalFade provides arrivalFade,
-                            LocalAmbientEnter provides ambientEnter
+                            LocalAmbientEnter provides ambientEnter,
+                            LocalCompactTurn provides compactTurn
                         ) {
                         Box(
                             // The margin [hasShadowHalo] reserves, outside
@@ -1190,29 +1241,28 @@ class Service : AccessibilityService() {
                                     // because the translation below is what
                                     // carries the difference in position --
                                     // an edge origin would apply it twice.
-                                    val morphed = morph.value
+                                    // Only on the way *in*. The expanded
+                                    // panel's exit is its own animation now
+                                    // and has nothing to do with the
+                                    // rectangle it once grew out of: its
+                                    // rows retract one at a time and the
+                                    // panel closes down behind them (see the
+                                    // exit branch of the transition above).
+                                    // Running the matched geometry
+                                    // backwards as well would squash the
+                                    // mixer into a compact bar's footprint
+                                    // -- a shape the compact panel isn't
+                                    // even being drawn in any more.
+                                    //
+                                    // Continuous either way: a settled
+                                    // panel is already at morph 1, which is
+                                    // exactly the identity this leaves
+                                    // behind.
+                                    val morphed = if (visible) morph.value else 1f
                                     val away = 1f - morphed
                                     transformOrigin = TransformOrigin.Center
                                     scaleX = morphOrigin.scaleX + (1f - morphOrigin.scaleX) * morphed
                                     scaleY = morphOrigin.scaleY + (1f - morphOrigin.scaleY) * morphed
-                                    // element:  the panel becoming the mixer.
-                                    // model:    a bar turning face-up as it
-                                    //           becomes a row.
-                                    // token:    MotionTokens.Spatial.default
-                                    //           -- morphed itself, the very
-                                    //           same value scale/translation
-                                    //           above already ride.
-                                    // property: rotationZ, 0->90->0 across
-                                    //           the whole morph.
-                                    //
-                                    // Vertical-bar origin only: a horizontal
-                                    // bar is already the media row's own
-                                    // orientation, and a disc has none to
-                                    // turn through -- see [uncurl] below,
-                                    // its own shape flourish instead.
-                                    if (morphOrigin.originStyle == PopupStyle.VerticalBar) {
-                                        rotationZ = sin(morphed.coerceIn(0f, 1f) * PI.toFloat()) * MIXER_TURN_DEGREES
-                                    }
                                     if (!morphOrigin.travelsWithWindow) {
                                         translationX = morphOrigin.translationX * away
                                         translationY = morphOrigin.translationY * away
@@ -1850,24 +1900,34 @@ class Service : AccessibilityService() {
                     (hiddenX + (revealedX - hiddenX) * revealFraction).roundToInt()
                 } else {
                     when (horizontalGravity) {
-                        // The panel itself -- not the window -- is what has
-                        // to fit within [0, bounds.width()]; the window is
-                        // allowed to hang its own margin off either edge,
-                        // which is the "expected" half of the shadow going
-                        // dark at zero offset the margin exists to accept.
+                        // The offset the user set is a distance from the
+                        // screen edge to the **panel's** own edge, so the
+                        // window starts insetPx further out than that and
+                        // its margin -- with the halo in it -- hangs off
+                        // the display. Otherwise the margin quietly became
+                        // part of the offset and a zero-offset panel sat
+                        // 20dp off the edge it is supposed to be hugging.
+                        //
+                        // Recomputed from the preference rather than read
+                        // off layoutParams.x, so that a second pass over an
+                        // already-shifted position (the expand handler
+                        // clamps without re-applying the configured
+                        // position first) can't shift it twice.
                         Gravity.LEFT, Gravity.RIGHT -> {
+                            val requestedX = (preferences.activeOffsetX() * density).toInt()
                             val minX = -insetPx
                             val maxX = (bounds.width() - target.width + insetPx).coerceAtLeast(minX)
-                            layoutParams.x.coerceIn(minX, maxX)
+                            (requestedX - insetPx).coerceIn(minX, maxX)
                         }
                         else -> layoutParams.x
                     }
                 }
                 val clampedY = when (verticalGravity) {
                     Gravity.TOP, Gravity.BOTTOM -> {
+                        val requestedY = (preferences.activeOffsetY() * density).toInt()
                         val minY = -insetPx
                         val maxY = (bounds.height() - target.height + insetPx).coerceAtLeast(minY)
-                        layoutParams.y.coerceIn(minY, maxY)
+                        (requestedY - insetPx).coerceIn(minY, maxY)
                     }
                     else -> layoutParams.y
                 }
@@ -2150,9 +2210,34 @@ class Service : AccessibilityService() {
      * the same morph.
      */
     private fun captureMixerMorphOrigin(target: View): MixerMorphOrigin? {
-        val from = compactBounds
+        val captured = compactBounds
         compactBounds = null
-        val to = from?.let { viewBoundsOnScreen(target, shadowRoomPx(expanded = true)) } ?: return null
+        val to = captured?.let { viewBoundsOnScreen(target, shadowRoomPx(expanded = true)) } ?: return null
+
+        val originStyle = manager.uiPreferences.popupStyle
+        // The vertical bar isn't standing up any more by the time the
+        // mixer starts: it has already turned a right angle (see
+        // [LocalCompactTurn]), so what is actually on screen at the first
+        // frame of the morph is that rectangle on its side. Morphing out
+        // of the upright one would start the mixer as a tall sliver over a
+        // bar lying flat.
+        //
+        // Transposed about its own centre rather than about the switch it
+        // really hinges on: the centre is the part this rectangle is used
+        // for (the translation below, and whether the layer would be
+        // clipped), and it is the half that stays true.
+        val from = if (originStyle == PopupStyle.VerticalBar) {
+            val halfWidth = captured.height() / 2
+            val halfHeight = captured.width() / 2
+            Rect(
+                captured.centerX() - halfWidth,
+                captured.centerY() - halfHeight,
+                captured.centerX() + halfWidth,
+                captured.centerY() + halfHeight
+            )
+        } else {
+            captured
+        }
 
         val origin = MixerMorphOrigin(
             scaleX = (from.width().toFloat() / to.width()).coerceIn(0.05f, 3f),
@@ -2162,7 +2247,7 @@ class Service : AccessibilityService() {
             // `from` is exactly what the layer draws at morph 0, so this is
             // literally "would the first frame of the morph be clipped".
             travelsWithWindow = !to.contains(from),
-            originStyle = manager.uiPreferences.popupStyle
+            originStyle = originStyle
         )
         mixerMorphOrigin = origin
         return origin

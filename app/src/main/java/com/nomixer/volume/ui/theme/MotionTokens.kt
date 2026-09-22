@@ -34,21 +34,24 @@ import androidx.compose.ui.graphics.Color
  *
  * | element             | model                 | token                       | property                              |
  * |---------------------|-----------------------|-----------------------------|---------------------------------------|
- * | Edge panel          | sheet on the edge     | [Spatial.default]           | translation, edge axis only -- no scale |
+ * | Edge panel          | sheet on the edge     | [Spatial.travel]            | translation, edge axis only -- no scale |
  * | Edge panel reveal   | sheet on the edge     | (the same value)            | clip outline, derived -- not a spring |
- * | Centered panel      | sheet expanding in place | [Spatial.default]        | uniform scale, never from 0           |
- * | Mixer morph         | sheet changing shape  | [Spatial.default]           | translation + scale, matched geometry |
- * | Mixer morph turn    | a bar turning face-up as it becomes a row -- | [Spatial.default] | rotationZ, 0->90->0 across   |
- * |                     | vertical-bar origin only, riding the same |                | the same morph the translation and  |
- * |                     | value as the morph above                |                    | scale above already ride            |
+ * | Centered panel      | sheet expanding in place | [Spatial.travel]         | uniform scale, never from 0           |
+ * | Mixer morph         | sheet changing shape  | [Spatial.travel]            | translation + scale, matched geometry |
+ * | Compact turn        | the compact bar lying down about the  | [Spatial.turn]      | rotationZ, 0->90 about the ringer   |
+ * |                     | ringer switch it hangs from -- vertical-bar |               | switch's own centre, inward: the    |
+ * |                     | origin only, and finished before the mixer |                | side it is anchored to decides the  |
+ * |                     | starts opening at all                    |                  | sign                                |
  * | Mixer morph uncurl  | a disc's own roundness relaxing into the | [Spatial.default]  | the mixer panel's own corner        |
  * |                     | mixer's flatter corners -- disc origin only |                | radius, disc-round down to the      |
  * |                     |                       |                             | configured mixer radius              |
- * | Mixer row reveal    | a row unfolding from behind the one above | [Spatial.defaultSoft] + | translateY (a few dp, settling |
- * |                     | it, a later slice of the morph above | [Effects.default]       | up) + alpha. Ring's own row carries |
- * |                     |                       |                             | its ringer and Do Not Disturb       |
- * |                     |                       |                             | switches on the same slice, never a |
- * |                     |                       |                             | separate one                        |
+ * | Mixer row reveal    | a row unfolding from behind the one above | [Spatial.defaultSoft] + | the row's own laid-out    |
+ * |                     | it, a later slice of the morph above | [Effects.default]       | **height** (so the panel around it  |
+ * |                     |                       |                             | grows with it and its border stays  |
+ * |                     |                       |                             | the same gap away from the rows the |
+ * |                     |                       |                             | whole time) + alpha. Ring's own row |
+ * |                     |                       |                             | carries its ringer and Do Not       |
+ * |                     |                       |                             | Disturb switches on the same slice  |
  * | Morph hand-over     | --                    | [Effects.default]           | alpha, on both faces at once -- the   |
  * |                     |                       |                             | compact panel's going as the mixer's  |
  * |                     |                       |                             | arrives, over the morph above         |
@@ -181,6 +184,56 @@ object MotionTokens {
          */
         fun <T> defaultSoft(): FiniteAnimationSpec<T> =
             if (reducedMotion) snap() else spring(dampingRatio = SOFT_DAMPING, stiffness = SOFT_STIFFNESS)
+
+        /**
+         * [default] again, and the same character -- but for a 0..1 value
+         * that is **multiplied up into real pixels** before it is drawn:
+         * the popup's own arrival and the mixer's morph, which between them
+         * carry a whole panel across the display.
+         *
+         * A spring stops as soon as it is within its visibility threshold
+         * and jumps the rest of the way. The usual one percent is nothing
+         * on a scale or an alpha, but one percent of a morph that travels
+         * four hundred pixels to the middle of the screen is a four-pixel
+         * jump, landing exactly at the end of the journey -- which is what
+         * a panel snapping into place at the last moment actually is. The
+         * same reasoning [Ambient.enter] needs its own threshold for, and
+         * for the same reason: the number being animated is not the number
+         * being drawn.
+         *
+         * Float rather than generic, because a threshold only means
+         * anything against the type it is measured in.
+         */
+        fun travel(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = DEFAULT_DAMPING,
+                    stiffness = DEFAULT_STIFFNESS,
+                    visibilityThreshold = TRAVEL_THRESHOLD
+                )
+            }
+
+        /**
+         * [defaultSoft]'s own spring on the same fine threshold [travel]
+         * uses, for the compact bar's own turn into the mixer: ninety
+         * degrees is as multiplied-up as a translation is, and a percent of
+         * it is very nearly a degree left on the table.
+         */
+        fun turn(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = SOFT_DAMPING,
+                    stiffness = SOFT_STIFFNESS,
+                    visibilityThreshold = TRAVEL_THRESHOLD
+                )
+            }
+
+        /** See [travel]: a 0..1 that is drawn as hundreds of pixels needs a threshold to match. */
+        private const val TRAVEL_THRESHOLD = 1f / 4096f
 
         /**
          * [fast]'s own constants as a value, for
@@ -410,3 +463,24 @@ val LocalArrivalFade = compositionLocalOf<() -> Float> { { 1f } }
  * anywhere outside the overlay (the settings screen's preview).
  */
 val LocalAmbientEnter = compositionLocalOf<() -> Float> { { 1f } }
+
+/**
+ * How far the compact bar has turned on its way into the mixer, 0 to 1 --
+ * 0 upright, 1 lying down at a right angle about the ringer switch it
+ * hangs from.
+ *
+ * Its own value rather than a slice of [LocalArrival], because it is not
+ * part of the arrival: it happens *first* and finishes completely before
+ * the mixer starts opening at all, which is the whole point of it (a bar
+ * that is still turning while the panel behind it is already growing reads
+ * as two things happening to two different objects). See [MotionTokens.Spatial.turn].
+ *
+ * Which way it turns is not in here: the panel reads that off its own
+ * anchor, so it always lies down *into* the screen rather than out over
+ * the edge it is hugging.
+ *
+ * A function rather than a value, so the bar can read it in its own draw
+ * phase. Defaults to upright, for every compact popup that isn't on its
+ * way to becoming a mixer -- which is most of them.
+ */
+val LocalCompactTurn = compositionLocalOf<() -> Float> { { 0f } }

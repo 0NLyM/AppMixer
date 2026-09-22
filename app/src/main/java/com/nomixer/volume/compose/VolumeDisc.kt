@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -249,10 +250,6 @@ fun VolumeDisc(
 
     val latestValue by rememberUpdatedState(coercedValue)
 
-    // Unconditional even though only Atmosphere mode ever uses it, and it
-    // costs nothing while unused.
-    val atmosphereMotion = rememberAtmosphereMotion()
-
     // The arrival, on the effects channel, for the one thing on this dial
     // that has an entrance at all: its hand. The pane -- track, ring,
     // ticks -- arrives whole and at its final angle, because half of it is
@@ -308,10 +305,22 @@ fun VolumeDisc(
         modifier = modifier.size(diameter),
         contentAlignment = Alignment.Center
     ) {
+        // The knob's own face is where the background effects live now,
+        // not the ring around it. The ring is the thing that reads the
+        // level -- a track, an arc and a wheel of notches -- and laying a
+        // sheet of glass or a field of grain along it was decorating the
+        // instrument rather than the object: a real knob is a disc of
+        // material with a scale around its edge, and it is the disc that
+        // is made of something.
+        //
+        // Painted as siblings *behind* the Canvas (which is why the face
+        // it would otherwise fill is left unpainted below), and through
+        // the same shape-taking composables every flat panel uses -- a
+        // circle is just another shape to them.
+        val knobDiameter = with(density) { ((ringRadiusPx - ringWidthPx / 2f) * 2f).toDp() }
         if (trackBackingColor.alpha > 0f && trackBackingGlass) {
-            GlassRingBackground(
-                ringRadius = ringRadiusPx,
-                ringWidth = ringWidthPx,
+            GlassBackground(
+                shape = CircleShape,
                 baseColor = trackBackingColor,
                 blurRadius = blurRadius,
                 lightAngle = lightAngle,
@@ -319,7 +328,17 @@ fun VolumeDisc(
                 lightStrength = lightStrength,
                 noiseColor = noiseColor,
                 noiseAlpha = noiseAlpha,
-                modifier = Modifier.matchParentSize()
+                modifier = Modifier.size(knobDiameter)
+            )
+        }
+        if (trackBackingColor.alpha > 0f && trackBackingAtmosphere) {
+            AtmosphereBackground(
+                shape = CircleShape,
+                baseColor = trackBackingColor,
+                colors = atmosphereColors,
+                grainIntensity = grainIntensity,
+                grainSize = grainSize,
+                modifier = Modifier.size(knobDiameter)
             )
         }
         // The pane has no entrance of its own, deliberately.
@@ -452,51 +471,9 @@ fun VolumeDisc(
                 startAngle to -fullSweep
             }
 
-            // Backing confined to the ring's own track, never anything
-            // wider -- so Solid's tint and Glass's own lit sheet can only
-            // ever show up inside the same annulus the white track already
-            // occupies, and everything else (the shadow-fade sliver, the
-            // margin beyond it) stays genuinely see-through.
-            if (trackBackingColor.alpha > 0f) {
-                if (trackBackingGlass) {
-                    // The tint/beam/grain/blur itself is painted by
-                    // GlassRingBackground, a real sibling composable behind
-                    // this Canvas (see the Box above) -- this draws just the
-                    // rim light on top, the same as it always did.
-                    drawGlassRingRim(
-                        center = center,
-                        ringRadius = ringRadius,
-                        ringWidth = ringWidth,
-                        lightAngle = lightAngle,
-                        lightWidth = lightWidth,
-                        lightStrength = lightStrength
-                    )
-                } else if (trackBackingAtmosphere) {
-                    drawAtmosphereRing(
-                        baseColor = trackBackingColor,
-                        colors = atmosphereColors,
-                        rotation = atmosphereMotion.rotation(),
-                        center = center,
-                        ringRadius = ringRadius,
-                        ringWidth = ringWidth,
-                        grainIntensity = grainIntensity,
-                        grainSize = grainSize,
-                        grainPhase = atmosphereMotion.grainPhase(),
-                        driftX = atmosphereMotion.driftX(),
-                        driftY = atmosphereMotion.driftY()
-                    )
-                } else {
-                    drawArc(
-                        color = trackBackingColor,
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        topLeft = arcTopLeft,
-                        size = arcSize,
-                        style = Stroke(width = ringWidth)
-                    )
-                }
-            }
+            // Nothing here: the ring carries no background of its own any
+            // more. Whatever the user picked is painted on the knob's own
+            // face instead, by the siblings behind this Canvas.
 
             // Round shadow: nothing of its own through the disc's whole
             // body and ring -- so it never sits on top of (and washes out)
@@ -524,10 +501,21 @@ fun VolumeDisc(
                 )
             }
 
-            drawCircle(color = trackColor, radius = radius - ringWidth, center = center)
+            // The face is left unpainted when Glass or Atmosphere is what
+            // the knob is made of: those are drawn behind this Canvas, and
+            // an opaque fill here would be a lid over them. Solid keeps its
+            // tint, laid over the face's own colour rather than replacing
+            // it, so the knob still reads as a knob with a tint on it.
+            val faceRadius = radius - ringWidth
+            if (!trackBackingGlass && !trackBackingAtmosphere) {
+                drawCircle(color = trackColor, radius = faceRadius, center = center)
+                if (trackBackingColor.alpha > 0f) {
+                    drawCircle(color = trackBackingColor, radius = faceRadius, center = center)
+                }
+            }
             drawCircle(
                 color = outlineColor,
-                radius = radius - ringWidth,
+                radius = faceRadius,
                 center = center,
                 style = Stroke(width = 1.dp.toPx())
             )

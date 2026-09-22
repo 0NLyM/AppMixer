@@ -1485,6 +1485,55 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-22 — 1.0.69
+
+- **The panel stops snapping into place at the end of its journey.** A
+  spring stops as soon as it is within its visibility threshold and jumps
+  the rest of the way, and the usual one percent is nothing on a scale or
+  an alpha -- but the morph is a 0-to-1 number that gets multiplied up into
+  real pixels, so one percent of a mixer travelling four hundred of them to
+  the middle of the display is a four-pixel jump, landing exactly at the
+  end. The arrival and the morph now run on a spring whose threshold is
+  measured against what is actually drawn, the same correction Atmosphere's
+  own settle needed in 1.0.67.
+- **The vertical bar lies down before the mixer opens, not while.** It
+  turns a right angle about the ringer switch it hangs from -- always
+  inward, so a bar against the left edge turns the opposite way from one
+  against the right rather than swinging its body out over the edge it is
+  hugging -- and the mixer only starts opening once that turn has finished.
+  The two used to overlap, which read as two things happening to two
+  different objects.
+- **The mixer's rows now carry the panel's own border with them.** Each
+  row's reveal is its real laid-out height rather than a transform, so the
+  panel grows as they land and shrinks as they leave, and its border keeps
+  exactly the gap it has at rest the whole way through -- following the
+  rows rather than arriving before them or sitting still. A row that hasn't
+  unfolded yet is painted over by the one above it rather than clipped, so
+  no shadow is lost to an animation.
+- **The expanded panel leaves as itself.** It used to hand its face back to
+  the compact popup on the way out, which meant re-composing that panel
+  underneath and crossfading to it -- and since nothing follows the exit but
+  the window being taken down, all that ever did was flash a bar across the
+  middle of the dismissal. The rows retract one at a time from the bottom
+  up now, the border closes down after them, and there is no second panel
+  in the animation at all.
+- **A zero offset means the panel touches the screen edge again.** 1.0.68
+  gave the window 20dp of margin for the shadow to bleed into but measured
+  the user's offset from the window rather than the panel, so a
+  zero-offset panel quietly sat 20dp off the edge it is supposed to hug.
+  The offset is the distance to the *panel* now, and the margin -- with the
+  shadow in it -- hangs off the display instead.
+- **The disc's background effects moved from the ring to the knob.** Glass
+  and Atmosphere paint the disc's own face now; the ring is left to do the
+  one job it has, which is reading the level. A real knob is a disc of
+  material with a scale around its edge, and it is the disc that is made of
+  something.
+- **Atmosphere has speckles.** A scattering of grainy flecks over the
+  field, half light and half dark so they read against whatever colours the
+  app underneath gave it, settling in on the same ambient spring the field
+  itself uses -- once, then frozen. No loop, and visible on the compact
+  popup and the mixer alike.
+
 ## 2026-09-22 — 1.0.68
 
 - **The compact panel turns into the mixer instead of just scaling into

@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -65,6 +66,7 @@ import com.nomixer.volume.data.activeShowValue
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
+import com.nomixer.volume.ui.theme.LocalCompactTurn
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -73,6 +75,13 @@ private const val TAG = "NoMixer.CollapsedPopup"
 
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
+
+/**
+ * The right angle the vertical bar lies down through on its way into the
+ * mixer -- see [LocalCompactTurn], and the "Compact turn" row in
+ * MotionTokens' own table.
+ */
+private const val COMPACT_TURN_DEGREES = 90f
 
 /**
  * How far [PanelShadow]'s own halo spreads past the panel's outer edge.
@@ -475,13 +484,60 @@ fun CollapsedVolumePopup(
     // moves onto the ringer button and slider individually below instead.
     val elementShadowColor = if (!isDisc && !showBackground) shadow else Color.Transparent
 
+    // element:  the whole compact bar.
+    // model:    a bar hinged on the ringer switch it hangs from, lying
+    //           down into the screen as the mixer takes over from it.
+    // token:    MotionTokens.Spatial.turn, through [LocalCompactTurn] --
+    //           which finishes before the mixer starts opening at all.
+    // property: rotationZ, about the switch's own centre.
+    //
+    // The whole panel turns, glass included, and that is not the rotating
+    // pane CLAUDE.md rules out: the pane isn't turning *within* its panel
+    // as a piece of decoration -- the panel itself is a physical thing
+    // being laid down, and the sheet of glass in it travels with it the
+    // way the border and the shadow do.
+    //
+    // The pivot is worked out here rather than measured: the switch sits
+    // at the top of the Column below, so its centre is exactly one
+    // padding plus half a button down from the panel's own top edge,
+    // whatever the panel's height turns out to be. Read in the draw phase
+    // against the layer's own size, so the bar turns without recomposing
+    // and without the measured position feeding back into the transform
+    // that moved it. With the switch hidden the geometry is unchanged --
+    // the bar still hinges where the switch would be.
+    val compactTurn = LocalCompactTurn.current
+    val turnPivotFromTop = 10.dp + elementShadowClearance + buttonSize / 2
+    val turnDirection = when (preferences.activeAnchor()) {
+        // Always down *into* the screen: a bar against the left edge
+        // turning the same way as one against the right would swing its
+        // whole body out over the edge it is hugging.
+        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> -1f
+        else -> 1f
+    }
+    val turns = preferences.popupStyle == PopupStyle.VerticalBar
+
     // A real blur needs a genuinely separate graphics layer from whatever
     // it isn't supposed to blur (see GlassBackground's own doc comment), so
     // -- unlike the old flat-color scrim, which was just another Modifier
     // chained onto Surface -- the glass background and its edge light are
     // now painted as Surface's own siblings in this Box, behind and above
     // it respectively, instead of through Surface's `modifier`.
-    Box {
+    Box(
+        modifier = if (turns) {
+            Modifier.graphicsLayer {
+                val turned = compactTurn().coerceIn(0f, 1f)
+                if (turned > 0f && size.height > 0f) {
+                    transformOrigin = TransformOrigin(
+                        pivotFractionX = 0.5f,
+                        pivotFractionY = (turnPivotFromTop.toPx() / size.height).coerceIn(0f, 1f)
+                    )
+                    rotationZ = turned * COMPACT_TURN_DEGREES * turnDirection
+                }
+            }
+        } else {
+            Modifier
+        }
+    ) {
         if (!isDisc && showBackground) {
             PanelShadow(
                 color = shadow,

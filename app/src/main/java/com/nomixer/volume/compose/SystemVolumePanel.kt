@@ -25,14 +25,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import com.nomixer.volume.R
 import com.nomixer.volume.system.NotificationManagerProxy
 import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.LocalArrivalFade
+import kotlin.math.roundToInt
 
 object SystemSliderIds {
     const val Media = "media"
@@ -47,16 +50,21 @@ private fun isCallMode(mode: Int): Boolean {
 }
 
 /** Where in the arrival a mixer row's own stagger window starts -- see [mixerRowReveal]. */
-private const val ROW_REVEAL_BASE = 0.55f
+private const val ROW_REVEAL_BASE = 0.45f
 
 /** How much later each successive staggered row starts than the one before it. */
-private const val ROW_REVEAL_STEP = 0.10f
+private const val ROW_REVEAL_STEP = 0.08f
 
-/** How wide each row's own stagger window is, once it starts. */
+/**
+ * How wide each row's own stagger window is, once it starts.
+ *
+ * [ROW_REVEAL_BASE] plus the last row's own [ROW_REVEAL_STEP]s plus this
+ * has to land on 1 or under, or the bottom row is still unfolding at the
+ * moment the arrival it rides is already over -- four rows (call, ring,
+ * alarm, notification) is the most there can be, and 0.45 + 3*0.08 + 0.3
+ * is 0.99.
+ */
 private const val ROW_REVEAL_SPAN = 0.30f
-
-/** How far a row settles down from, in dp, as it unfolds into its own slot. */
-private const val ROW_REVEAL_TRAVEL_DP = 10f
 
 /**
  * A mixer row unfolding from behind the one above it, [index] slots into
@@ -82,13 +90,35 @@ private const val ROW_REVEAL_TRAVEL_DP = 10f
 private fun Modifier.mixerRowReveal(index: Int): Modifier {
     val arrival = LocalArrival.current
     val arrivalFade = LocalArrivalFade.current
-    return this.graphicsLayer {
-        val start = (ROW_REVEAL_BASE + index * ROW_REVEAL_STEP).coerceIn(0f, 1f)
-        val local = ((arrival() - start) / ROW_REVEAL_SPAN).coerceIn(0f, 1f)
-        val localFade = ((arrivalFade() - start) / ROW_REVEAL_SPAN).coerceIn(0f, 1f)
-        translationY = -(1f - local) * ROW_REVEAL_TRAVEL_DP.dp.toPx()
-        alpha = localFade
-    }
+    val start = (ROW_REVEAL_BASE + index * ROW_REVEAL_STEP).coerceIn(0f, 1f)
+
+    return this
+        // Behind the row above it, and behind the media row above all of
+        // them -- literally, rather than by clipping. The part of this row
+        // that hasn't unfolded yet is simply painted over by its
+        // neighbour, so nothing here has to cut anything, and no row's own
+        // shadow is lost to a clip that exists for an animation.
+        .zIndex(-(index + 1).toFloat())
+        // The reveal is the row's own **laid-out height**, not a transform.
+        // That is what makes the panel around it grow as the rows land and
+        // shrink as they leave, which is the only way its border can keep
+        // the gap it has at rest while they do -- a transform would slide
+        // the row inside a panel whose size never changed, and the border
+        // would sit still while the rows moved past it.
+        .layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            val revealed = ((arrival() - start) / ROW_REVEAL_SPAN).coerceIn(0f, 1f)
+            val height = (placeable.height * revealed).roundToInt()
+            layout(placeable.width, height) {
+                // Anchored to its own bottom edge, so it slides downward
+                // out from under the row above rather than growing in
+                // place from nothing.
+                placeable.place(0, height - placeable.height)
+            }
+        }
+        .graphicsLayer {
+            alpha = ((arrivalFade() - start) / ROW_REVEAL_SPAN).coerceIn(0f, 1f)
+        }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
