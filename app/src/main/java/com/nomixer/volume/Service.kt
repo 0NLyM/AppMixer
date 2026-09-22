@@ -29,6 +29,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +42,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -97,7 +99,9 @@ import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlinx.coroutines.launch
 import java.util.Objects
+import kotlin.math.PI
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * Where the panel actually sits right now -- **the one position state**, read
@@ -204,6 +208,59 @@ private val ENTER_TRAVEL_DP = 14.dp
 private const val CENTER_EXPAND_SQUASH = 0.08f
 
 /**
+ * How far the panel turns mid-morph when it grew out of a vertical bar --
+ * see the "Mixer morph turn" row in MotionTokens' own table. A vertical
+ * bar is the one compact shape whose own long axis doesn't already match
+ * the media row's horizontal one, so it turns face-up as it moves into
+ * place rather than being squashed into the row's aspect directly.
+ */
+private const val MIXER_TURN_DEGREES = 90f
+
+/**
+ * Deliberately oversized: [RoundedCornerShape] clamps a corner radius to
+ * at most half the shape's own shorter side, so this reads as a true
+ * circle/stadium at any panel size rather than a specific curve tuned to
+ * one -- the same trick the disc's own hole-in-the-middle math elsewhere
+ * relies on staying that generic.
+ */
+private const val DISC_MIXER_CORNER_RADIUS_DP = 999f
+
+/**
+ * How much invisible room the window carries beyond the panel's own edge
+ * on every side, purely so [PanelShadow]'s blurred halo has somewhere to
+ * bleed into instead of being cut off flush with the panel -- the
+ * platform's own window surface is only ever as big as it measures to, so
+ * there is nowhere else that room could come from. See [hasShadowHalo] for
+ * when it actually applies.
+ */
+private val WINDOW_SHADOW_ROOM_DP = 20.dp
+
+/**
+ * Whether this panel actually has a [PanelShadow] halo to make
+ * [WINDOW_SHADOW_ROOM_DP] of room for.
+ *
+ * The disc never does: it paints its own shadow as a radial fade inside
+ * its own Canvas (see VolumeDisc's own doc comment on `backdropColor`),
+ * which needs no room outside its own bounds at all. Nor does a panel
+ * with its background switched off -- there is no panel-level halo left
+ * to make room for, only the per-element ones, which already have their
+ * own clearance inside the panel's own padding (see
+ * CollapsedVolumePopup's `ELEMENT_SHADOW_CLEARANCE_DP`).
+ *
+ * The single source of truth both the composition (which actually
+ * reserves the room, by padding the outer layer) and the window's own
+ * position math (which has to know how much of the window's measured
+ * size is that invisible margin rather than panel) read, so the two can
+ * never disagree about how much room there really is.
+ */
+private fun UiPreferences.hasShadowHalo(expanded: Boolean): Boolean =
+    if (expanded) {
+        activeShowBackground()
+    } else {
+        popupStyle != PopupStyle.Disc && activeShowBackground()
+    }
+
+/**
  * Where the mixer starts its morph: the compact popup's own rectangle,
  * expressed in the mixer's own layer -- how much smaller it was in each
  * axis, and how far its centre sat from where the mixer's centre now is.
@@ -218,6 +275,14 @@ private class MixerMorphOrigin(
     val scaleY: Float,
     val translationX: Float,
     val translationY: Float,
+    /**
+     * The compact style this morph grew out of, read once at capture time
+     * (a user's popup style doesn't change mid-gesture). Drives the two
+     * per-origin flourishes riding this same morph -- the vertical bar's
+     * own turn and the disc's own uncurl -- so each keeps playing its own
+     * shape's entrance even though all three now share one transform.
+     */
+    val originStyle: PopupStyle,
     /**
      * Whether the travel above is carried by the **window's** own position
      * rather than by the layer inside it.
@@ -568,6 +633,16 @@ class Service : AccessibilityService() {
                 setViewTreeSavedStateRegistryOwner(owner)
             }
 
+            /**
+             * How much of this view's own current edge, in px, is
+             * [WINDOW_SHADOW_ROOM_DP] rather than panel -- kept in sync by a
+             * `SideEffect` in [Content] below, since [hasShadowHalo] can
+             * change live (the background switch, the popup style) and
+             * [onTouchEvent] is a plain View callback with no composition of
+             * its own to read it from.
+             */
+            var shadowRoomPx: Float = 0f
+
             // This ComposeView is the window's own root now (see the return
             // value below) -- FLAG_WATCH_OUTSIDE_TOUCH delivers
             // ACTION_OUTSIDE straight to the root view's own onTouchEvent,
@@ -579,12 +654,36 @@ class Service : AccessibilityService() {
                     return true
                 }
 
+                // A touch that lands inside this view's own bounds but
+                // inside [shadowRoomPx]'s own invisible margin is a touch on
+                // nothing -- that ring exists only so PanelShadow's halo has
+                // somewhere to bleed into, and carries no content of its
+                // own for ACTION_OUTSIDE above to have caught. Left
+                // unhandled it fell through to here and did nothing at all,
+                // which read as the popup silently swallowing a tap on the
+                // wallpaper right at its own edge.
+                if (event.actionMasked == MotionEvent.ACTION_DOWN && shadowRoomPx > 0f) {
+                    val x = event.x
+                    val y = event.y
+                    if (x < shadowRoomPx || y < shadowRoomPx ||
+                        x > width - shadowRoomPx || y > height - shadowRoomPx
+                    ) {
+                        this@Service.handler.hideView()
+                        return true
+                    }
+                }
+
                 return super.onTouchEvent(event)
             }
 
             @Composable
             override fun Content() {
                 val preferences = manager.uiPreferences
+                // Captured before any nested composable lambda can shadow
+                // `this` -- [onTouchEvent] reads shadowRoomPx off this exact
+                // instance, so the SideEffect below has to write to it and
+                // not to whatever receiver a later lambda happens to have.
+                val hostView = this
 
                 // The overlay is the one place the user's color choices
                 // apply: they're picked for the popup, not for the app.
@@ -601,6 +700,27 @@ class Service : AccessibilityService() {
                     // there's no panel at all, and the shadow below moves
                     // onto each slider individually instead.
                     val showBackground = preferences.activeShowBackground()
+
+                    // Kept in sync with [hasShadowHalo] itself rather than
+                    // duplicating its condition, so the window's own
+                    // position math (Service's imperative half, via
+                    // shadowRoomPx(expanded)) and what's actually reserved
+                    // here can never disagree about how much of the
+                    // window's measured size is margin rather than panel.
+                    val hasShadowHalo = preferences.hasShadowHalo(expanded)
+                    // element:  -- not a spring; a plain field write.
+                    // model:    -- [onTouchEvent] is a raw View callback
+                    //           with no composition of its own to read
+                    //           this from.
+                    // token:    --
+                    // property: --
+                    val shadowRoomPx = if (hasShadowHalo) {
+                        with(LocalDensity.current) { WINDOW_SHADOW_ROOM_DP.toPx() }
+                    } else {
+                        0f
+                    }
+                    SideEffect { hostView.shadowRoomPx = shadowRoomPx }
+
                     val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
                     val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
                     val panelColor by animateColorAsState(
@@ -1052,7 +1172,16 @@ class Service : AccessibilityService() {
                             LocalAmbientEnter provides ambientEnter
                         ) {
                         Box(
-                            modifier = Modifier.graphicsLayer {
+                            // The margin [hasShadowHalo] reserves, outside
+                            // the transform below rather than inside it: a
+                            // fixed reservation at layout time, so the room
+                            // PanelShadow's halo bleeds into stays the same
+                            // number of real pixels throughout the whole
+                            // morph instead of shrinking along with
+                            // whatever the panel's own scale is doing that
+                            // frame.
+                            modifier = (if (hasShadowHalo) Modifier.padding(WINDOW_SHADOW_ROOM_DP) else Modifier)
+                                .graphicsLayer {
                                 val arrived = appear.value.coerceIn(0f, 1f)
 
                                 if (expanded && morphOrigin != null) {
@@ -1066,6 +1195,24 @@ class Service : AccessibilityService() {
                                     transformOrigin = TransformOrigin.Center
                                     scaleX = morphOrigin.scaleX + (1f - morphOrigin.scaleX) * morphed
                                     scaleY = morphOrigin.scaleY + (1f - morphOrigin.scaleY) * morphed
+                                    // element:  the panel becoming the mixer.
+                                    // model:    a bar turning face-up as it
+                                    //           becomes a row.
+                                    // token:    MotionTokens.Spatial.default
+                                    //           -- morphed itself, the very
+                                    //           same value scale/translation
+                                    //           above already ride.
+                                    // property: rotationZ, 0->90->0 across
+                                    //           the whole morph.
+                                    //
+                                    // Vertical-bar origin only: a horizontal
+                                    // bar is already the media row's own
+                                    // orientation, and a disc has none to
+                                    // turn through -- see [uncurl] below,
+                                    // its own shape flourish instead.
+                                    if (morphOrigin.originStyle == PopupStyle.VerticalBar) {
+                                        rotationZ = sin(morphed.coerceIn(0f, 1f) * PI.toFloat()) * MIXER_TURN_DEGREES
+                                    }
                                     if (!morphOrigin.travelsWithWindow) {
                                         translationX = morphOrigin.translationX * away
                                         translationY = morphOrigin.translationY * away
@@ -1178,7 +1325,34 @@ class Service : AccessibilityService() {
                             }
                         ) {
                             if (expanded) {
-                                val mixerShape = RoundedCornerShape(preferences.popupCornerRadius.dp)
+                                // element:  the mixer panel's own corners.
+                                // model:    a disc's roundness relaxing
+                                //           into the mixer's flatter ones.
+                                // token:    MotionTokens.Spatial.default --
+                                //           morph.value itself.
+                                // property: corner radius, an oversized
+                                //           (effectively circular -- see
+                                //           RoundedCornerShape's own clamp
+                                //           to half the shorter side) value
+                                //           down to the configured mixer
+                                //           radius.
+                                //
+                                // Disc origin only: the bars already arrive
+                                // at the mixer's own corner radius, nothing
+                                // to relax there. A composition-phase read,
+                                // unlike the rotation beside it -- an
+                                // animated Shape has no draw-phase form to
+                                // read it in instead -- but only for the
+                                // one style, and only for the length of its
+                                // own morph.
+                                val mixerCornerRadiusDp = if (morphOrigin?.originStyle == PopupStyle.Disc) {
+                                    val uncurled = morph.value.coerceIn(0f, 1f)
+                                    DISC_MIXER_CORNER_RADIUS_DP +
+                                        (preferences.popupCornerRadius - DISC_MIXER_CORNER_RADIUS_DP) * uncurled
+                                } else {
+                                    preferences.popupCornerRadius.toFloat()
+                                }
+                                val mixerShape = RoundedCornerShape(mixerCornerRadiusDp.dp)
 
                                 // The panel this one is still becoming.
                                 //
@@ -1658,6 +1832,13 @@ class Service : AccessibilityService() {
                 val isLateralDisc = !expanded && preferences.popupStyle == PopupStyle.Disc &&
                     (horizontalGravity == Gravity.LEFT || horizontalGravity == Gravity.RIGHT)
 
+                // How much of target.width/height below is
+                // [WINDOW_SHADOW_ROOM_DP] rather than panel -- always 0 for
+                // isLateralDisc, since [hasShadowHalo] never grants a disc
+                // any room in the first place, so every formula in that
+                // branch stays exactly what it always was.
+                val insetPx = shadowRoomPx(expanded).roundToInt()
+
                 val clampedX = if (isLateralDisc) {
                     // Positive x always moves the window inward, off the
                     // edge it hugs, whichever side that is -- the same
@@ -1669,14 +1850,25 @@ class Service : AccessibilityService() {
                     (hiddenX + (revealedX - hiddenX) * revealFraction).roundToInt()
                 } else {
                     when (horizontalGravity) {
-                        Gravity.LEFT, Gravity.RIGHT ->
-                            layoutParams.x.coerceIn(0, (bounds.width() - target.width).coerceAtLeast(0))
+                        // The panel itself -- not the window -- is what has
+                        // to fit within [0, bounds.width()]; the window is
+                        // allowed to hang its own margin off either edge,
+                        // which is the "expected" half of the shadow going
+                        // dark at zero offset the margin exists to accept.
+                        Gravity.LEFT, Gravity.RIGHT -> {
+                            val minX = -insetPx
+                            val maxX = (bounds.width() - target.width + insetPx).coerceAtLeast(minX)
+                            layoutParams.x.coerceIn(minX, maxX)
+                        }
                         else -> layoutParams.x
                     }
                 }
                 val clampedY = when (verticalGravity) {
-                    Gravity.TOP, Gravity.BOTTOM ->
-                        layoutParams.y.coerceIn(0, (bounds.height() - target.height).coerceAtLeast(0))
+                    Gravity.TOP, Gravity.BOTTOM -> {
+                        val minY = -insetPx
+                        val maxY = (bounds.height() - target.height + insetPx).coerceAtLeast(minY)
+                        layoutParams.y.coerceIn(minY, maxY)
+                    }
                     else -> layoutParams.y
                 }
 
@@ -1713,11 +1905,15 @@ class Service : AccessibilityService() {
                 // panel really ended up near.
                 panelBaseX = clampedX
                 panelBaseY = cutoutAdjustedY
+                // + insetPx on every edge alike: absoluteLeft/adjustedAbsoluteTop
+                // above are the *window's* own edge, and the panel's real
+                // edge sits insetPx further in from it on whichever side is
+                // doing the revealing.
                 edgeGapPx = when (placement.revealEdge) {
-                    RevealEdge.Left -> absoluteLeft.toFloat()
-                    RevealEdge.Right -> (bounds.width() - absoluteLeft - target.width).toFloat()
-                    RevealEdge.Top -> adjustedAbsoluteTop.toFloat()
-                    RevealEdge.Bottom -> (bounds.height() - adjustedAbsoluteTop - target.height).toFloat()
+                    RevealEdge.Left -> absoluteLeft.toFloat() + insetPx
+                    RevealEdge.Right -> (bounds.width() - absoluteLeft - target.width).toFloat() + insetPx
+                    RevealEdge.Top -> adjustedAbsoluteTop.toFloat() + insetPx
+                    RevealEdge.Bottom -> (bounds.height() - adjustedAbsoluteTop - target.height).toFloat() + insetPx
                     RevealEdge.None -> 0f
                 }.coerceAtLeast(0f)
 
@@ -1834,7 +2030,7 @@ class Service : AccessibilityService() {
      */
     private fun relocateForPlacement(expanded: Boolean) {
         val target = view ?: return
-        val from = visibleBoundsOnScreen(target) ?: return
+        val from = visibleBoundsOnScreen(target, shadowRoomPx(expanded)) ?: return
 
         compactBounds = from
         // Hidden while it is moved, exactly as an expand hides it: the
@@ -1875,14 +2071,24 @@ class Service : AccessibilityService() {
         windowRevealed = true
     }
 
-    /** The popup's rectangle on screen right now, or null if it isn't laid out. */
-    private fun viewBoundsOnScreen(target: View): Rect? {
+    /**
+     * The panel's own rectangle on screen right now, or null if it isn't
+     * laid out -- [insetPx] shrinks in from the view's own edge on every
+     * side, for a window carrying [WINDOW_SHADOW_ROOM_DP] of invisible
+     * margin around the real panel (see [hasShadowHalo]): the geometry a
+     * morph runs out of, or that the popup is measured as being from a
+     * screen edge, has to be the panel's true rectangle, never the
+     * window's own larger one.
+     */
+    private fun viewBoundsOnScreen(target: View, insetPx: Float = 0f): Rect? {
         if (target.width <= 0 || target.height <= 0) {
             return null
         }
         val at = IntArray(2)
         target.getLocationOnScreen(at)
-        return Rect(at[0], at[1], at[0] + target.width, at[1] + target.height)
+        val inset = insetPx.roundToInt()
+        return Rect(at[0] + inset, at[1] + inset, at[0] + target.width - inset, at[1] + target.height - inset)
+            .takeIf { it.width() > 0 && it.height() > 0 }
     }
 
     /**
@@ -1897,8 +2103,8 @@ class Service : AccessibilityService() {
      * had to travel in from a place it should never have been. The journey
      * begins at the part the user can see instead.
      */
-    private fun visibleBoundsOnScreen(target: View): Rect? {
-        val bounds = viewBoundsOnScreen(target) ?: return null
+    private fun visibleBoundsOnScreen(target: View, insetPx: Float = 0f): Rect? {
+        val bounds = viewBoundsOnScreen(target, insetPx) ?: return null
         val display = windowManager.currentWindowMetrics.bounds
         if (!bounds.intersect(display)) {
             return null
@@ -1906,8 +2112,21 @@ class Service : AccessibilityService() {
         return bounds.takeIf { it.width() > 0 && it.height() > 0 }
     }
 
+    /**
+     * [WINDOW_SHADOW_ROOM_DP] in px, for whichever shape [expanded]
+     * describes -- the same [hasShadowHalo] condition the composition
+     * itself reserves the room under, so this can never assume more (or
+     * less) margin than the window actually carries right now.
+     */
+    private fun shadowRoomPx(expanded: Boolean): Float {
+        if (!manager.uiPreferences.hasShadowHalo(expanded)) {
+            return 0f
+        }
+        return WINDOW_SHADOW_ROOM_DP.value * resources.displayMetrics.density
+    }
+
     private fun captureCompactBounds() {
-        compactBounds = view?.let { visibleBoundsOnScreen(it) }
+        compactBounds = view?.let { visibleBoundsOnScreen(it, shadowRoomPx(expanded = false)) }
         mixerMorphOrigin = null
     }
 
@@ -1933,7 +2152,7 @@ class Service : AccessibilityService() {
     private fun captureMixerMorphOrigin(target: View): MixerMorphOrigin? {
         val from = compactBounds
         compactBounds = null
-        val to = from?.let { viewBoundsOnScreen(target) } ?: return null
+        val to = from?.let { viewBoundsOnScreen(target, shadowRoomPx(expanded = true)) } ?: return null
 
         val origin = MixerMorphOrigin(
             scaleX = (from.width().toFloat() / to.width()).coerceIn(0.05f, 3f),
@@ -1942,7 +2161,8 @@ class Service : AccessibilityService() {
             translationY = from.exactCenterY() - to.exactCenterY(),
             // `from` is exactly what the layer draws at morph 0, so this is
             // literally "would the first frame of the morph be clipped".
-            travelsWithWindow = !to.contains(from)
+            travelsWithWindow = !to.contains(from),
+            originStyle = manager.uiPreferences.popupStyle
         )
         mixerMorphOrigin = origin
         return origin

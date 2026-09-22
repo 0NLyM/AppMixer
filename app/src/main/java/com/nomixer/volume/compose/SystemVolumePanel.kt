@@ -24,12 +24,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.nomixer.volume.R
 import com.nomixer.volume.system.NotificationManagerProxy
+import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.ui.theme.LocalArrivalFade
 
 object SystemSliderIds {
     const val Media = "media"
@@ -41,6 +44,51 @@ object SystemSliderIds {
 
 private fun isCallMode(mode: Int): Boolean {
     return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+}
+
+/** Where in the arrival a mixer row's own stagger window starts -- see [mixerRowReveal]. */
+private const val ROW_REVEAL_BASE = 0.55f
+
+/** How much later each successive staggered row starts than the one before it. */
+private const val ROW_REVEAL_STEP = 0.10f
+
+/** How wide each row's own stagger window is, once it starts. */
+private const val ROW_REVEAL_SPAN = 0.30f
+
+/** How far a row settles down from, in dp, as it unfolds into its own slot. */
+private const val ROW_REVEAL_TRAVEL_DP = 10f
+
+/**
+ * A mixer row unfolding from behind the one above it, [index] slots into
+ * the stagger -- see MotionTokens' "Mixer row reveal" row.
+ *
+ * Not the media row: that one is the panel itself, mid-morph, already
+ * carrying its own crossfade from the compact popup (see Service.kt's own
+ * `morphFade`) -- a second fade on top of that would be the same event
+ * counted twice. [index] is a running count among the *staggered* rows in
+ * the order they're actually emitted, not a fixed per-stream number,
+ * because Call's own visibility is conditional: whichever row is first in
+ * line gets slot 0, whatever stream it happens to be.
+ *
+ * One value each on [Spatial.defaultSoft][com.nomixer.volume.ui.theme.MotionTokens.Spatial.defaultSoft]
+ * and [Effects.default][com.nomixer.volume.ui.theme.MotionTokens.Effects.default] would be two
+ * springs for one row; this reads a later slice of the single arrival already
+ * travelling the whole panel instead; see [LocalArrival]. That is also why
+ * the exit needs no logic of its own: the same slice run backwards retracts
+ * the *later* rows first, since their own window is the first to fall
+ * below the arrival as it comes back down.
+ */
+@Composable
+private fun Modifier.mixerRowReveal(index: Int): Modifier {
+    val arrival = LocalArrival.current
+    val arrivalFade = LocalArrivalFade.current
+    return this.graphicsLayer {
+        val start = (ROW_REVEAL_BASE + index * ROW_REVEAL_STEP).coerceIn(0f, 1f)
+        val local = ((arrival() - start) / ROW_REVEAL_SPAN).coerceIn(0f, 1f)
+        val localFade = ((arrivalFade() - start) / ROW_REVEAL_SPAN).coerceIn(0f, 1f)
+        translationY = -(1f - local) * ROW_REVEAL_TRAVEL_DP.dp.toPx()
+        alpha = localFade
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +123,10 @@ fun SystemVolumePanel(
         }
     }
 
+    // A running count among the staggered rows only, in the order they're
+    // actually emitted below -- see [mixerRowReveal].
+    var staggerIndex = 0
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!applyVisibilityFilter || isSliderVisible(SystemSliderIds.Call)) {
             if (!showCallVolumeAlways && inCallMode || showCallVolumeAlways) {
@@ -83,6 +135,7 @@ fun SystemVolumePanel(
                     icon = Icons.Default.PhoneInTalk,
                     name = stringResource(R.string.stream_call),
                     audioManager = audioManager,
+                    modifier = Modifier.mixerRowReveal(staggerIndex++),
                     shadowColor = shadowColor,
                     footer = {
                         SliderVisibilityFooter(
@@ -129,6 +182,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.RingVolume,
                 name = stringResource(R.string.stream_ring),
                 audioManager = audioManager,
+                modifier = Modifier.mixerRowReveal(staggerIndex++),
                 shadowColor = shadowColor,
                 footer = {
                     RingFooter(
@@ -150,6 +204,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.Alarm,
                 name = stringResource(R.string.stream_alarm),
                 audioManager = audioManager,
+                modifier = Modifier.mixerRowReveal(staggerIndex++),
                 shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(
@@ -170,6 +225,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.NotificationsNone,
                 name = stringResource(R.string.stream_notification),
                 audioManager = audioManager,
+                modifier = Modifier.mixerRowReveal(staggerIndex++),
                 shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(

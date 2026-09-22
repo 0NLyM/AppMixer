@@ -1485,6 +1485,41 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-22 — 1.0.68
+
+- **The compact panel turns into the mixer instead of just scaling into
+  it.** Growing out of the vertical bar, the panel turns 90° clockwise as
+  it moves into the media row's own position, then straightens back out as
+  it finishes becoming the mixer -- a vertical strip lying down to read as
+  a row, rather than being squashed sideways into one. Growing out of the
+  disc, the panel's own corners relax from a full circle down to the
+  mixer's configured radius over the same stretch -- a knob uncurling
+  rather than a circle being stretched into a rectangle. The horizontal
+  bar already matches the row's own orientation, so it keeps travelling
+  straight through with neither flourish.
+- **The mixer's own rows arrive a scaletta.** Call (when shown), Ring, Alarm
+  and Notification settle in from just behind the row above them, each a
+  later slice of the same arrival the panel's own morph already rides --
+  never a spring of their own. The media row itself is exempt: it's the
+  panel becoming the mixer, already carrying its own crossfade from the
+  compact popup, so it doesn't also get counted as one of the rows unfolding
+  underneath it. Reversed on the way out for free, off the same slices: the
+  bottom row tucks away first, working back up to the one the panel folds
+  back into. The ringer switch and Do Not Disturb button travel with the
+  Ring row's own reveal rather than staggering separately, since they're
+  its own footer, not rows of their own.
+- **Panel-level shadows get real room to bleed into.** A blurred halo
+  behind a bar or the mixer panel (PanelShadow) used to have nowhere to
+  spread past the panel's own edge -- the window was never bigger than the
+  panel itself, so the halo was cut off exactly where the panel ended. The
+  window now carries 20dp of invisible margin around the panel whenever
+  there's a halo to make room for (never for the disc, which paints its own
+  shadow inside its own ring and needs none of this), and a tap that lands
+  in that margin dismisses the popup just as a tap outside the window
+  always has. Without an offset the panel still hugs the screen edge and
+  the shadow on that side is still covered by the display -- that part was
+  never the bug.
+
 ## 2026-09-22 — 1.0.67
 
 - **The volume keys change the volume again.** A press showed the sliders

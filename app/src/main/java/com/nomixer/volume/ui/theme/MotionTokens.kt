@@ -38,6 +38,17 @@ import androidx.compose.ui.graphics.Color
  * | Edge panel reveal   | sheet on the edge     | (the same value)            | clip outline, derived -- not a spring |
  * | Centered panel      | sheet expanding in place | [Spatial.default]        | uniform scale, never from 0           |
  * | Mixer morph         | sheet changing shape  | [Spatial.default]           | translation + scale, matched geometry |
+ * | Mixer morph turn    | a bar turning face-up as it becomes a row -- | [Spatial.default] | rotationZ, 0->90->0 across   |
+ * |                     | vertical-bar origin only, riding the same |                | the same morph the translation and  |
+ * |                     | value as the morph above                |                    | scale above already ride            |
+ * | Mixer morph uncurl  | a disc's own roundness relaxing into the | [Spatial.default]  | the mixer panel's own corner        |
+ * |                     | mixer's flatter corners -- disc origin only |                | radius, disc-round down to the      |
+ * |                     |                       |                             | configured mixer radius              |
+ * | Mixer row reveal    | a row unfolding from behind the one above | [Spatial.defaultSoft] + | translateY (a few dp, settling |
+ * |                     | it, a later slice of the morph above | [Effects.default]       | up) + alpha. Ring's own row carries |
+ * |                     |                       |                             | its ringer and Do Not Disturb       |
+ * |                     |                       |                             | switches on the same slice, never a |
+ * |                     |                       |                             | separate one                        |
  * | Morph hand-over     | --                    | [Effects.default]           | alpha, on both faces at once -- the   |
  * |                     |                       |                             | compact panel's going as the mixer's  |
  * |                     |                       |                             | arrives, over the morph above         |
