@@ -196,10 +196,10 @@ fun VolumeDisc(
     noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT,
     /**
      * The small glyph above the reading. A composable slot rather than an
-     * [androidx.compose.ui.graphics.vector.ImageVector], so the caller can
-     * hand in the speaker whose own parts animate with the level (see
-     * [AnimatedSpeakerGlyph]) instead of a finished picture that could only
-     * ever be swapped for another finished picture.
+     * [androidx.compose.ui.graphics.vector.ImageVector], so the dial can be
+     * handed the app's one volume glyph (see [VolumeGlyph]) -- which knows
+     * about the output device and wears the mute bar -- rather than an icon
+     * fixed at the call site that knows about neither.
      */
     icon: (@Composable () -> Unit)? = null,
     label: String? = null,

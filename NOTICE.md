@@ -1485,6 +1485,42 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-22 — 1.0.66
+
+- **The mixer no longer opens already cut off by the screen.** A laterally
+  anchored disc deliberately sits half off the side of the display, and the
+  window it lives in is allowed past that edge. The morph took the disc's
+  rectangle as it literally is -- partly nowhere -- and started the mixer
+  there, so the panel's first frame was outside the display and it had to
+  travel in from a place it should never have been. The journey now starts
+  from the part of the panel the user can actually see.
+- **One volume glyph, and it is the speaker the ringer switch already
+  wore.** The hand-drawn speaker whose waves grew and retracted with the
+  level is gone: the mixer, the compact bar, the disc and the ringer switch
+  all draw the same Material speaker, at the same size, keeping both of its
+  waves at every level -- including at zero, where it simply wears the mute
+  bar. Dropping the waves as the volume fell was a second way of saying
+  what the bar beside it already said, and it made the icon change shape
+  for a reason the bar had covered. "Silenced" is a mark put on a speaker,
+  not a different speaker.
+- **Bluetooth everywhere there is a media level.** Compact bar, disc and
+  expanded mixer alike: with an audio device connected the speaker's place
+  is taken by the Bluetooth mark, which wears the same bar at zero. It used
+  to turn back into a speaker when silenced, which says the output device
+  changed when only the level did.
+- The glass flare is a hint rather than a sweep. It was thrown a third of
+  the way round the panel at twice its settled brightness, so the eye
+  followed the band travelling instead of noticing the glass catch
+  something. The throw is now a third of what it was and the flare a
+  fraction over its resting strength; the speed is unchanged.
+- The Atmosphere field no longer ticks as it stops. A spring stops once it
+  is within its visibility threshold and jumps the rest of the way, and a
+  default one percent is nothing on most properties -- but this value gets
+  multiplied up before it is drawn: one percent of the field's whole turn
+  is a degree, and one percent of the fourteen grain fields it dissolves
+  through is a seventh of a field. It runs all the way down to rest now,
+  which costs a few frames nobody can see.
+
 ## 2026-09-22 — 1.0.65
 
 - **The disc's ring arrives whole.** It used to turn into place -- a

@@ -158,22 +158,28 @@ private const val EDGE_LIGHT_ALPHA = 0.55f
 
 /**
  * How far round the panel the reflection is thrown before it settles on the
- * angle the user actually chose. Wide enough that the lit band visibly
- * travels across the face rather than merely tilting.
+ * angle the user actually chose.
+ *
+ * Deliberately narrow. At the wide end of this the lit band crossed most
+ * of the face on its way home, which is a light being *swung* rather than
+ * a pane catching one: the eye follows the band instead of noticing the
+ * glass. Enough of a turn to see that the light arrived, and no more.
  */
-private const val SHIMMER_ARC_DEGREES = 84f
+private const val SHIMMER_ARC_DEGREES = 30f
 
 
 /**
  * How much brighter the beam is at the instant the panel starts arriving,
- * as a multiple of its settled strength.
+ * as a multiple of its settled strength. A hint of one, not a flash: past
+ * about a third over, the panel reads as having been lit *at* rather than
+ * as having caught something.
  *
  * This is the catch of the light as the sheet settles into place: brightest
  * when the sweep sets off, gone as it lands. It rides the very same slice
  * of the settling the sweep does, so the flare and the sweep are one event
  * rather than two.
  */
-private const val ENTER_PEAK_STRENGTH = 2.1f
+private const val ENTER_PEAK_STRENGTH = 1.3f
 
 /**
  * How coarsely the arrival's own sweep is quantised, in degrees, and the

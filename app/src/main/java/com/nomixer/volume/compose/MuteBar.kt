@@ -50,7 +50,7 @@ import com.nomixer.volume.ui.theme.MotionTokens
 
 /**
  * The glyph grid everything here is measured in -- the same 24-unit square
- * the Material icons are drawn in, and the one [AnimatedSpeakerGlyph] uses,
+ * the Material icons are drawn in,
  * so one geometry covers every glyph the bar can land on.
  */
 internal const val GLYPH_UNITS = 24f
@@ -151,7 +151,7 @@ fun Modifier.muteBar(extent: () -> Float, tint: Color): Modifier = this
 
 /**
  * The bar, in [GLYPH_UNITS] -- for callers already drawing in that square
- * ([AnimatedSpeakerGlyph] paints it as one of the speaker's own parts).
+ * already in that square.
  * Same rule as [muteBar]: whatever it is drawn into has to be its own
  * layer, or the knockout has nothing to punch through.
  */

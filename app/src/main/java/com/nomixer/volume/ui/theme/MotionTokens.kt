@@ -61,7 +61,6 @@ import androidx.compose.ui.graphics.Color
  * | Glyph swap          | two pictures, not one | [Spatial.fast] (scale)      | uniform scale, from and to the press's |
  * |                     | object changing state | + [Effects.default] (alpha) | own 0.89 floor -- never from 0        |
  * | Vibrate glyph       | a phone on a table    | [Spatial.shake]             | translationX                          |
- * | Speaker glyph       | a cone and the air    | [Spatial.fast]              | wave extent                           |
  * | Mute bar            | a stroke drawn across a glyph | [Spatial.default]   | bar extent, over the glyph's own      |
  * |                     |                       |                             | bounds -- never a fade. One mark for  |
  * |                     |                       |                             | every glyph that is crossed out: a    |
@@ -273,9 +272,21 @@ object MotionTokens {
          * One settling of the light, or one turn of the field. Roughly a
          * second and a half -- long enough to watch, short enough to be
          * over before the popup's own idle timeout is anywhere near.
+         *
+         * Not generic, unlike the tiers above: the single value it drives
+         * is the one every ambient effect reads (see [LocalAmbientEnter]),
+         * and a threshold this fine only means anything on a Float.
          */
-        fun <T> enter(): FiniteAnimationSpec<T> =
-            if (reducedMotion) snap() else spring(dampingRatio = 1f, stiffness = AMBIENT_STIFFNESS)
+        fun enter(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = 1f,
+                    stiffness = AMBIENT_STIFFNESS,
+                    visibilityThreshold = AMBIENT_THRESHOLD
+                )
+            }
 
         /**
          * Deliberately an order of magnitude below every other spring in
@@ -283,6 +294,22 @@ object MotionTokens {
          * the panel" actually costs once it is a number.
          */
         private const val AMBIENT_STIFFNESS = 26f
+
+        /**
+         * How close to home counts as home, and why it is so much finer
+         * than a spring's usual 0.01.
+         *
+         * A spring stops once it is within its visibility threshold and
+         * jumps the rest of the way. One percent of nothing is nothing on
+         * most properties -- but this value is multiplied up before it is
+         * drawn: a percent of the Atmosphere field's whole turn is a
+         * degree of rotation, and a percent of the fourteen grain fields
+         * it dissolves through is a seventh of a field. Both landed as a
+         * tick at the very end, on an effect whose entire job is to come
+         * quietly to rest. Running it down to home costs a few frames
+         * nobody can see.
+         */
+        private const val AMBIENT_THRESHOLD = 1f / 4096f
     }
 
     /**

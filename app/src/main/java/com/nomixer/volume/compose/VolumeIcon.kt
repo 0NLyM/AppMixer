@@ -10,9 +10,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BluetoothAudio
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
@@ -62,69 +61,37 @@ private fun AudioManager.hasBluetoothOutput(): Boolean =
     }
 
 /**
- * The glyph a volume control should show for its current state: muted beats
- * everything else, then a connected Bluetooth sink, then the plain speaker
- * icon otherwise. [volume] is read rather than a boolean so a caller with
- * the level already at hand doesn't need to compute mute itself.
+ * The volume glyph, and the only one in the app: the speaker every level
+ * control draws, or the Bluetooth mark in its place when media is routed
+ * to a sink -- with the app's one mute bar laid over whichever of the two
+ * it is when the level reaches zero.
  *
- * Kept for callers that genuinely need a static [ImageVector]. Anything
- * rendering the speaker on screen should use [VolumeGlyph] instead, which
- * animates the speaker's own parts rather than exchanging one finished
- * picture for another.
- */
-@Composable
-fun rememberVolumeIcon(audioManager: AudioManager, volume: Int): ImageVector {
-    val bluetoothActive = rememberBluetoothAudioActive(audioManager)
-    return when {
-        volume <= 0 -> Icons.AutoMirrored.Filled.VolumeOff
-        bluetoothActive -> Icons.Default.BluetoothAudio
-        else -> Icons.AutoMirrored.Filled.VolumeUp
-    }
-}
-
-/**
- * The volume glyph as it appears in the popup: a speaker whose waves and
- * mute bar animate on a body that never moves (see [AnimatedSpeakerGlyph]),
- * or the Bluetooth mark when media is routed to a sink.
+ * The speaker keeps both of its waves at every level, including nothing.
+ * A glyph that drops them as the volume falls is a second way of saying
+ * what the bar beside it already says, and it makes the icon change shape
+ * for a reason the bar has covered: "silenced" is a mark put on a speaker,
+ * not a different speaker. The waves are what makes it read as a speaker
+ * at a glance, and reading as a speaker is the icon's whole job.
  *
- * Bluetooth is the one case that still swaps, because it isn't a level at
- * all -- it's a different device -- so there is no shared body for one
- * state to become the other on. Everything that *is* a level (nothing,
- * quiet, loud) happens on the one speaker.
- *
- * It wears the app's one mute bar all the same. Whatever the glyph
- * underneath happens to be, "this is silenced" is one mark: a sink at zero
- * gets crossed out exactly like a speaker at zero, rather than quietly
- * turning back into a speaker to borrow its bar -- which is what used to
- * happen, and which said the output device had changed when only the level
- * had.
+ * Bluetooth takes the speaker's place rather than sitting beside it,
+ * because it isn't a level -- it's where the sound is going. It wears the
+ * same bar at zero, for the same reason: the output device has not changed
+ * just because the level has.
  */
 @Composable
 fun VolumeGlyph(
     audioManager: AudioManager,
     volume: Int,
-    maxVolume: Int,
     contentDescription: String?,
     modifier: Modifier = Modifier,
     tint: Color = LocalContentColor.current
 ) {
     val bluetoothActive = rememberBluetoothAudioActive(audioManager)
 
-    if (bluetoothActive) {
-        AnimatedVolumeIcon(
-            icon = Icons.Default.BluetoothAudio,
-            contentDescription = contentDescription,
-            modifier = modifier.muteBar(rememberMuteBarExtent(barred = volume <= 0), tint),
-            tint = tint
-        )
-        return
-    }
-
-    AnimatedSpeakerGlyph(
-        level = if (maxVolume > 0) volume.toFloat() / maxVolume else 0f,
-        muted = volume <= 0,
-        modifier = modifier,
+    AnimatedVolumeIcon(
+        icon = if (bluetoothActive) Icons.Default.BluetoothAudio else Icons.Default.VolumeUp,
         contentDescription = contentDescription,
+        modifier = modifier.muteBar(rememberMuteBarExtent(barred = volume <= 0), tint),
         tint = tint
     )
 }

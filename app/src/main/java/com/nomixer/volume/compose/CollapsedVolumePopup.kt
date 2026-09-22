@@ -566,7 +566,6 @@ fun CollapsedVolumePopup(
                             VolumeGlyph(
                                 audioManager = audioManager,
                                 volume = volume,
-                                maxVolume = maxVolume.toInt(),
                                 contentDescription = stringResource(R.string.stream_media),
                                 modifier = Modifier
                                     .align(
@@ -659,7 +658,6 @@ fun CollapsedVolumePopup(
                             VolumeGlyph(
                                 audioManager = audioManager,
                                 volume = volume,
-                                maxVolume = maxVolume.toInt(),
                                 contentDescription = stringResource(R.string.stream_media),
                                 modifier = Modifier
                                     .align(
@@ -738,7 +736,6 @@ fun CollapsedVolumePopup(
                                 VolumeGlyph(
                                     audioManager = audioManager,
                                     volume = volume,
-                                    maxVolume = maxVolume.toInt(),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize()
                                 )

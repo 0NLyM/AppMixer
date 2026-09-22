@@ -33,8 +33,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.RingVolume
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
@@ -43,6 +43,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -662,10 +663,14 @@ private fun CollapsedPopupPreviewContent(
                                 )
                             }
                             if (showIcon) {
-                                AnimatedSpeakerGlyph(
-                                    level = previewFraction,
-                                    muted = previewFraction <= 0f,
+                                Icon(
+                                    imageVector = Icons.Default.VolumeUp,
+                                    contentDescription = null,
                                     modifier = Modifier
+                                        .muteBar(
+                                            rememberMuteBarExtent(previewFraction <= 0f),
+                                            LocalContentColor.current
+                                        )
                                         .align(
                                             if (preferences.centeredContent == PopupCenterContent.Icon) {
                                                 Alignment.Center
@@ -720,10 +725,14 @@ private fun CollapsedPopupPreviewContent(
                                 .padding(horizontal = (14 * scale).dp)
                         ) {
                             if (showIcon) {
-                                AnimatedSpeakerGlyph(
-                                    level = previewFraction,
-                                    muted = previewFraction <= 0f,
+                                Icon(
+                                    imageVector = Icons.Default.VolumeUp,
+                                    contentDescription = null,
                                     modifier = Modifier
+                                        .muteBar(
+                                            rememberMuteBarExtent(previewFraction <= 0f),
+                                            LocalContentColor.current
+                                        )
                                         .align(
                                             if (preferences.centeredContent == PopupCenterContent.Icon) {
                                                 Alignment.Center
@@ -824,10 +833,15 @@ private fun CollapsedPopupPreviewContent(
                     noiseAlpha = preferences.glassNoiseAlpha,
                     icon = if (showIcon) {
                         {
-                            AnimatedSpeakerGlyph(
-                                level = previewFraction,
-                                muted = previewFraction <= 0f,
-                                modifier = Modifier.fillMaxSize()
+                            Icon(
+                                imageVector = Icons.Default.VolumeUp,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .muteBar(
+                                        rememberMuteBarExtent(previewFraction <= 0f),
+                                        LocalContentColor.current
+                                    )
                             )
                         }
                     } else {
@@ -889,7 +903,7 @@ private fun ExpandedMixerPreview(preferences: UiPreferences) {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(
-                    0.7f to Icons.AutoMirrored.Filled.VolumeUp,
+                    0.7f to Icons.Default.VolumeUp,
                     0.45f to Icons.Default.RingVolume,
                     0.3f to Icons.Default.Alarm
                 ).forEach { (fraction, icon) ->

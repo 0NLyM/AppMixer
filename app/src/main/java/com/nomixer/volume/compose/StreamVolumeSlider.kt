@@ -239,7 +239,6 @@ fun StreamVolumeSlider(
                     VolumeGlyph(
                         audioManager = audioManager,
                         volume = volume,
-                        maxVolume = maxVolume.toInt(),
                         contentDescription = name,
                         modifier = Modifier.size(MixerGlyphSize),
                         tint = LocalContentColor.current

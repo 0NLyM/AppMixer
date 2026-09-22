@@ -1819,7 +1819,7 @@ class Service : AccessibilityService() {
      */
     private fun relocateForPlacement(expanded: Boolean) {
         val target = view ?: return
-        val from = viewBoundsOnScreen(target) ?: return
+        val from = visibleBoundsOnScreen(target) ?: return
 
         compactBounds = from
         // Hidden while it is moved, exactly as an expand hides it: the
@@ -1870,8 +1870,29 @@ class Service : AccessibilityService() {
         return Rect(at[0], at[1], at[0] + target.width, at[1] + target.height)
     }
 
+    /**
+     * The panel's rectangle as far as the *display* is concerned: its own
+     * bounds, cut down to the part of them that is actually on screen.
+     *
+     * A laterally anchored disc deliberately sits half off the side of the
+     * screen, and the window it lives in is allowed past the display's edge
+     * (FLAG_LAYOUT_NO_LIMITS). Starting a morph from that rectangle put the
+     * mixer's first frame where the disc really is -- which is partly
+     * nowhere -- so the panel opened already cut off by the screen and then
+     * had to travel in from a place it should never have been. The journey
+     * begins at the part the user can see instead.
+     */
+    private fun visibleBoundsOnScreen(target: View): Rect? {
+        val bounds = viewBoundsOnScreen(target) ?: return null
+        val display = windowManager.currentWindowMetrics.bounds
+        if (!bounds.intersect(display)) {
+            return null
+        }
+        return bounds.takeIf { it.width() > 0 && it.height() > 0 }
+    }
+
     private fun captureCompactBounds() {
-        compactBounds = view?.let { viewBoundsOnScreen(it) }
+        compactBounds = view?.let { visibleBoundsOnScreen(it) }
         mixerMorphOrigin = null
     }
 
