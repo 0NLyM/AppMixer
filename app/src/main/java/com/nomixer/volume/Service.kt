@@ -453,9 +453,24 @@ class Service : AccessibilityService() {
 
         fun startRepeatAdjustVolume(direction: Int) {
             repeatAdjustVolumeDirection = direction
-            if (view != null) {
-                adjustVolume()
-            }
+
+            // Unconditionally, and that is the whole point of this being
+            // here. It used to be guarded on the popup already existing --
+            // but [onKeyEvent] calls this *before* it calls showView, so on
+            // the first press after a dismissal the popup did not exist
+            // yet, the guard failed, and the only adjustment left was the
+            // auto-repeat half a second later. A normal tap releases the
+            // key long before that and cancels it (see
+            // [stopRepeatAdjustVolume]), so the press showed the sliders
+            // and changed nothing. And because this service consumes the
+            // key event, the platform did not apply it either: the volume
+            // simply did not move.
+            //
+            // There is nothing for a guard to protect against anyway. A
+            // volume key means change the volume; whether a panel happens
+            // to be on screen to draw the result is a separate question,
+            // and the answer to it is "it is being put there right now".
+            adjustVolume()
             postDelayed(repeatAdjustVolumeRunnable, AUTO_REPEAT_INITIAL_DELAY)
         }
 

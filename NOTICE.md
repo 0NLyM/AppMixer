@@ -1485,7 +1485,20 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
-## 2026-09-22 — 1.0.66
+## 2026-09-22 — 1.0.67
+
+- **The volume keys change the volume again.** A press showed the sliders
+  and left the level exactly where it was. `onKeyEvent` asks for the
+  adjustment *before* it puts the popup on screen, and the adjustment was
+  guarded on the popup already existing -- so on the first press after a
+  dismissal the guard failed and the only adjustment left was the
+  auto-repeat half a second later, which releasing the key cancels. A
+  normal tap therefore changed nothing, and because this service consumes
+  the key event the platform did not apply it either. The guard is gone:
+  there was nothing for it to protect against, since a volume key means
+  change the volume whether or not a panel happens to be on screen yet to
+  draw the result. (Not a regression from the recent motion work -- it has
+  been there since 1.0.56.)
 
 - **The mixer no longer opens already cut off by the screen.** A laterally
   anchored disc deliberately sits half off the side of the display, and the
