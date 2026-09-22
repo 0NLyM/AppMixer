@@ -1485,6 +1485,51 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-22 — 1.0.70
+
+- **The bar turns before the mixer exists, and its window turns with it.**
+  It used to lie down inside the mixer's own window -- which at that moment
+  is short, because its rows haven't unfolded yet -- so the turning
+  rectangle simply ran out through the sides of it. The turn now happens
+  while the compact bar is still the only thing on screen, and its own
+  window grows to exactly the rectangle the turning panel sweeps out. That
+  also removes the guess at the end of it: the mixer is handed the
+  rectangle the bar really ended up lying in instead of an estimate, which
+  is what made the hand-over between the two read as a step.
+- **The enter and exit are markedly slower.** The panel tier was tuned for
+  a button answering a finger; a whole mixer crossing the display on it was
+  over before anything inside it could be seen. The travelling springs have
+  their own stiffness now, about a third of what they were, and the turn is
+  slower still -- it is the whole of what there is to watch.
+- **The mixer is as wide as it used to be again.** 1.0.68's shadow margin
+  was ordinary padding, so it took its width out of the constraints the
+  panel laid itself out in. It adds room *around* the panel now without
+  taking any from it.
+- **Every row in the mixer cascades, the app ones included.** They were the
+  exception before, and it showed: the system rows changed the panel's
+  height under them every frame, each app row's own `animateItem` chased
+  those changes with a spring of its own, and the only thing that appeared
+  to move at all was a stack of app sliders sliding around over rows that
+  looked frozen. One value, one direction, top to bottom -- and rows unfold
+  downward from under the panel's closing edge rather than over the row
+  above them.
+- **The last of the snap toward the centre.** The window was pushed from a
+  collector watching the morph's value, and a snapshot flow emits on the
+  frame *after* the one that changed it -- and conflates, so it skipped
+  steps whenever a frame ran long. It is pushed from the animation's own
+  per-frame callback now, on the same frame as the layer it belongs to.
+- **The shadow has a width setting.** A slider in the popup's own section,
+  0 to 40dp, which sets both how far the halo reaches and how much room the
+  window carries for it. The disc's ring forms again on the way in, too:
+  the turn was removed when its glass backing was a sibling that couldn't
+  turn with it, and now that the glass is on the knob's face -- where a
+  circle looks the same at every angle -- there is nothing left to disagree
+  with it.
+- **Atmosphere's speckles are part of the field.** They were circles drawn
+  over the top, too few and too small, untouched by the grain. They are
+  marks inside the shader now: bigger, sparser, one to a cell, modulated by
+  the grain underneath them and turning and drifting with everything else.
+
 ## 2026-09-22 — 1.0.69
 
 - **The panel stops snapping into place at the end of its journey.** A

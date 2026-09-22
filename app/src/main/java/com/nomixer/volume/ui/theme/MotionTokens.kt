@@ -209,8 +209,8 @@ object MotionTokens {
                 snap()
             } else {
                 spring(
-                    dampingRatio = DEFAULT_DAMPING,
-                    stiffness = DEFAULT_STIFFNESS,
+                    dampingRatio = TRAVEL_DAMPING,
+                    stiffness = TRAVEL_STIFFNESS,
                     visibilityThreshold = TRAVEL_THRESHOLD
                 )
             }
@@ -226,14 +226,33 @@ object MotionTokens {
                 snap()
             } else {
                 spring(
-                    dampingRatio = SOFT_DAMPING,
-                    stiffness = SOFT_STIFFNESS,
+                    dampingRatio = TURN_DAMPING,
+                    stiffness = TURN_STIFFNESS,
                     visibilityThreshold = TRAVEL_THRESHOLD
                 )
             }
 
         /** See [travel]: a 0..1 that is drawn as hundreds of pixels needs a threshold to match. */
         private const val TRAVEL_THRESHOLD = 1f / 4096f
+
+        /**
+         * Softer and markedly slower than [default]'s own 300, and
+         * deliberately: these two carry a whole panel across the display
+         * and lay a bar down flat on the way. At the panel tier's own
+         * stiffness the entrance was over before the rows unfolding inside
+         * it could be seen at all -- the mixer simply existed, and the only
+         * thing anyone could watch was whatever happened to be slower.
+         *
+         * Damped just short of critical rather than at [default]'s 0.86:
+         * a small overshoot is momentum on something the size of a
+         * button, and a wobble on something the size of a panel.
+         */
+        private const val TRAVEL_DAMPING = 0.92f
+        private const val TRAVEL_STIFFNESS = 120f
+
+        /** The bar's own turn, slower still: it is the whole of what there is to watch. */
+        private const val TURN_DAMPING = 0.95f
+        private const val TURN_STIFFNESS = 90f
 
         /**
          * [fast]'s own constants as a value, for

@@ -316,6 +316,20 @@ data class UiPreferences(
     /** Same as [popupShowShadow], but the disc's own independent switch. */
     val discPopupShowShadow: Boolean = true,
     /**
+     * How far the panel's own shadow reaches past its edge, in dp -- the
+     * blur radius of the halo behind a bar or the expanded mixer (see
+     * `PanelShadow`), and with it how much invisible room the popup's
+     * window carries for that halo to bleed into.
+     *
+     * A wide shadow needs the window to be wider than the panel by roughly
+     * as much again, so this is not purely cosmetic: it is also why the
+     * window is the size it is. Ignored while [popupShowShadow] is off,
+     * where there is no halo at all.
+     */
+    val popupShadowWidth: Int = 12,
+    /** Same as [popupShadowWidth], for the disc's own independent shadow. */
+    val discPopupShadowWidth: Int = 12,
+    /**
      * Puts the volume value beside the ringer switch, in the disc's hollow
      * middle, instead of below it.
      */
@@ -622,3 +636,28 @@ private const val POPUP_SHADOW_ALPHA = 0.35f
  */
 fun UiPreferences.shadowAlpha(): Float =
     if (activeShowShadow()) POPUP_SHADOW_ALPHA else 0f
+
+/** The widest the shadow's own reach can be set to, in dp. */
+const val POPUP_SHADOW_WIDTH_MAX_DP = 40
+
+/**
+ * How far the panel's shadow reaches past its edge right now, in dp, for
+ * whichever style is active -- zero while the shadow is switched off, so a
+ * caller can use this alone to decide both how wide to blur and how much
+ * room to leave for it.
+ */
+fun UiPreferences.activeShadowWidth(): Int =
+    if (!activeShowShadow()) {
+        0
+    } else if (popupStyle == PopupStyle.Disc) {
+        discPopupShadowWidth
+    } else {
+        popupShadowWidth
+    }
+
+fun UiPreferences.withShadowWidth(value: Int): UiPreferences =
+    if (popupStyle == PopupStyle.Disc) {
+        copy(discPopupShadowWidth = value)
+    } else {
+        copy(popupShadowWidth = value)
+    }

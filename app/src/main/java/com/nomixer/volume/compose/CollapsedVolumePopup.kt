@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -59,6 +60,7 @@ import com.nomixer.volume.data.activeBackground
 import com.nomixer.volume.data.activeButtonCornerRadius
 import com.nomixer.volume.data.activeOffsetX
 import com.nomixer.volume.data.activeScale
+import com.nomixer.volume.data.activeShadowWidth
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
@@ -69,7 +71,11 @@ import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.LocalCompactTurn
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 private const val TAG = "NoMixer.CollapsedPopup"
 
@@ -84,14 +90,78 @@ private const val BUTTON_SIZE_DP = 48
 private const val COMPACT_TURN_DEGREES = 90f
 
 /**
- * How far [PanelShadow]'s own halo spreads past the panel's outer edge.
- * Internal rather than private: Service.kt's expanded mixer panel uses the
- * same radius for its own halo, so both panels' shadows read as the same
- * weight.
+ * The bar lying down about the ringer switch it hangs from, box and all.
+ *
+ * Two halves, and the first is the one that matters: the **box grows with
+ * the turn**, to exactly the rectangle the turning panel sweeps out. The
+ * popup's window is only ever as big as this composition measures to, so
+ * without that the bar rotated straight out through the side of its own
+ * window and was cut off. Growing it also means that when the turn
+ * finishes, the window *is* the lying-down bar's own rectangle -- which is
+ * what the mixer is then handed to grow out of, instead of a guess.
+ *
+ * The second half is the rotation itself, about [pivotFromTop] down the
+ * panel's own centre line. It reads [turn] in the draw phase and the box
+ * reads it in the layout phase, so a frame of the turn costs a relayout of
+ * one window and no recomposition at all.
+ *
+ * The whole panel turns, glass included, and that is not the rotating pane
+ * CLAUDE.md rules out: the pane isn't turning *within* its panel as
+ * decoration -- the panel is a physical thing being laid down, and the
+ * sheet of glass in it travels with it the way its border and its shadow
+ * do.
  */
-internal val PANEL_SHADOW_BLUR_DP = 12.dp
+private fun Modifier.compactTurn(
+    turn: () -> Float,
+    direction: Float,
+    pivotFromTop: Dp
+): Modifier = this
+    .layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val turned = turn().coerceIn(0f, 1f)
+        if (turned <= 0f) {
+            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        } else {
+            val radians = Math.toRadians((turned * COMPACT_TURN_DEGREES * direction).toDouble())
+            val cosine = cos(radians).toFloat()
+            val sine = sin(radians).toFloat()
+            val pivotX = placeable.width / 2f
+            val pivotY = pivotFromTop.toPx()
 
-/** Same, for a single element's shadow (ringer button or slider) when the panel is hidden. */
+            var minX = Float.MAX_VALUE
+            var maxX = -Float.MAX_VALUE
+            var minY = Float.MAX_VALUE
+            var maxY = -Float.MAX_VALUE
+            for (cornerX in listOf(0f, placeable.width.toFloat())) {
+                for (cornerY in listOf(0f, placeable.height.toFloat())) {
+                    val dx = cornerX - pivotX
+                    val dy = cornerY - pivotY
+                    val x = pivotX + dx * cosine - dy * sine
+                    val y = pivotY + dx * sine + dy * cosine
+                    minX = min(minX, x)
+                    maxX = max(maxX, x)
+                    minY = min(minY, y)
+                    maxY = max(maxY, y)
+                }
+            }
+
+            layout((maxX - minX).roundToInt(), (maxY - minY).roundToInt()) {
+                placeable.place((-minX).roundToInt(), (-minY).roundToInt())
+            }
+        }
+    }
+    .graphicsLayer {
+        val turned = turn().coerceIn(0f, 1f)
+        if (turned > 0f && size.height > 0f) {
+            transformOrigin = TransformOrigin(
+                pivotFractionX = 0.5f,
+                pivotFractionY = (pivotFromTop.toPx() / size.height).coerceIn(0f, 1f)
+            )
+            rotationZ = turned * COMPACT_TURN_DEGREES * direction
+        }
+    }
+
+/** A single element's shadow (ringer button or slider) when the panel is hidden. */
 private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp
 
 /**
@@ -524,16 +594,11 @@ fun CollapsedVolumePopup(
     // it respectively, instead of through Surface's `modifier`.
     Box(
         modifier = if (turns) {
-            Modifier.graphicsLayer {
-                val turned = compactTurn().coerceIn(0f, 1f)
-                if (turned > 0f && size.height > 0f) {
-                    transformOrigin = TransformOrigin(
-                        pivotFractionX = 0.5f,
-                        pivotFractionY = (turnPivotFromTop.toPx() / size.height).coerceIn(0f, 1f)
-                    )
-                    rotationZ = turned * COMPACT_TURN_DEGREES * turnDirection
-                }
-            }
+            Modifier.compactTurn(
+                turn = compactTurn,
+                direction = turnDirection,
+                pivotFromTop = turnPivotFromTop
+            )
         } else {
             Modifier
         }
@@ -542,7 +607,7 @@ fun CollapsedVolumePopup(
             PanelShadow(
                 color = shadow,
                 shape = panelShape,
-                blurRadius = PANEL_SHADOW_BLUR_DP,
+                blurRadius = preferences.activeShadowWidth().dp,
                 modifier = Modifier.matchParentSize()
             )
         }

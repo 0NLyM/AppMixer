@@ -29,7 +29,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import com.nomixer.volume.R
 import com.nomixer.volume.system.NotificationManagerProxy
@@ -49,34 +48,48 @@ private fun isCallMode(mode: Int): Boolean {
     return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
 }
 
-/** Where in the arrival a mixer row's own stagger window starts -- see [mixerRowReveal]. */
-private const val ROW_REVEAL_BASE = 0.45f
+/** Where in the arrival the first mixer row's own stagger window starts. */
+private const val ROW_REVEAL_BASE = 0.30f
 
-/** How much later each successive staggered row starts than the one before it. */
-private const val ROW_REVEAL_STEP = 0.08f
+/** How much later each successive row starts than the one before it. */
+private const val ROW_REVEAL_STEP = 0.07f
+
+/** How wide each row's own stagger window is, once it starts. */
+private const val ROW_REVEAL_SPAN = 0.34f
 
 /**
- * How wide each row's own stagger window is, once it starts.
+ * How many slots the system rows reserve at the head of the stagger, so
+ * the app rows below them can carry on counting from a fixed place.
  *
- * [ROW_REVEAL_BASE] plus the last row's own [ROW_REVEAL_STEP]s plus this
- * has to land on 1 or under, or the bottom row is still unfolding at the
- * moment the arrival it rides is already over -- four rows (call, ring,
- * alarm, notification) is the most there can be, and 0.45 + 3*0.08 + 0.3
- * is 0.99.
+ * Fixed rather than a running count of what is actually visible: the two
+ * lists are composed separately (the app list owns the lazy column; this
+ * panel is one item inside it), and a counter shared across that boundary
+ * would drift the first time one item recomposed without the other. A
+ * hidden row costs a small pause in the cascade, which is a much smaller
+ * price than a cascade that renumbers itself mid-animation.
  */
-private const val ROW_REVEAL_SPAN = 0.30f
+internal const val MIXER_SYSTEM_ROW_SLOTS = 4
 
 /**
- * A mixer row unfolding from behind the one above it, [index] slots into
- * the stagger -- see MotionTokens' "Mixer row reveal" row.
+ * A mixer row unfolding into place, [index] slots into the cascade -- see
+ * MotionTokens' "Mixer row reveal" row.
  *
- * Not the media row: that one is the panel itself, mid-morph, already
- * carrying its own crossfade from the compact popup (see Service.kt's own
- * `morphFade`) -- a second fade on top of that would be the same event
- * counted twice. [index] is a running count among the *staggered* rows in
- * the order they're actually emitted, not a fixed per-stream number,
- * because Call's own visibility is conditional: whichever row is first in
- * line gets slot 0, whatever stream it happens to be.
+ * The reveal is the row's own **laid-out height**, which is what makes the
+ * panel around it grow as the rows land and shrink as they leave: that is
+ * the only way its border can keep the gap it has at rest while they do.
+ * A transform would slide the row around inside a panel whose size never
+ * changed, and the border would sit still while the rows moved past it.
+ *
+ * Every row in the mixer takes part, the app rows included. They used to
+ * be the exception, and it showed: the system rows changed the panel's
+ * height under them every frame, their own `animateItem` chased each of
+ * those changes with a spring of its own, and the only thing anyone could
+ * see moving was a stack of app sliders sliding around over rows that
+ * looked frozen. Everything cascades now, on one value, in one direction.
+ *
+ * The media row is still exempt -- it is the panel itself, mid-morph,
+ * already carrying its own crossfade from the compact popup, and a second
+ * fade on top of that is the same event counted twice.
  *
  * One value each on [Spatial.defaultSoft][com.nomixer.volume.ui.theme.MotionTokens.Spatial.defaultSoft]
  * and [Effects.default][com.nomixer.volume.ui.theme.MotionTokens.Effects.default] would be two
@@ -87,33 +100,25 @@ private const val ROW_REVEAL_SPAN = 0.30f
  * below the arrival as it comes back down.
  */
 @Composable
-private fun Modifier.mixerRowReveal(index: Int): Modifier {
+internal fun Modifier.mixerRowReveal(index: Int): Modifier {
     val arrival = LocalArrival.current
     val arrivalFade = LocalArrivalFade.current
     val start = (ROW_REVEAL_BASE + index * ROW_REVEAL_STEP).coerceIn(0f, 1f)
 
     return this
-        // Behind the row above it, and behind the media row above all of
-        // them -- literally, rather than by clipping. The part of this row
-        // that hasn't unfolded yet is simply painted over by its
-        // neighbour, so nothing here has to cut anything, and no row's own
-        // shadow is lost to a clip that exists for an animation.
-        .zIndex(-(index + 1).toFloat())
-        // The reveal is the row's own **laid-out height**, not a transform.
-        // That is what makes the panel around it grow as the rows land and
-        // shrink as they leave, which is the only way its border can keep
-        // the gap it has at rest while they do -- a transform would slide
-        // the row inside a panel whose size never changed, and the border
-        // would sit still while the rows moved past it.
         .layout { measurable, constraints ->
             val placeable = measurable.measure(constraints)
             val revealed = ((arrival() - start) / ROW_REVEAL_SPAN).coerceIn(0f, 1f)
             val height = (placeable.height * revealed).roundToInt()
             layout(placeable.width, height) {
-                // Anchored to its own bottom edge, so it slides downward
-                // out from under the row above rather than growing in
-                // place from nothing.
-                placeable.place(0, height - placeable.height)
+                // Top-aligned, so what hasn't unfolded yet is the row's own
+                // bottom, tucked under the closing edge of the panel rather
+                // than sticking up over the row above it. Placing it the
+                // other way round put each row on top of its neighbour
+                // while it arrived, which is exactly the overlap this is
+                // supposed not to have. Nothing is clipped here either: the
+                // panel's own surface already ends where its border is.
+                placeable.place(0, 0)
             }
         }
         .graphicsLayer {
@@ -153,10 +158,6 @@ fun SystemVolumePanel(
         }
     }
 
-    // A running count among the staggered rows only, in the order they're
-    // actually emitted below -- see [mixerRowReveal].
-    var staggerIndex = 0
-
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!applyVisibilityFilter || isSliderVisible(SystemSliderIds.Call)) {
             if (!showCallVolumeAlways && inCallMode || showCallVolumeAlways) {
@@ -165,7 +166,7 @@ fun SystemVolumePanel(
                     icon = Icons.Default.PhoneInTalk,
                     name = stringResource(R.string.stream_call),
                     audioManager = audioManager,
-                    modifier = Modifier.mixerRowReveal(staggerIndex++),
+                    modifier = Modifier.mixerRowReveal(0),
                     shadowColor = shadowColor,
                     footer = {
                         SliderVisibilityFooter(
@@ -212,7 +213,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.RingVolume,
                 name = stringResource(R.string.stream_ring),
                 audioManager = audioManager,
-                modifier = Modifier.mixerRowReveal(staggerIndex++),
+                modifier = Modifier.mixerRowReveal(1),
                 shadowColor = shadowColor,
                 footer = {
                     RingFooter(
@@ -234,7 +235,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.Alarm,
                 name = stringResource(R.string.stream_alarm),
                 audioManager = audioManager,
-                modifier = Modifier.mixerRowReveal(staggerIndex++),
+                modifier = Modifier.mixerRowReveal(2),
                 shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(
@@ -255,7 +256,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.NotificationsNone,
                 name = stringResource(R.string.stream_notification),
                 audioManager = audioManager,
-                modifier = Modifier.mixerRowReveal(staggerIndex++),
+                modifier = Modifier.mixerRowReveal(3),
                 shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(

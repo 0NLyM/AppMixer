@@ -109,6 +109,9 @@ import com.nomixer.volume.data.activeOffsetX
 import com.nomixer.volume.data.activeOffsetY
 import com.nomixer.volume.data.activeOutlineColor
 import com.nomixer.volume.data.activeScale
+import com.nomixer.volume.data.activeShadowWidth
+import com.nomixer.volume.data.withShadowWidth
+import com.nomixer.volume.data.POPUP_SHADOW_WIDTH_MAX_DP
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
@@ -617,7 +620,7 @@ private fun CollapsedPopupPreviewContent(
                     PanelShadow(
                         color = shadow,
                         shape = shape,
-                        blurRadius = PANEL_SHADOW_BLUR_DP,
+                        blurRadius = preferences.activeShadowWidth().dp,
                         modifier = Modifier.matchParentSize()
                     )
                     PreviewPanelBackground(
@@ -694,7 +697,7 @@ private fun CollapsedPopupPreviewContent(
                     PanelShadow(
                         color = shadow,
                         shape = shape,
-                        blurRadius = PANEL_SHADOW_BLUR_DP,
+                        blurRadius = preferences.activeShadowWidth().dp,
                         modifier = Modifier.matchParentSize()
                     )
                     PreviewPanelBackground(
@@ -889,7 +892,7 @@ private fun ExpandedMixerPreview(preferences: UiPreferences) {
         PanelShadow(
             color = shadow,
             shape = shape,
-            blurRadius = PANEL_SHADOW_BLUR_DP,
+            blurRadius = preferences.activeShadowWidth().dp,
             modifier = Modifier.matchParentSize()
         )
         Box(
@@ -1468,6 +1471,25 @@ fun CustomizationScreen(
                     onUpdate { it.withShowShadow(checked) }
                 }
             )
+
+            AnimatedVisibility(
+                visible = preferences.activeShowShadow(),
+                enter = expandVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
+                    fadeIn(tween(MotionTokens.Screen.morphMillis)),
+                exit = shrinkVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
+                    fadeOut(tween(160))
+            ) {
+                SliderSetting(
+                    label = stringResource(R.string.shadow_width),
+                    valueLabel = "${preferences.activeShadowWidth()}dp",
+                    value = preferences.activeShadowWidth().toFloat(),
+                    valueRange = 0f..POPUP_SHADOW_WIDTH_MAX_DP.toFloat(),
+                    steps = POPUP_SHADOW_WIDTH_MAX_DP - 1,
+                    onValueChange = { value ->
+                        onUpdate { it.withShadowWidth(value.roundToInt()) }
+                    }
+                )
+            }
 
             AnimatedVisibility(
                 visible = preferences.popupStyle == PopupStyle.Disc,

@@ -96,6 +96,7 @@
     <string name="popup_content_description">What shows on the popup itself: the level, the icon, and the ringer switch.</string>
     <string name="show_ringer_button">Show ringer switch</string>
     <string name="show_shadow">Show shadow</string>
+    <string name="shadow_width">Shadow width</string>
     <string name="ringer_normal">Ring: on, tap for vibrate</string>
     <string name="ringer_vibrate">Vibrate, tap for silent</string>
     <string name="ringer_silent">Silent, tap for ring</string>

@@ -22,7 +22,6 @@ import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
 import com.nomixer.volume.ui.theme.LocalAmbientEnter
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -68,6 +67,7 @@ private const val ATMOSPHERE_SHADER_SRC = """
     uniform float grainScale;
     uniform float grainPhase;
     uniform float2 drift;
+    uniform float speckle;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
@@ -132,6 +132,25 @@ private const val ATMOSPHERE_SHADER_SRC = """
         float brightnessBase = 1.0 - 0.26 * grainIntensity;
         float brightnessRange = 0.48 * grainIntensity;
         color = color * (brightnessBase + grain * brightnessRange);
+
+        // Speckles: marks in the material rather than the material's own
+        // texture -- far bigger and far sparser than the grain cells, one
+        // to a cell and only in some cells at all. Drawn here, inside the
+        // field, precisely so they are *subject* to it: the grain under a
+        // speckle modulates it, and it turns and drifts with everything
+        // else instead of sitting on top as a layer of pasted-on circles.
+        float speckleSize = longest / 9.0;
+        float2 speckleCell = floor(turned / speckleSize);
+        float2 withinCell = turned / speckleSize - speckleCell;
+        float2 speckleAt = float2(hash(speckleCell + 3.1), hash(speckleCell + 7.7));
+        float speckleRadius = 0.14 + 0.30 * hash(speckleCell + 11.3);
+        float present = step(0.42, hash(speckleCell + 23.0));
+        float edge = length(withinCell - speckleAt);
+        float mark = present * (1.0 - smoothstep(speckleRadius * 0.30, speckleRadius, edge));
+        mark = mark * speckle * (0.40 + 0.60 * grain);
+        float tone = hash(speckleCell + 41.0) > 0.5 ? 1.0 : -1.0;
+        color = color * (1.0 + tone * mark * 0.42);
+
         return half4(color, 1.0);
     }
 """
@@ -158,97 +177,6 @@ private const val GRAIN_FIELDS_ON_ENTER = 14f
 /** How far off the panel's own center a field's center may be thrown. */
 private const val ATMOSPHERE_DRIFT_SPAN = 0.22f
 
-/**
- * How many speckles are thrown across a panel -- see
- * [Modifier.atmosphereSpeckle]. Enough to read as a scattering rather
- * than as a handful of dots, few enough that drawing them is a rounding
- * error next to the shader underneath.
- */
-private const val SPECKLE_COUNT = 90
-
-/**
- * The smallest and largest a speckle gets, as a fraction of the panel's
- * shorter side -- small enough that the biggest still reads as a fleck of
- * something rather than a blob of paint.
- */
-private const val SPECKLE_MIN_RADIUS = 0.004f
-private const val SPECKLE_MAX_RADIUS = 0.018f
-
-/** The faintest and strongest a speckle is laid down at. */
-private const val SPECKLE_MIN_ALPHA = 0.05f
-private const val SPECKLE_MAX_ALPHA = 0.18f
-
-/**
- * How far a speckle drifts in from, as a fraction of the panel's shorter
- * side, before it lands on the spot the dice picked for it.
- */
-private const val SPECKLE_TRAVEL = 0.06f
-
-/**
- * A scattering of grainy speckles over whatever Atmosphere has already
- * painted -- the dust and flecks a real surface has, on top of the field
- * rather than inside it.
- *
- * Its own layer rather than more uniforms on the shader below, and
- * deliberately: the field is a continuous wash whose whole texture comes
- * from one hash per pixel, and speckles are discrete things with sizes and
- * places. Trying to get both out of the same shader is how a field ends up
- * looking like noise rather than like a surface.
- *
- * Half of them light and half dark, chosen per speckle from its own die
- * roll, so the scattering reads as grain over *any* field underneath --
- * all-white flecks vanish on a pale painting and all-black ones on a dark
- * one, and Atmosphere takes its colours from whatever app is behind the
- * popup, so it is never the same painting twice.
- *
- * element:  the speckles on the field.
- * model:    dust settling onto a surface that is already there.
- * token:    [MotionTokens.Ambient.enter], through [LocalAmbientEnter] --
- *           the same value the field itself settles on, so the two are one
- *           surface arriving rather than two effects with two clocks.
- * property: alpha, and a short drift in to the spot each one lands on.
- *           Enter-only and frozen after, like everything else on this
- *           token: no loop, and nothing to run backwards on the way out.
- */
-@Composable
-private fun Modifier.atmosphereSpeckle(panelAlpha: Float): Modifier {
-    val settling = LocalAmbientEnter.current
-
-    // Four dice per speckle -- where it lands (two), how big it is, and
-    // how hard it is laid down -- rolled once per appearance, so the same
-    // panel over the same app is never quite the same surface twice.
-    val seed = remember { List(SPECKLE_COUNT * 4) { Random.nextFloat() } }
-
-    return this.drawBehind {
-        val settled = settling().coerceIn(0f, 1f)
-        if (settled <= 0f || panelAlpha <= 0f) {
-            return@drawBehind
-        }
-
-        val shorter = min(size.width, size.height)
-        val away = 1f - settled
-
-        for (index in 0 until SPECKLE_COUNT) {
-            val atX = seed[index * 4]
-            val atY = seed[index * 4 + 1]
-            val spread = seed[index * 4 + 2]
-            val weight = seed[index * 4 + 3]
-
-            val radius = shorter * (SPECKLE_MIN_RADIUS + (SPECKLE_MAX_RADIUS - SPECKLE_MIN_RADIUS) * spread)
-            val alpha = (SPECKLE_MIN_ALPHA + (SPECKLE_MAX_ALPHA - SPECKLE_MIN_ALPHA) * weight) *
-                settled * panelAlpha
-
-            drawCircle(
-                color = (if (weight > 0.5f) Color.White else Color.Black).copy(alpha = alpha),
-                radius = radius,
-                center = Offset(
-                    x = atX * size.width + (weight - 0.5f) * shorter * SPECKLE_TRAVEL * away,
-                    y = atY * size.height + (spread - 0.5f) * shorter * SPECKLE_TRAVEL * away
-                )
-            )
-        }
-    }
-}
 
 /**
  * The radius of the arc the field's center travels along as the panel
@@ -317,7 +245,8 @@ private fun DrawScope.atmosphereBrush(
     grainSize: Float,
     grainPhase: Float = 0f,
     driftX: Float = 0f,
-    driftY: Float = 0f
+    driftY: Float = 0f,
+    speckle: Float = 1f
 ): Brush? {
     val shader = atmosphereShaderOrNull() ?: return null
     return try {
@@ -330,6 +259,7 @@ private fun DrawScope.atmosphereBrush(
         shader.setFloatUniform("grainScale", grainScaleFor(grainSize))
         shader.setFloatUniform("grainPhase", grainPhase)
         shader.setFloatUniform("drift", driftX, driftY)
+        shader.setFloatUniform("speckle", speckle.coerceIn(0f, 1f))
         ShaderBrush(shader)
     } catch (e: Throwable) {
         Log.w("GlassScrim", "Atmosphere shader failed to update", e)
@@ -440,6 +370,10 @@ fun AtmosphereBackground(
 ) {
     val motion = rememberAtmosphereMotion()
 
+    // The speckles arrive with the field they are in -- same ambient
+    // spring, read in the draw phase like everything else here.
+    val settling = LocalAmbientEnter.current
+
     Box(
         modifier
             .clip(shape)
@@ -452,7 +386,8 @@ fun AtmosphereBackground(
                     grainSize,
                     motion.grainPhase(),
                     motion.driftX(),
-                    motion.driftY()
+                    motion.driftY(),
+                    settling()
                 )
                 if (brush != null) {
                     drawRect(brush, alpha = baseColor.alpha)
@@ -460,9 +395,6 @@ fun AtmosphereBackground(
                     drawRect(baseColor)
                 }
             }
-            // After the field, so it lands on top of it: chained draw
-            // modifiers paint in the order they are written.
-            .atmosphereSpeckle(panelAlpha = baseColor.alpha)
     )
 }
 

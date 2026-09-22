@@ -36,6 +36,7 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
+import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
@@ -43,6 +44,13 @@ import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+
+/**
+ * How far round the dial's face comes as the popup arrives -- see the
+ * Canvas's own comment below. Small: a knob being turned into place, not a
+ * radar sweep.
+ */
+private const val DISC_FORMATION_DEGREES = 26f
 
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
 private const val TICK_COUNT = 24
@@ -258,6 +266,9 @@ fun VolumeDisc(
     // so the hand appears without recomposing the disc.
     val arrivalFade = LocalArrivalFade.current
 
+    // The spatial half of the same arrival, for the face's own turn.
+    val arrival = LocalArrival.current
+
     // element:  the disc's fill, and the tick ring read off it.
     // model:    a knob, and the detent it settles into.
     // token:    MotionTokens.Spatial.tick.
@@ -362,6 +373,25 @@ fun VolumeDisc(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
+                // element:  the dial's own face forming.
+                // model:    a knob being turned into place.
+                // token:    MotionTokens.Spatial.travel, through
+                //           [LocalArrival] -- a phase of the arrival, not a
+                //           spring of its own.
+                // property: rotationZ, anticlockwise, settling on 0.
+                //
+                // This came back when the background effects moved off the
+                // ring: the turn was removed because the ring's glass
+                // backing was a sibling composable that could not turn with
+                // it, so for the whole entrance a still sheet sat under a
+                // rotating arc and the two visibly came apart. The ring is
+                // nothing but this Canvas now -- the glass and the grain
+                // are on the knob's own face, and a circle looks the same
+                // at every angle -- so there is nothing left to disagree
+                // with it.
+                .graphicsLayer {
+                    rotationZ = -DISC_FORMATION_DEGREES * (1f - arrival()).coerceIn(0f, 1f)
+                }
                 .pointerInput(range) {
                     // Measured from where the ring actually is when the
                     // touch lands, so a knob caught while it is still
