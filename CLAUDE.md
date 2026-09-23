@@ -74,7 +74,9 @@ flash, and a colour that overshoots is a frame of a colour nobody chose.
   glass beam run once on `Ambient.enter` and freeze; everything else is a
   phase of the arrival.
 - Rotating or scaling the glass pane. Glass is a still sheet; only the
-  light on it moves.
+  light on it moves. (One exception, asked for explicitly: the disc turns
+  slightly as a whole on its way in and out, knob face included -- it is
+  one object and moves as one.)
 - Animating the Atmosphere *container*. Only the field inside it turns.
 
 ### Reduced motion
@@ -136,13 +138,16 @@ animation. That keeps every part of the arrival on one curve, and makes
 every exit the entrance backwards for free.
 
 The mixer opening is not an arrival -- the panel is already on screen,
-changing shape -- and it has its own two phases, chained so the second
-starts before the first has come to rest (see `OverlayContent` in
-`Service.kt`): the panel travels to the media row (`Spatial.turn`), then
-opens into the mixer (`Spatial.travel`). The mixer's rows are the one
-deliberate exception to "one spring": each row is its own object on its own
-`Spatial.cascade` spring, started `MotionTokens.Cascade` later than the one
-above it (see `RowCascade.kt`). A cascade *is* a sequence.
+changing shape -- and it has its own two phases, one per axis, chained so
+the second starts before the first has come to rest (see `OverlayContent`
+in `Service.kt`): the panel is drawn out along the axis the user swiped
+(`Spatial.turn`), then across it to the mixer's full size
+(`Spatial.travel`). No rotation. Closing runs the phases the other way and
+shuts the panel completely into the screen edge the popup came from --
+never a fade. The mixer's rows are the one deliberate exception to "one
+spring": each row is its own object on its own `Spatial.cascade` spring,
+started `MotionTokens.Cascade` later than the one above it (see
+`RowCascade.kt`). A cascade *is* a sequence.
 
 ### One window, one panel
 
@@ -158,8 +163,11 @@ The compact popup and the mixer are **one panel** (`SharedPanel`): one
 shadow, one face, one rim, whose laid-out rectangle travels from the compact
 popup's to the mixer's (`OverlayStage.panelRect`). Their contents take turns
 inside it. Every destination -- the compact popup's rectangle, the mixer's
-(centred on the display, from the display's own size), the media row's -- is
-computed before anything moves, in `OverlayGeometry.kt`.
+(centred on the display, from the display's own size), the edge a closing
+mixer shuts into -- is
+computed before anything moves, in `OverlayGeometry.kt`. The mixer is as
+wide as the platform makes a window that wraps its content
+(`config_prefDialogWidth`) -- the width it always had.
 
 ## Building
 

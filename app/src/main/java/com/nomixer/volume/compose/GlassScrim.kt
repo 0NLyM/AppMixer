@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
-import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.ui.theme.LocalAmbientEnter
 import kotlin.math.abs
 import kotlin.math.cos
@@ -59,61 +58,42 @@ import kotlin.math.sin
  *    everywhere, so nothing about the tint alone depends on what's behind
  *    it.
  * 2. The beam itself ([glassBeamBrush]), white light added across the face.
- * 3. Sparse AGSL grain ([glassNoiseBrush]) -- scattered flecks with real
- *    empty space between them, the way dust actually sits on real glass,
- *    rather than a texture covering every pixel.
+ * 3. Fine AGSL grain ([glassNoiseBrush]) -- a dense lattice of evenly
+ *    spaced dots with clear glass between them, at the opacity of the noise
+ *    colour the user picked and nothing else.
  * 4. All of the above, optionally run through a real blur
- *    ([GlassBackground]'s own `blurRadius`) -- the sparse flecks are what
- *    actually gives that blur something to visibly melt; blurring an
- *    already-even wash barely changes it at all.
+ *    ([GlassBackground]'s own `blurRadius`) -- the grain is what gives that
+ *    blur something to visibly melt; blurring an even wash changes nothing.
  * 5. The same beam again along the shape's own edge ([glassEdgeLightBrush]),
  *    brightest exactly where the face's lit band reaches the rim.
  */
 private const val NOISE_SHADER_SRC = """
-    uniform float2 resolution;
-    uniform float3 noiseColor;
-    uniform float noiseAlphaScale;
+    uniform float4 noiseColor;
+    uniform float pitch;
+    uniform float radius;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
     }
 
     half4 main(float2 fragCoord) {
-        // Coarse cells, not per-pixel noise: single-pixel-frequency grain
-        // averages away almost entirely under even the smallest real blur
-        // radius. Cells a few dp wide give the slider's whole range
-        // something real to melt, from crisp scattered flecks at the low
-        // end to a soft creamy haze at the top.
-        float2 cell = floor(fragCoord / 22.0);
-
-        // Most cells carry no fleck at all -- real empty space, not a
-        // faint tint -- so the tint/beam underneath still reads cleanly
-        // through the gaps instead of the whole sheet looking like an
-        // evenly noisy wall of pixels.
-        float density = hash(cell + 71.3);
-        if (density > 0.18) {
-            return half4(noiseColor, 0.0);
-        }
-
-        // A small round dot, jittered off the cell's own center, rather
-        // than filling the whole cell -- reads as an individual grain of
-        // dust, not a solid tile.
-        float2 cellCenter = (cell + 0.5) * 22.0;
-        float2 jitter = float2(hash(cell + 5.1), hash(cell + 9.7)) - 0.5;
-        float2 dotCenter = cellCenter + jitter * 14.0;
+        // A fine, regular lattice: one dot at the middle of every cell, every
+        // dot the same distance from its neighbours, and clear glass between
+        // them -- the tint and whatever is behind it read straight through
+        // the gaps.
+        float2 cell = floor(fragCoord / pitch);
+        float2 dotCenter = (cell + 0.5) * pitch;
         float dist = length(fragCoord - dotCenter);
-        float radius = 3.0 + hash(cell + 3.3) * 4.0;
-        float coverage = 1.0 - smoothstep(radius - 1.5, radius, dist);
+        float coverage = 1.0 - smoothstep(radius - 0.6, radius + 0.4, dist);
 
-        // Even across the whole sheet on purpose: this used to carry its own
-        // top-left-to-bottom-right sheen, a second light direction that had
-        // nothing to do with the beam and quietly worked against it.
-        // noiseAlphaScale is the dedicated transparency slider's own
-        // multiplier -- 0 removes the layer, 1 keeps each fleck's own
-        // brightness at full strength.
-        float brightness = 0.35 + hash(cell + 1.9) * 0.65;
-        float a = coverage * brightness * noiseAlphaScale;
-        return half4(noiseColor, a);
+        // A little variation in each dot's strength, so the lattice reads
+        // as grain rather than as a printed screen.
+        float grain = 0.72 + 0.28 * hash(cell);
+
+        // The dots' own opacity is the colour's own alpha, and nothing else:
+        // not the panel's tint, not a second slider.
+        float a = coverage * grain * noiseColor.a;
+        return half4(noiseColor.rgb * a, a);
     }
 """
 
@@ -312,35 +292,40 @@ fun glassEdgeLightBrush(
     stops = beamStops(lightWidth)
 )
 
+/**
+ * The grain's colour when the user hasn't picked one: white, at a strength
+ * that shows as texture rather than as a haze over the tint.
+ */
+val GLASS_NOISE_COLOR_DEFAULT = Color.White.copy(alpha = 0.32f)
+
+/** The noise colour to paint with: the user's own, alpha included, or [GLASS_NOISE_COLOR_DEFAULT]. */
+fun glassNoiseColorOf(argb: Int?): Color = argb?.let { Color(it) } ?: GLASS_NOISE_COLOR_DEFAULT
+
+/** Distance between two grains, and how big each is, in dp. */
+private const val NOISE_PITCH_DP = 2.6f
+private const val NOISE_RADIUS_DP = 0.55f
+
 // Compiling AGSL is far too expensive to redo on every frame of a volume
 // drag, so the last one is kept and handed back until something asks for a
-// different size, color or alpha (the shader's only inputs besides the
-// fixed per-cell hash). Single-window app, only ever touched from the UI
-// thread.
-private var noiseBrushKey: Triple<Size, Color, Float>? = null
+// different colour or density. Single-window app, only ever touched from the
+// UI thread.
+private var noiseBrushKey: Pair<Color, Float>? = null
 private var noiseBrush: Brush? = null
 private var noiseBrushBroken = false
 
 /**
- * The AGSL grain/sheen layer, sized to [size] -- draw it right on top of
- * the tint and [glassBeamBrush]. [color] and [alphaScale] are the dedicated
- * color picker and transparency slider for this layer alone (0 removes it
- * entirely, 1 keeps the shader's own per-cell alpha at full strength). Null
- * if [RuntimeShader] can't be built on this device (a bad driver, an AGSL
- * feature it doesn't actually support despite the API level) -- a caller
- * must treat that as "skip the grain", never let it take the base tint down
- * with it, which a construction failure reaching all the way up into a
- * shared draw call used to do.
+ * The AGSL grain layer -- draw it right on top of the tint and
+ * [glassBeamBrush]. [color] is the grain's own colour *and* opacity, from
+ * the colour picker; [density] is the display's, so the lattice is the same
+ * physical size on every screen. Null if [RuntimeShader] can't be built on
+ * this device -- a caller must treat that as "skip the grain", never let it
+ * take the base tint down with it.
  */
-fun glassNoiseBrush(
-    size: Size,
-    color: Color = Color.White,
-    alphaScale: Float = GLASS_NOISE_ALPHA_DEFAULT
-): Brush? {
-    if (noiseBrushBroken) {
+fun glassNoiseBrush(color: Color, density: Float): Brush? {
+    if (noiseBrushBroken || color.alpha <= 0f) {
         return null
     }
-    val key = Triple(size, color, alphaScale)
+    val key = color to density
     val cached = noiseBrush
     if (cached != null && noiseBrushKey == key) {
         return cached
@@ -349,9 +334,9 @@ fun glassNoiseBrush(
     return try {
         val brush = ShaderBrush(
             RuntimeShader(NOISE_SHADER_SRC).apply {
-                setFloatUniform("resolution", size.width, size.height)
-                setFloatUniform("noiseColor", color.red, color.green, color.blue)
-                setFloatUniform("noiseAlphaScale", alphaScale.coerceIn(0f, 1f))
+                setFloatUniform("noiseColor", color.red, color.green, color.blue, color.alpha)
+                setFloatUniform("pitch", NOISE_PITCH_DP * density)
+                setFloatUniform("radius", NOISE_RADIUS_DP * density)
             }
         )
         noiseBrushKey = key
@@ -393,8 +378,8 @@ fun GlassBackground(
     lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
     /** The beam's brightness for this frame -- see [rememberGlassBeam]. */
     lightStrength: Float = 1f,
-    noiseColor: Color = Color.White,
-    noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT
+    /** The grain's colour and, through its alpha, its opacity -- see [glassNoiseBrush]. */
+    noiseColor: Color = GLASS_NOISE_COLOR_DEFAULT
 ) {
     Box(
         modifier
@@ -427,140 +412,11 @@ fun GlassBackground(
                     // it -- that shared fate is exactly what made the whole
                     // panel invisible instead of just plainer than intended.
                     try {
-                        glassNoiseBrush(size, noiseColor, noiseAlpha)?.let { drawRect(it) }
+                        glassNoiseBrush(noiseColor, density)?.let { drawRect(it) }
                     } catch (e: Throwable) {
                         Log.w("GlassScrim", "Glass noise draw failed", e)
                     }
                 }
             }
-    )
-}
-
-/** The two-circle, punch-a-hole-in-the-middle path an annulus ring occupies. */
-private fun ringPath(center: Offset, ringRadius: Float, ringWidth: Float): Path {
-    val outerRadius = ringRadius + ringWidth / 2f
-    val innerRadius = (ringRadius - ringWidth / 2f).coerceAtLeast(0f)
-    return Path().apply {
-        addOval(
-            Rect(
-                center.x - outerRadius,
-                center.y - outerRadius,
-                center.x + outerRadius,
-                center.y + outerRadius
-            )
-        )
-        addOval(
-            Rect(
-                center.x - innerRadius,
-                center.y - innerRadius,
-                center.x + innerRadius,
-                center.y + innerRadius
-            )
-        )
-        // Two nested circles, the inner one punched back out again: the
-        // annulus the ring's own track occupies, and nothing else.
-        fillType = PathFillType.EvenOdd
-    }
-}
-
-/**
- * The annulus a disc's own ring track occupies, as a [Shape] -- lets
- * [GlassRingBackground] clip *and blur* it exactly the way [GlassBackground]
- * clips and blurs a bar panel's rounded rect, instead of painting straight
- * into VolumeDisc's shared Canvas the way this used to work. A plain Canvas
- * draw call has no graphics layer of its own for a [BlurEffect] to run on --
- * which is exactly why the Disc style's own Blur slider used to do nothing
- * at all, regardless of its value.
- */
-private class RingShape(
-    private val ringRadius: Float,
-    private val ringWidth: Float
-) : Shape {
-    override fun createOutline(
-        size: Size,
-        layoutDirection: LayoutDirection,
-        density: Density
-    ): Outline {
-        val center = Offset(size.width / 2f, size.height / 2f)
-        return Outline.Generic(ringPath(center, ringRadius, ringWidth))
-    }
-}
-
-/**
- * [GlassBackground]'s own tint, beam, grain and (now genuinely working)
- * blur, clipped to a ring instead of an arbitrary [Shape] -- the backing
- * behind [VolumeDisc]'s own track. A real sibling composable with a graphics
- * layer of its own, same reasoning as [GlassBackground] (see its own doc
- * comment): pair with [drawGlassRingRim] for the rim light, drawn straight
- * into VolumeDisc's Canvas since -- like [GlassBackground]'s own
- * [glassEdgeLightBrush] border -- it's a thin unblurred sibling on top,
- * never part of the blurred layer itself.
- */
-@Composable
-fun GlassRingBackground(
-    ringRadius: Float,
-    ringWidth: Float,
-    baseColor: Color,
-    modifier: Modifier = Modifier,
-    blurRadius: Dp = 0.dp,
-    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
-    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
-    /** The beam's brightness for this frame -- see [rememberGlassBeam]. */
-    lightStrength: Float = 1f,
-    noiseColor: Color = Color.White,
-    noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT
-) {
-    val shape = remember(ringRadius, ringWidth) { RingShape(ringRadius, ringWidth) }
-    Box(
-        modifier
-            .clip(shape)
-            .then(
-                if (blurRadius > 0.dp) {
-                    Modifier.graphicsLayer {
-                        renderEffect = BlurEffect(
-                            blurRadius.toPx(), blurRadius.toPx(), TileMode.Clamp
-                        )
-                    }
-                } else {
-                    Modifier
-                }
-            )
-            .drawWithCache {
-                val beam = glassBeamBrush(lightAngle, lightWidth, lightStrength)
-                onDrawBehind {
-                    drawRect(baseColor)
-                    drawRect(beam)
-                    try {
-                        glassNoiseBrush(size, noiseColor, noiseAlpha)?.let { drawRect(it) }
-                    } catch (e: Throwable) {
-                        Log.w("GlassScrim", "Glass ring noise draw failed", e)
-                    }
-                }
-            }
-    )
-}
-
-/**
- * Just the beam-lit rim -- [GlassRingBackground] now paints the ring's own
- * tint/beam/grain/blur as a separate composable sibling (see that
- * function's own doc comment for why), so this draws only the
- * [glassEdgeLightBrush] stroke, straight into [VolumeDisc]'s Canvas
- * alongside its other painted details, the same as it always did.
- */
-fun DrawScope.drawGlassRingRim(
-    center: Offset,
-    ringRadius: Float,
-    ringWidth: Float,
-    lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
-    lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
-    /** The beam's brightness for this frame -- see [rememberGlassBeam]. */
-    lightStrength: Float = 1f
-) {
-    // Stroking the same two-circle path an equivalent clip would use catches
-    // both the ring's outer and inner rim in one call.
-    drawPath(
-        ringPath(center, ringRadius, ringWidth),
-        brush = glassEdgeLightBrush(lightAngle, lightWidth, lightStrength),
-        style = Stroke(width = 1.5.dp.toPx())
     )
 }

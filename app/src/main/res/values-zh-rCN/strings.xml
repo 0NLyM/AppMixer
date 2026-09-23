@@ -68,7 +68,6 @@
     <string name="glass_light_width">光线宽度</string>
     <string name="glass_light_description">一束光穿过玻璃：光线落处会叠加白色高光，边缘也在同样的两处被照亮，因而看起来是同一束光。</string>
     <string name="glass_noise_color">噪点颜色</string>
-    <string name="glass_noise_alpha">噪点透明度</string>
     <string name="atmosphere_grain_intensity">颗粒强度</string>
     <string name="atmosphere_grain_size">颗粒大小</string>
     <string name="atmosphere_description">一片取自滑块下方应用的彩色颗粒，先短暂旋转，然后定格为滑块背后的固定纹理。与玻璃不同，氛围效果始终完全不透明。</string>

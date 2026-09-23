@@ -36,21 +36,29 @@ import androidx.compose.ui.graphics.Color
  * |---------------------|-----------------------|-----------------------------|---------------------------------------|
  * | Edge panel          | sheet on the edge     | [Spatial.travel]            | translation, edge axis only -- no scale. |
  * |                     |                       |                             | The disc too: it arrives as one object |
+ * | Disc arrival turn   | a knob settling into place | [Spatial.travel], via  | rotationZ of the whole disc, face      |
+ * |                     |                       | the arrival                 | included: forward into place on the   |
+ * |                     |                       |                             | way in, back the other way on the way |
+ * |                     |                       |                             | out. The one turning glass -- asked for |
  * | Centered panel      | sheet expanding in place | [Spatial.travel]         | uniform scale, never from 0           |
- * | Mixer open, phase 1 | the one panel taking the media row's place | [Spatial.turn] | its laid-out rectangle, compact  |
- * |                     |                       |                             | popup's to the media row's; corner    |
- * |                     |                       |                             | radius (disc only, quantised)         |
- * | Vertical bar turn   | a bar lying down as it travels | (phase 1, read)    | rotationZ of the bar's content, 0->90 |
- * |                     |                       |                             | clockwise about its own middle         |
- * | Mixer open, phase 2 | one sheet unfolding out of a single row | [Spatial.travel] | its laid-out rectangle, media   |
- * |                     |                       |                             | row's to the mixer's -- started before |
+ * | Mixer open, phase 1 | one sheet drawn out the way the finger went | [Spatial.turn] | its laid-out rectangle, along  |
+ * |                     |                       |                             | the swipe's axis; corner radius (disc  |
+ * |                     |                       |                             | only, quantised). No rotation          |
+ * | Mixer open, phase 2 | the same sheet unfolding to full size | [Spatial.travel] | its laid-out rectangle, across  |
+ * |                     |                       |                             | the swipe's axis -- started before     |
  * |                     |                       |                             | phase 1 has come to rest               |
+ * | Disc into the mixer | the knob coming forward as its panel grows | (phase 1 + 2, read) | uniform scale, up from 1  |
+ * |                     |                       |                             | only, while it fades                   |
+ * | Mixer close         | a drawer shutting into the side of the screen | [Spatial.travel] | its laid-out rectangle:   |
+ * |                     |                       | then [Spatial.turn]         | across first, then along, down to      |
+ * |                     |                       |                             | nothing at the edge it came from. No   |
+ * |                     |                       |                             | fade                                   |
  * | Mixer row           | a row sliding out from under its neighbour | [Spatial.cascade] + | translationY, one pitch, |
  * |                     |                       | [Effects.default], each row | + alpha. One row at a time, see       |
  * |                     |                       | started [Cascade] later     | [Cascade]. Ring's row carries its     |
  * |                     |                       |                             | ringer and Do Not Disturb switches    |
- * | Hand-over           | --                    | [Effects.default]           | alpha: the compact content out, the   |
- * |                     |                       |                             | media row in, in the same place       |
+ * | Hand-over           | --                    | [Effects.default]           | alpha: the compact popup's content    |
+ * |                     |                       |                             | fading out inside the growing panel   |
  * | Panel opacity       | --                    | [Effects.default]           | alpha (never a spatial spring)        |
  * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction: 1:1 under a finger,    |
  * |                     |                       |                             | magnetised to the nearest step on     |
@@ -211,12 +219,11 @@ object MotionTokens {
             }
 
         /**
-         * The first phase of the mixer opening: the one panel travelling
-         * from the compact popup to the media row, and a vertical bar lying
-         * down on the way. Softer and slower than [travel], because it is
-         * the part of the opening there is most to watch in -- and on the
-         * same fine threshold, since ninety degrees and a panel's journey
-         * are both multiplied up from 0..1.
+         * The first phase of the mixer opening -- the panel drawn out along
+         * the axis the user swiped -- and the last of its closing, shutting
+         * into the edge it came from. Softer and slower than [travel],
+         * because it is the part there is most to watch in -- and on the same
+         * fine threshold, since a panel's journey is multiplied up from 0..1.
          */
         fun turn(): FiniteAnimationSpec<Float> =
             if (reducedMotion) {

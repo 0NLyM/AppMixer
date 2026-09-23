@@ -51,16 +51,6 @@ const val GLASS_LIGHT_WIDTH_DEFAULT = 0.45f
 const val GLASS_DEFAULT_ALPHA = 0.42f
 
 /**
- * Bottom and top of the glass noise layer's own transparency slider (see
- * [UiPreferences.glassNoiseAlpha]) -- a multiplier over the per-cell alpha
- * the shader already varies, so 0 removes the grain layer entirely and 1 is
- * as strong as the shader's own noise ever gets.
- */
-const val GLASS_NOISE_ALPHA_MIN = 0f
-const val GLASS_NOISE_ALPHA_MAX = 1f
-const val GLASS_NOISE_ALPHA_DEFAULT = 1f
-
-/**
  * Bottom and top of the Atmosphere grain's own intensity slider (see
  * [UiPreferences.atmosphereGrainIntensity]) -- how strongly the grain shows.
  * Unlike Glass, an Atmosphere panel is always fully opaque (see
@@ -318,12 +308,20 @@ data class UiPreferences(
     /**
      * How dark the panel's own shadow is at its densest, 0 to 1 -- the
      * halo behind a bar, the expanded mixer and the disc's ring alike.
-     * Its reach is fixed (see `PANEL_SHADOW_BLUR_DP`); only its strength is
-     * the user's to choose. Ignored while [popupShowShadow] is off.
+     * Its reach is [popupShadowWidth]. Ignored while [popupShowShadow] is
+     * off.
      */
     val popupShadowOpacity: Float = POPUP_SHADOW_ALPHA_DEFAULT,
     /** Same as [popupShadowOpacity], for the disc's own independent shadow. */
     val discPopupShadowOpacity: Float = POPUP_SHADOW_ALPHA_DEFAULT,
+    /**
+     * How far the panel's own shadow reaches past its edge, in dp -- the
+     * blur radius of the halo behind a bar or the expanded mixer (see
+     * `PanelShadow`). Ignored while [popupShowShadow] is off.
+     */
+    val popupShadowWidth: Int = POPUP_SHADOW_WIDTH_DEFAULT_DP,
+    /** Same as [popupShadowWidth], for the disc's own independent shadow. */
+    val discPopupShadowWidth: Int = POPUP_SHADOW_WIDTH_DEFAULT_DP,
     /**
      * Puts the volume value beside the ringer switch, in the disc's hollow
      * middle, instead of below it.
@@ -378,20 +376,14 @@ data class UiPreferences(
      */
     val atmosphereGrainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT,
     /**
-     * The glass noise layer's own color -- `null` keeps it white, the
-     * shader's original color. Independent of every other color role here:
+     * The glass noise layer's own color, alpha included: its opacity is
+     * this color's own, set with the color picker, and nothing else -- not
+     * the panel's tint, not a separate slider. `null` keeps the default
+     * (see `GLASS_NOISE_COLOR_DEFAULT`). Independent of every other color role here:
      * this tints only the frosted grain sheen, never the tint underneath it
      * (see [glassAlpha] and [activeBackgroundColor]).
      */
     val glassNoiseColor: Int? = null,
-    /**
-     * How strong the glass noise layer is, 0 (removed entirely) to 1 (as
-     * strong as the shader's own per-cell alpha ever gets) -- a dedicated
-     * transparency control for that layer alone, independent of
-     * [glassBlurStrength] and the panel's own tint opacity ([glassAlpha]).
-     * See [GLASS_NOISE_ALPHA_MIN]/`_MAX`.
-     */
-    val glassNoiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT,
     /**
      * How the disc's tick ring shows the current level: `false` (default)
      * grows a landmark tick (with two shorter neighbours) at a fixed slot
@@ -648,4 +640,30 @@ fun UiPreferences.withShadowOpacity(value: Float): UiPreferences =
         copy(discPopupShadowOpacity = value)
     } else {
         copy(popupShadowOpacity = value)
+    }
+
+/** The shadow's reach when the user hasn't picked one, in dp. */
+const val POPUP_SHADOW_WIDTH_DEFAULT_DP = 12
+
+/** The widest the shadow's own reach can be set to, in dp. */
+const val POPUP_SHADOW_WIDTH_MAX_DP = 40
+
+/**
+ * How far the panel's shadow reaches past its edge right now, in dp, for
+ * whichever style is active -- zero while the shadow is switched off.
+ */
+fun UiPreferences.activeShadowWidth(): Int =
+    if (!activeShowShadow()) {
+        0
+    } else if (popupStyle == PopupStyle.Disc) {
+        discPopupShadowWidth
+    } else {
+        popupShadowWidth
+    }
+
+fun UiPreferences.withShadowWidth(value: Int): UiPreferences =
+    if (popupStyle == PopupStyle.Disc) {
+        copy(discPopupShadowWidth = value)
+    } else {
+        copy(popupShadowWidth = value)
     }

@@ -7,8 +7,6 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.nomixer.volume.ui.theme.MotionTokens
@@ -93,28 +91,12 @@ class RowCascade {
 val LocalRowCascade = compositionLocalOf<RowCascade?> { null }
 
 /**
- * How far the media row has taken over from the compact popup it grew out
- * of, 0 to 1, on the effects channel: the compact panel's own content fades
- * out as this row fades in, in the same place. 1 anywhere outside that
- * hand-over.
- */
-val LocalMediaHandover = compositionLocalOf<() -> Float> { { 1f } }
-
-/**
- * Reports where the media row is laid out, so the panel can travel to
- * exactly that rectangle before it opens into the mixer. A no-op outside the
- * overlay.
- */
-val LocalMediaRowAnchor = compositionLocalOf<(LayoutCoordinates) -> Unit> { {} }
-
-/**
  * One row of the mixer arriving as its own object, [index] places into the
  * cascade -- see [RowCascade] and the "Mixer row" row in MotionTokens' own
  * table.
  *
- * It slides one row's pitch out from under its neighbour nearer the media
- * row -- downward for the rows below it, upward for the call row above it
- * ([fromBelow]) -- and is drawn *under* that neighbour while it does, so it
+ * It slides one row's pitch down out from under the row above it (or up,
+ * [fromBelow]) and is drawn *under* that neighbour while it does, so it
  * comes out from behind it rather than across it. Layout is untouched: the
  * row takes its full height from the first frame, so nothing around it
  * reflows while it moves.
@@ -131,20 +113,4 @@ internal fun Modifier.cascadeRow(index: Int, fromBelow: Boolean = false): Modifi
             translationY = pitch * away * if (fromBelow) 1f else -1f
             alpha = row.fade.value.coerceIn(0f, 1f)
         }
-}
-
-/**
- * The media row: the one row the compact popup turns into, so it has no
- * cascade of its own -- it is already there, handed over from the compact
- * panel's content. Reports its own place (see [LocalMediaRowAnchor]) and
- * sits above every cascading row, which slide out from under it.
- */
-@Composable
-internal fun Modifier.mediaRow(): Modifier {
-    val handover = LocalMediaHandover.current
-    val anchor = LocalMediaRowAnchor.current
-    return this
-        .zIndex(1f)
-        .onPlaced(anchor)
-        .graphicsLayer { alpha = handover().coerceIn(0f, 1f) }
 }

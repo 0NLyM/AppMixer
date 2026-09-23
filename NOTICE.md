@@ -1485,6 +1485,30 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-23 — 1.0.72
+
+- **The mixer opens the way the finger went.** No turn any more: the panel
+  is drawn out along the axis of the opening swipe first, in its
+  direction, and then across it to the mixer's full size, while the rows
+  keep coming out one at a time exactly as before (the media row now
+  included).
+- **The disc grows as its panel opens round it.** The panel's face comes up
+  behind the disc from the start of the opening, and the disc travels with
+  it and grows as it fades, instead of shrinking to fit a thin row.
+- **The disc turns slightly as it arrives, and back as it leaves** -- the
+  whole disc, as one object.
+- **The mixer shuts instead of fading.** Its rows tuck back in, it closes
+  across, and then it slides shut all the way into the screen edge the
+  popup came out of, until nothing is left of it.
+- **The mixer is its original width again**: the width the platform gives
+  a window that wraps its content, which is what it always had before the
+  window stopped wrapping it.
+- **Glass grain is a fine, even lattice.** Dense, equally spaced dots with
+  clear glass between them. Its opacity is the noise colour's own, from the
+  colour picker -- the separate transparency slider is gone -- and it no
+  longer depends on the background colour's opacity.
+- **Shadow width is back**, next to shadow opacity.
+
 ## 2026-09-23 — 1.0.71
 
 - **One panel, in one window that never moves.** The compact popup and the

@@ -69,7 +69,6 @@
     <string name="glass_light_width">Light width</string>
     <string name="glass_light_description">One beam of light crossing the glass: white light is added where it lands and the rim catches it at the same two points, so both read as the same light.</string>
     <string name="glass_noise_color">Noise color</string>
-    <string name="glass_noise_alpha">Noise transparency</string>
     <string name="atmosphere_grain_intensity">Grain intensity</string>
     <string name="atmosphere_grain_size">Grain size</string>
     <string name="atmosphere_description">A field of colored grain, seeded from whatever app is underneath, that turns for a moment and settles into one fixed pattern behind the sliders. Always fully opaque, unlike Glass.</string>
@@ -96,6 +95,7 @@
     <string name="popup_content_description">What shows on the popup itself: the level, the icon, and the ringer switch.</string>
     <string name="show_ringer_button">Show ringer switch</string>
     <string name="show_shadow">Show shadow</string>
+    <string name="shadow_width">Shadow width</string>
     <string name="shadow_opacity">Shadow opacity</string>
     <string name="ringer_normal">Ring: on, tap for vibrate</string>
     <string name="ringer_vibrate">Vibrate, tap for silent</string>

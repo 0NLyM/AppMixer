@@ -46,18 +46,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.platform.LocalDensity
@@ -79,16 +75,14 @@ import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.AtmosphereBackground
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.GlassBackground
-import com.nomixer.volume.compose.LocalMediaHandover
-import com.nomixer.volume.compose.LocalMediaRowAnchor
 import com.nomixer.volume.compose.LocalRowCascade
-import com.nomixer.volume.compose.PANEL_SHADOW_BLUR_DP
 import com.nomixer.volume.compose.PanelShadow
 import com.nomixer.volume.compose.RowCascade
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.compose.compactPanelCornerRadius
 import com.nomixer.volume.compose.glassEdgeLightBrush
+import com.nomixer.volume.compose.glassNoiseColorOf
 import com.nomixer.volume.compose.rememberGlassBeam
 import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.PopupBackground
@@ -96,6 +90,7 @@ import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
 import com.nomixer.volume.data.activeAnchor
 import com.nomixer.volume.data.activeBackground
+import com.nomixer.volume.data.activeShadowWidth
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.data.shadowAlpha
@@ -107,14 +102,10 @@ import com.nomixer.volume.ui.theme.NoMixerTheme
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Objects
-import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 /**
  * How far past the **display's** own edge a compact panel starts, before
@@ -129,50 +120,49 @@ private val ENTER_TRAVEL_DP = 14.dp
 
 /**
  * How far under its final size a panel with no edge to come out of starts
- * (a centred popup), and how far under it the mixer ends as it leaves.
- * Small, and deliberately not zero: a panel scaled to nothing has no size
- * for its own spring to overshoot around, so it reads as conjured rather
- * than as opening out.
+ * (a centred popup). Small, and deliberately not zero: a panel scaled to
+ * nothing has no size for its own spring to overshoot around, so it reads
+ * as conjured rather than as opening out.
  */
 private const val CENTER_EXPAND_SQUASH = 0.08f
 
-/** The quarter turn a vertical bar makes on its way to lying as the media row lies. */
-private const val COMPACT_TURN_DEGREES = 90f
-
 /**
- * How far through its journey to the media row the compact popup is when
- * its own content starts handing over to that row's -- past halfway, so
- * the bar is seen turning and travelling before it changes into anything.
+ * How far the whole disc is turned back from where it rests as it arrives,
+ * in degrees -- it turns forward into place on the way in and back the
+ * other way on the way out. Slight: a knob settling, not a wheel spinning.
  */
-private const val HANDOVER_AT = 0.6f
+private const val DISC_ARRIVAL_TURN_DEGREES = 20f
 
 /**
- * How far through the same journey the panel is when it starts opening
- * into the mixer and the rows start coming out.
+ * How much bigger the disc may grow while the panel opens round it into the
+ * mixer, as a multiple of its own size. It grows with whichever way the
+ * panel is growing faster, up to this, and is gone by the time it gets there.
+ */
+private const val DISC_GROWTH_MAX = 1.35f
+
+/**
+ * How far along the gesture axis the panel has opened when its content
+ * starts handing over -- the bars' content fading out as the panel grows
+ * away from it.
+ */
+private const val HANDOVER_AT = 0.5f
+
+/**
+ * How far along the gesture axis the panel has opened when it starts
+ * opening across it too, and the rows start coming out.
  *
  * Not 1. Two springs one after the other, each starting from a standstill,
- * is exactly the pause this whole transition used to have in the middle of
- * it: the first comes to rest, and only then does the second begin. Started
- * while the first is still carrying the last of its speed, the two read as
- * one movement that turns a corner.
+ * is a pause in the middle of one movement: the first comes to rest, and
+ * only then does the second begin. Started while the first still carries
+ * the last of its speed, the two read as one movement that turns a corner.
  */
-private const val OPEN_AT = 0.82f
+private const val OPEN_AT = 0.8f
 
 /**
- * On the way out: how far the panel has closed back down to the media row
- * before the whole thing starts to fade and settle away.
+ * On the way out: how far the panel has closed across the gesture axis
+ * before it starts closing along it, into the edge it came out of.
  */
-private const val LEAVE_AT = 0.3f
-
-/**
- * The longest the expand waits for the mixer to report where its media row
- * is -- a hidden media row never does, and then the panel opens out of the
- * top of the mixer instead. Not a motion value: a timeout on a measurement.
- */
-private const val MEDIA_ROW_WAIT_MS = 250L
-
-/** How tall the panel is on its way through a mixer with no media row to travel to. */
-private const val FALLBACK_ROW_HEIGHT_DP = 88f
+private const val CLOSE_AT = 0.3f
 
 /**
  * How coarsely the disc's corners are rounded on their way to the mixer's --
@@ -186,36 +176,37 @@ private const val UNCURL_STEP_DP = 6f
  * Everything the overlay animates, and the geometry it animates between.
  *
  * **One panel.** The compact popup and the mixer it opens into are not two
- * surfaces handing over to one another any more: there is one panel -- one
- * shadow, one sheet of glass or grain, one rim -- whose rectangle travels
- * from the compact popup's own to the mixer's, with the compact popup's
- * content and the mixer's rows inside it taking turns. See [panelRect].
+ * surfaces handing over to one another: there is one panel -- one shadow,
+ * one sheet of glass or grain, one rim -- whose rectangle travels from the
+ * compact popup's own to the mixer's, with the compact popup's content and
+ * the mixer's rows inside it taking turns. See [panelRect].
  *
  * **One window, which never moves.** The overlay's window covers the whole
  * screen and stays exactly where it is (see [Service.createView]); every
- * frame of arriving, opening and leaving happens inside it. The old window
- * was only ever the size of the panel, so the panel could only change
- * shape by having the window resized and moved under it -- a round trip
- * through the window manager that always landed a frame early or a frame
- * late, and a window that had to be hidden while it was swapped for a
- * bigger one. Those were the jumps.
+ * frame of arriving, opening and leaving happens inside it.
  */
 @Stable
 private class OverlayStage {
-    /** The compact popup coming out of its edge, and everything leaving at the very end. */
+    /** The compact popup coming out of its edge, and going back into it. */
     val appear = Animatable(0f)
 
     /** [appear]'s own effects channel: the whole overlay's opacity. */
     val fade = Animatable(0f)
 
-    /** Phase one of opening: the compact panel travelling (and a vertical bar turning) to the media row. */
-    val toRow = Animatable(0f)
+    /** Opening, phase one: the panel growing along the axis the user swiped. */
+    val along = Animatable(0f)
 
-    /** Phase two: the panel opening out of the media row into the whole mixer. */
-    val toMixer = Animatable(0f)
+    /** Opening, phase two: the panel growing across it, to the whole mixer. */
+    val across = Animatable(0f)
 
-    /** The compact popup's content fading out as the media row's fades in, in the same place. */
+    /** The compact popup's content fading out inside the growing panel. */
     val handover = Animatable(0f)
+
+    /**
+     * The shared panel's own face coming up behind a disc, which paints no
+     * panel of its own: the panel grows round the disc as it opens.
+     */
+    val panelIn = Animatable(0f)
 
     /** The light on the glass and the Atmosphere field settling, once per appearance. */
     val settling = Animatable(0f)
@@ -226,39 +217,63 @@ private class OverlayStage {
     /** The compact popup's own natural size, as it last measured. */
     var compactSize by mutableStateOf(IntSize.Zero)
 
-    /** Where the media row sits inside the mixer, in the mixer's own px. */
-    var mediaRow by mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+    /** Whether the mixer has been laid out, so there is somewhere to open to. */
+    var mixerReady by mutableStateOf(false)
 
-    var mixerRoot: LayoutCoordinates? = null
-    var mediaCoordinates: LayoutCoordinates? = null
+    /**
+     * Whether the mixer is closing: its far end is then the edge of the
+     * screen the compact popup came out of, collapsed to nothing, rather than
+     * the compact popup itself -- the mixer closes into the edge; it does not
+     * turn back into the popup on the way.
+     */
+    var closing by mutableStateOf(false)
+
+    /** Whether the swipe that opens the mixer runs across the screen (true) or up and down. */
+    var gestureHorizontal = true
+
+    /** The screen edge the compact popup came out of -- where a closing mixer goes. */
+    var edge = ScreenEdge.None
 
     // Worked out in the layout pass each frame, and read back by the draw
     // phase of that same frame and by the window's touch region.
     var compactRect = IntRect.Zero
     var mixerRect: IntRect? = null
-    var rowRect: IntRect? = null
+    var frameWidth = 0
+    var frameHeight = 0
 
-    /** Works out [mediaRow] from whichever of the two ends was placed last. */
-    fun updateMediaRow() {
-        val root = mixerRoot ?: return
-        val media = mediaCoordinates ?: return
-        if (!root.isAttached || !media.isAttached) {
-            return
-        }
-        val box = root.localBoundingBoxOf(media, clipBounds = false)
-        if (box != mediaRow) {
-            mediaRow = box
+    /**
+     * Where a closing mixer ends: the compact popup's own band, collapsed
+     * onto the screen edge it came out of -- or onto its own middle, for a
+     * popup with no edge.
+     */
+    private fun closedRect(): androidx.compose.ui.geometry.Rect {
+        val c = compactRect
+        return when (edge) {
+            ScreenEdge.Left -> androidx.compose.ui.geometry.Rect(0f, c.top.toFloat(), 0f, c.bottom.toFloat())
+            ScreenEdge.Right -> androidx.compose.ui.geometry.Rect(
+                frameWidth.toFloat(), c.top.toFloat(), frameWidth.toFloat(), c.bottom.toFloat()
+            )
+            ScreenEdge.Top -> androidx.compose.ui.geometry.Rect(c.left.toFloat(), 0f, c.right.toFloat(), 0f)
+            ScreenEdge.Bottom -> androidx.compose.ui.geometry.Rect(
+                c.left.toFloat(), frameHeight.toFloat(), c.right.toFloat(), frameHeight.toFloat()
+            )
+            ScreenEdge.None -> {
+                val center = c.center
+                androidx.compose.ui.geometry.Rect(
+                    center.x.toFloat(), center.y.toFloat(), center.x.toFloat(), center.y.toFloat()
+                )
+            }
         }
     }
 
     /**
      * The panel's own rectangle this frame, in the window's px.
      *
-     * The compact popup's rectangle, travelling to the media row's on
-     * [toRow] and opening from there into the mixer's on [toMixer] -- the
-     * two phases chained, so that however far each has got, the other
-     * picks up from exactly where it is. Reads both springs, so any layout
-     * or draw that calls this follows them frame by frame.
+     * Each axis has its own phase: the axis the user swiped along grows on
+     * [along], and the other on [across] -- so the panel opens *in the
+     * direction of the gesture* first and only then out to the mixer's full
+     * size, and closes the other way round. Reads both springs, so any
+     * layout or draw that calls this follows them frame by frame.
      */
     fun panelRect(expanded: Boolean): androidx.compose.ui.geometry.Rect {
         val compact = compactRect.toRectF()
@@ -266,10 +281,21 @@ private class OverlayStage {
         if (!expanded || mixer == null) {
             return compact
         }
-        val row = (rowRect ?: mixer).toRectF()
-        val atRow = lerp(compact, row, toRow.value)
-        return lerp(atRow, mixer.toRectF(), toMixer.value)
+        val from = if (closing) closedRect() else compact
+        val to = mixer.toRectF()
+        val alongValue = along.value
+        val acrossValue = across.value
+        val horizontalT = if (gestureHorizontal) alongValue else acrossValue
+        val verticalT = if (gestureHorizontal) acrossValue else alongValue
+        return androidx.compose.ui.geometry.Rect(
+            lerp(from.left, to.left, horizontalT),
+            lerp(from.top, to.top, verticalT),
+            lerp(from.right, to.right, horizontalT),
+            lerp(from.bottom, to.bottom, verticalT)
+        )
     }
+
+    private fun lerp(from: Float, to: Float, t: Float) = from + (to - from) * t
 
     private fun IntRect.toRectF() = androidx.compose.ui.geometry.Rect(
         left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat()
@@ -303,7 +329,7 @@ private fun SharedPanel(
             PanelShadow(
                 color = shadowColor,
                 shape = shape,
-                blurRadius = PANEL_SHADOW_BLUR_DP,
+                blurRadius = preferences.activeShadowWidth().dp,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -314,8 +340,7 @@ private fun SharedPanel(
                 lightAngle = preferences.glassLightAngle,
                 lightWidth = preferences.glassLightWidth,
                 blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
-                noiseAlpha = preferences.glassNoiseAlpha,
+                noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                 modifier = Modifier.matchParentSize()
             )
             panelAtmosphere -> AtmosphereBackground(
@@ -374,7 +399,6 @@ private fun MixerGlassFace(
     lightWidth: Float,
     blurRadius: Dp,
     noiseColor: Color,
-    noiseAlpha: Float,
     modifier: Modifier = Modifier
 ) {
     val beam = rememberGlassBeam(lightAngle = lightAngle)
@@ -386,7 +410,6 @@ private fun MixerGlassFace(
         lightWidth = lightWidth,
         lightStrength = beam.strength,
         noiseColor = noiseColor,
-        noiseAlpha = noiseAlpha,
         modifier = modifier
     )
 }
@@ -698,25 +721,26 @@ class Service : AccessibilityService() {
      *
      * 1. **Arriving.** The compact popup slides out of the screen edge it
      *    hugs (or, with no edge, grows out of its own middle), as one
-     *    object -- panel, content and shadow together. The disc too.
-     * 2. **Opening, phase one.** The panel travels to exactly where the
-     *    mixer's media row will be, and takes that row's shape on the way.
-     *    A vertical bar turns a quarter clockwise as it goes, so it arrives
-     *    lying the way the row lies. Past halfway, the popup's own content
-     *    hands over to the media row's, in place.
+     *    object -- panel, content and shadow together. The disc also turns
+     *    slightly forward into place as it comes.
+     * 2. **Opening, phase one.** The panel grows along the axis the user
+     *    swiped, in the direction of the swipe, out to the mixer's extent on
+     *    that axis. No turn: the popup's own content simply gives way inside
+     *    it -- a bar fades out where it is; a disc travels with the panel
+     *    growing round it and grows itself as it fades.
      * 3. **Opening, phase two.** Before phase one has quite come to rest,
-     *    the panel opens out of that row into the whole mixer, and the
-     *    other rows come out from under it one at a time (see
-     *    [RowCascade]).
-     * 4. **Leaving.** The mixer's rows tuck back in, bottom first, the panel
-     *    closes back down to the media row, and the whole thing settles
-     *    away and fades. A compact popup simply goes back into its edge.
+     *    the panel grows across that axis to the mixer's full size, and the
+     *    rows come out one at a time (see [RowCascade]).
+     * 4. **Closing.** The rows tuck back in, bottom first; the panel closes
+     *    across, then along -- all the way, into the screen edge the popup
+     *    came out of, until there is nothing left of it. No fade. A compact
+     *    popup goes back into its edge (the disc turning back as it goes).
      *
      * Every destination is worked out before anything moves: the mixer's
-     * rectangle from the display's own size (see [mixerRect]), the media
-     * row's from where the mixer actually lays it out. The motion only ever
-     * travels between rectangles that are already known, which is why
-     * nothing here can arrive and then correct itself.
+     * rectangle from the display's own size (see [mixerRect]), the edge a
+     * closing mixer ends in from the compact popup's own rectangle. The
+     * motion only ever travels between rectangles that are already known,
+     * which is why nothing here can arrive and then correct itself.
      */
     @Composable
     private fun OverlayContent(preferences: UiPreferences) {
@@ -730,9 +754,13 @@ class Service : AccessibilityService() {
 
         val showBackground = preferences.activeShowBackground()
         val isDisc = preferences.popupStyle == PopupStyle.Disc
-        val turnsIntoRow = preferences.popupStyle == PopupStyle.VerticalBar
         val edge = preferences.activeAnchor().edge(frame?.rtl ?: false)
         val enterTravelPx = with(density) { ENTER_TRAVEL_DP.toPx() }
+        // The same axis the popup's own expand swipe runs along (see
+        // CollapsedVolumePopup's expandOnSwipe): sideways for the vertical
+        // bar and the disc, up and down for the horizontal bar.
+        stage.gestureHorizontal = preferences.popupStyle != PopupStyle.HorizontalBar
+        stage.edge = edge
 
         val panelColor by animateColorAsState(
             targetValue = if (!showBackground) {
@@ -763,23 +791,20 @@ class Service : AccessibilityService() {
         )
 
         // Whether the compact popup's own content has finished handing over
-        // to the media row and can be let go. Derived, so the whole overlay
-        // recomposes once when it flips rather than on every frame of the
-        // hand-over.
+        // and can be let go. Derived, so the whole overlay recomposes once
+        // when it flips rather than on every frame of the hand-over.
         val compactGone by remember {
             derivedStateOf { expanded && stage.handover.value >= 1f }
         }
 
-        // The panel's corners: the compact popup's own, then the mixer's.
-        // For the bars those are the same number and nothing changes; the
-        // disc's round panel relaxes into the mixer's corners on its way to
-        // the media row.
-        //
         // element:  the panel's corners.
         // model:    a disc's roundness relaxing into a sheet's corners.
-        // token:    MotionTokens.Spatial.turn -- the journey to the media
-        //           row itself, read rather than animated again.
+        // token:    MotionTokens.Spatial.turn -- phase one of the opening,
+        //           read rather than animated again.
         // property: corner radius, quantised (see [UNCURL_STEP_DP]).
+        //
+        // For the bars the two radii are the same number and nothing
+        // changes; the disc's round panel relaxes into the mixer's corners.
         val compactCorner = preferences.compactPanelCornerRadius().value
         val mixerCorner = preferences.popupCornerRadius.toFloat()
         val cornerDp by remember(compactCorner, mixerCorner) {
@@ -788,7 +813,7 @@ class Service : AccessibilityService() {
                     compactCorner
                 } else {
                     val relaxed = compactCorner +
-                        (mixerCorner - compactCorner) * stage.toRow.value.coerceIn(0f, 1f)
+                        (mixerCorner - compactCorner) * stage.along.value.coerceIn(0f, 1f)
                     (relaxed / UNCURL_STEP_DP).roundToInt() * UNCURL_STEP_DP
                 }
             }
@@ -813,45 +838,57 @@ class Service : AccessibilityService() {
                 //           grain phase and blob paths. Never the pane.
                 launch { stage.settling.animateTo(1f, MotionTokens.Ambient.enter()) }
                 if (expanded) {
-                    // Called back in the middle of leaving: open back up
-                    // from wherever it had got to.
-                    launch { stage.toMixer.animateTo(1f, MotionTokens.Spatial.travel()) }
+                    // Called back in the middle of closing: open back up from
+                    // wherever it had got to.
+                    launch { stage.along.animateTo(1f, MotionTokens.Spatial.turn()) }
+                    launch { stage.across.animateTo(1f, MotionTokens.Spatial.travel()) }
                     launch { stage.cascade.reveal() }
                 }
                 // element:  the compact panel.
                 // model:    a sheet slid out of the edge it hugs, or expanding
-                //           in place with no edge to come out of.
+                //           in place with no edge to come out of; the disc
+                //           turning forward into place as it comes.
                 // token:    MotionTokens.Spatial.travel.
                 // property: translation along the edge axis, or uniform
-                //           scale, never from 0 -- see the layer below.
+                //           scale, never from 0; the disc's rotationZ.
                 stage.appear.animateTo(1f, MotionTokens.Spatial.travel())
             } else {
                 if (expanded) {
-                    // The rows go first, bottom row first, each tucking
-                    // back under the one above; the panel closes back down
-                    // to the media row after them; and before it has quite
-                    // finished, the whole thing starts to settle away.
+                    // Closing, all the way: the rows go first, bottom row
+                    // first, each tucking back under the one above; the panel
+                    // closes across; and before that has quite finished, it
+                    // closes along too -- into the screen edge the popup came
+                    // out of, until there is nothing of it left. Nothing
+                    // fades: the panel is simply shut.
+                    stage.closing = true
                     launch { stage.cascade.conceal() }
                     val effect = this
-                    var leaving: Job? = null
-                    // Only the fade is waited for: once the panel is
-                    // invisible, the last of the squash's settle is nothing
-                    // anyone can see, and the window can go.
-                    val leave: () -> Job = {
-                        effect.launch { stage.appear.animateTo(0f, MotionTokens.Spatial.travel()) }
-                        effect.launch { stage.fade.animateTo(0f, MotionTokens.Effects.default()) }
+                    var shutting: Job? = null
+                    val shut: () -> Job = {
+                        // element:  the panel shutting.
+                        // model:    a drawer sliding shut into the side of
+                        //           the screen.
+                        // token:    MotionTokens.Spatial.turn.
+                        // property: its laid-out rectangle, along the gesture
+                        //           axis, down to nothing at the edge.
+                        effect.launch { stage.along.animateTo(0f, MotionTokens.Spatial.turn()) }
                     }
-                    // element:  the panel closing.
-                    // model:    the same sheet, folding back to one row.
+                    // element:  the panel closing across.
+                    // model:    one sheet folding back to a single band.
                     // token:    MotionTokens.Spatial.travel.
-                    // property: its laid-out rectangle.
-                    stage.toMixer.animateTo(0f, MotionTokens.Spatial.travel()) {
-                        if (leaving == null && value <= LEAVE_AT) {
-                            leaving = leave()
+                    // property: its laid-out rectangle, across the gesture axis.
+                    stage.across.animateTo(0f, MotionTokens.Spatial.travel()) {
+                        if (shutting == null && value <= CLOSE_AT) {
+                            shutting = shut()
                         }
                     }
-                    (leaving ?: leave()).join()
+                    (shutting ?: shut()).join()
                 } else {
+                    // element:  the compact panel, going back into its edge.
+                    // model:    the arrival, backwards.
+                    // token:    MotionTokens.Spatial.travel + Effects.default.
+                    // property: translation (or scale) and the disc's
+                    //           rotationZ, turning back the other way; alpha.
                     launch { stage.appear.animateTo(0f, MotionTokens.Spatial.travel()) }
                     stage.fade.animateTo(0f, MotionTokens.Effects.default())
                 }
@@ -868,68 +905,68 @@ class Service : AccessibilityService() {
                 return@LaunchedEffect
             }
             // The mixer has to be laid out before anything can travel to
-            // it: its rectangle and its media row are the destinations. A
-            // frame or two, with the compact popup standing still in the
-            // meantime.
-            withTimeoutOrNull(MEDIA_ROW_WAIT_MS) {
-                snapshotFlow { stage.mediaRow }.first { it != null }
-            }
+            // it: its rectangle is the destination. A frame, with the compact
+            // popup standing still in the meantime.
+            snapshotFlow { stage.mixerReady }.first { it }
             val effect = this
+            if (isDisc) {
+                // element:  the panel behind the disc.
+                // model:    -- opacity is not an object.
+                // token:    MotionTokens.Effects.default.
+                // property: alpha: the disc paints no panel of its own, so
+                //           the one that grows round it comes up as it starts.
+                effect.launch { stage.panelIn.animateTo(1f, MotionTokens.Effects.default()) }
+            }
             var handingOver = false
             var opening = false
             val handOver = {
                 handingOver = true
-                // element:  the compact popup's content, and the media row's.
+                // element:  the compact popup's content.
                 // model:    -- opacity is not an object.
                 // token:    MotionTokens.Effects.default.
-                // property: alpha, one out as the other comes in.
+                // property: alpha, out.
                 effect.launch { stage.handover.animateTo(1f, MotionTokens.Effects.default()) }
             }
             val open = {
                 opening = true
                 if (this@Service.contentVisible) {
-                    // element:  the panel opening into the mixer.
-                    // model:    one sheet, unfolding out of a single row.
+                    // element:  the panel opening across.
+                    // model:    one sheet, unfolding to its full size.
                     // token:    MotionTokens.Spatial.travel.
-                    // property: its laid-out rectangle.
-                    effect.launch { stage.toMixer.animateTo(1f, MotionTokens.Spatial.travel()) }
+                    // property: its laid-out rectangle, across the gesture axis.
+                    effect.launch { stage.across.animateTo(1f, MotionTokens.Spatial.travel()) }
                     effect.launch { stage.cascade.reveal() }
                 }
+                // The disc keeps its face until the panel is growing round it
+                // in both directions, so it is seen growing with it.
+                if (isDisc && !handingOver) {
+                    handOver()
+                }
             }
-            // element:  the compact panel, travelling to the media row.
-            // model:    the same sheet taking the row's place -- and, for a
-            //           vertical bar, the bar lying down as it goes.
+            // element:  the panel opening along the swipe.
+            // model:    the same sheet, drawn out the way the finger went.
             // token:    MotionTokens.Spatial.turn.
-            // property: its laid-out rectangle, and the content's
-            //           rotationZ (vertical bar only, a quarter clockwise).
-            stage.toRow.animateTo(1f, MotionTokens.Spatial.turn()) {
-                if (!handingOver && value >= HANDOVER_AT) {
+            // property: its laid-out rectangle, along the gesture axis.
+            stage.along.animateTo(1f, MotionTokens.Spatial.turn()) {
+                if (!handingOver && !isDisc && value >= HANDOVER_AT) {
                     handOver()
                 }
                 if (!opening && value >= OPEN_AT) {
                     open()
                 }
             }
-            if (!handingOver) {
-                handOver()
-            }
             if (!opening) {
                 open()
+            }
+            if (!handingOver) {
+                handOver()
             }
         }
 
         val onExpand: () -> Unit = {
             if (!expanded) {
-                stage.mediaRow = null
                 expanded = true
                 this@Service.handler.startIdleTimer()
-            }
-        }
-
-        val mediaAnchor: (LayoutCoordinates) -> Unit = remember(stage) {
-            { coordinates ->
-                stage.mediaCoordinates = coordinates
-                stage.updateMediaRow()
             }
         }
 
@@ -937,48 +974,60 @@ class Service : AccessibilityService() {
             LocalArrival provides remember(stage) { { stage.appear.value } },
             LocalArrivalFade provides remember(stage) { { stage.fade.value } },
             LocalAmbientEnter provides remember(stage) { { stage.settling.value } },
-            LocalRowCascade provides stage.cascade,
-            LocalMediaHandover provides remember(stage) { { stage.handover.value } },
-            LocalMediaRowAnchor provides mediaAnchor
+            LocalRowCascade provides stage.cascade
         ) {
             // The one panel, and the compact popup's content in it.
             val panelSlot: @Composable () -> Unit = {
                 Box(
                     Modifier.graphicsLayer {
-                        // Per draw call rather than through an
-                        // offscreen buffer the size of the panel,
-                        // which would cut the shadow's halo off at
-                        // the panel's own edge while it fades.
+                        // Per draw call rather than through an offscreen
+                        // buffer the size of the panel, which would cut the
+                        // shadow's halo off at the panel's own edge while it
+                        // fades.
                         compositingStrategy = CompositingStrategy.ModulateAlpha
                         alpha = stage.fade.value.coerceIn(0f, 1f)
                         val away = 1f - stage.appear.value
-                        if (expanded || edge == ScreenEdge.None) {
-                            // element:  a panel with no edge to come
-                            //           out of -- and the mixer leaving.
-                            // model:    a sheet expanding in place.
-                            // token:    MotionTokens.Spatial.travel.
-                            // property: uniform scale, never from 0.
-                            val grown = 1f - CENTER_EXPAND_SQUASH * away
-                            scaleX = grown
-                            scaleY = grown
-                        } else {
-                            // element:  the compact panel.
-                            // model:    a sheet slid out of its edge.
-                            // token:    MotionTokens.Spatial.travel.
-                            // property: translation, edge axis only.
-                            val compact = stage.compactRect
-                            val gap = when (edge) {
-                                ScreenEdge.Left -> compact.left.toFloat()
-                                ScreenEdge.Right -> (frame?.width ?: 0) - compact.right.toFloat()
-                                ScreenEdge.Top -> compact.top.toFloat()
-                                else -> (frame?.height ?: 0) - compact.bottom.toFloat()
-                            }.coerceAtLeast(0f)
-                            val travel = (enterTravelPx + gap) * away
-                            when (edge) {
-                                ScreenEdge.Left -> translationX = -travel
-                                ScreenEdge.Right -> translationX = travel
-                                ScreenEdge.Top -> translationY = -travel
-                                else -> translationY = travel
+                        if (!expanded) {
+                            if (edge == ScreenEdge.None) {
+                                // element:  a panel with no edge to come out of.
+                                // model:    a sheet expanding in place.
+                                // token:    MotionTokens.Spatial.travel.
+                                // property: uniform scale, never from 0.
+                                val grown = 1f - CENTER_EXPAND_SQUASH * away
+                                scaleX = grown
+                                scaleY = grown
+                            } else {
+                                // element:  the compact panel.
+                                // model:    a sheet slid out of its edge.
+                                // token:    MotionTokens.Spatial.travel.
+                                // property: translation, edge axis only.
+                                val compact = stage.compactRect
+                                val gap = when (edge) {
+                                    ScreenEdge.Left -> compact.left.toFloat()
+                                    ScreenEdge.Right -> (frame?.width ?: 0) - compact.right.toFloat()
+                                    ScreenEdge.Top -> compact.top.toFloat()
+                                    else -> (frame?.height ?: 0) - compact.bottom.toFloat()
+                                }.coerceAtLeast(0f)
+                                val travel = (enterTravelPx + gap) * away
+                                when (edge) {
+                                    ScreenEdge.Left -> translationX = -travel
+                                    ScreenEdge.Right -> translationX = travel
+                                    ScreenEdge.Top -> translationY = -travel
+                                    else -> translationY = travel
+                                }
+                            }
+                            if (isDisc) {
+                                // element:  the whole disc.
+                                // model:    a knob settling into place.
+                                // token:    MotionTokens.Spatial.travel, through
+                                //           the arrival.
+                                // property: rotationZ, turning forward into
+                                //           place on the way in and back the
+                                //           other way on the way out. The
+                                //           knob's face turns with it, glass
+                                //           included: it is one object, and
+                                //           it was asked to move as one.
+                                rotationZ = -DISC_ARRIVAL_TURN_DEGREES * away
                             }
                         }
                     }
@@ -994,12 +1043,10 @@ class Service : AccessibilityService() {
                             .matchParentSize()
                             .graphicsLayer {
                                 compositingStrategy = CompositingStrategy.ModulateAlpha
-                                // The disc's own panel is never
-                                // painted -- the dial is the whole
-                                // popup -- so the shared one only
-                                // comes up as the dial hands over to
-                                // the media row.
-                                alpha = if (isDisc) stage.handover.value.coerceIn(0f, 1f) else 1f
+                                // The disc's own panel is never painted -- the
+                                // dial is the whole popup -- so the shared one
+                                // only comes up as the panel opens round it.
+                                alpha = if (isDisc) stage.panelIn.value.coerceIn(0f, 1f) else 1f
                             }
                     )
                     if (!compactGone) {
@@ -1010,37 +1057,21 @@ class Service : AccessibilityService() {
                                 .onSizeChanged { stage.compactSize = it }
                                 .graphicsLayer {
                                     compositingStrategy = CompositingStrategy.ModulateAlpha
-                                    // element:  the vertical bar.
-                                    // model:    a bar lying down.
-                                    // token:    MotionTokens.Spatial.turn,
-                                    //           through toRow.
-                                    // property: rotationZ, a quarter
-                                    //           clockwise, about its middle.
-                                    val turned = if (turnsIntoRow) COMPACT_TURN_DEGREES * stage.toRow.value else 0f
-                                    rotationZ = turned
-                                    // element:  the compact popup's content.
-                                    // model:    the thing in the panel staying inside the panel
-                                    //           while the panel reshapes round it.
-                                    // token:    -- derived from phase one, not animated.
-                                    // property: uniform scale, only ever down from 1, just
-                                    //           enough to fit.
-                                    //
-                                    // Halfway through its turn a bar is a diagonal, and a
-                                    // diagonal is wider and taller than either the upright bar
-                                    // or the row it becomes; the disc is taller than the row it
-                                    // becomes the whole way. Rather than poke out through the
-                                    // panel it is in, the content gives way to it.
-                                    if (expanded) {
+                                    // element:  the disc, inside the panel
+                                    //           opening round it.
+                                    // model:    the knob coming forward as its
+                                    //           panel grows.
+                                    // token:    -- derived from the opening,
+                                    //           not animated.
+                                    // property: uniform scale, only ever up
+                                    //           from 1, with the panel.
+                                    if (expanded && isDisc) {
                                         val panel = stage.panelRect(true)
-                                        val radians = Math.toRadians(turned.toDouble())
-                                        val cosine = abs(cos(radians)).toFloat()
-                                        val sine = abs(sin(radians)).toFloat()
-                                        val contentWidth = size.width * cosine + size.height * sine
-                                        val contentHeight = size.width * sine + size.height * cosine
-                                        if (contentWidth > 0f && contentHeight > 0f) {
-                                            val fit = min(1f, min(panel.width / contentWidth, panel.height / contentHeight))
-                                            scaleX = fit
-                                            scaleY = fit
+                                        if (size.width > 0f && size.height > 0f) {
+                                            val grown = max(panel.width / size.width, panel.height / size.height)
+                                                .coerceIn(1f, DISC_GROWTH_MAX)
+                                            scaleX = grown
+                                            scaleY = grown
                                         }
                                     }
                                     alpha = (1f - stage.handover.value).coerceIn(0f, 1f)
@@ -1067,25 +1098,11 @@ class Service : AccessibilityService() {
                             .graphicsLayer {
                                 compositingStrategy = CompositingStrategy.ModulateAlpha
                                 alpha = stage.fade.value.coerceIn(0f, 1f)
-                                val mixer = stage.mixerRect
-                                if (mixer != null && mixer.width > 0 && mixer.height > 0) {
-                                    // Leaving together with the panel:
-                                    // the same squash about the same
-                                    // point.
-                                    val panel = stage.panelRect(true)
-                                    transformOrigin = TransformOrigin(
-                                        (panel.center.x - mixer.left) / mixer.width,
-                                        (panel.center.y - mixer.top) / mixer.height
-                                    )
-                                    val grown = 1f - CENTER_EXPAND_SQUASH * (1f - stage.appear.value)
-                                    scaleX = grown
-                                    scaleY = grown
-                                }
                             }
-                            // Nothing of the mixer outside the panel it
-                            // is in: while the panel is still opening,
-                            // its edge is what the rows come out from
-                            // under.
+                            // Nothing of the mixer outside the panel it is in:
+                            // while the panel opens, its edge is what the rows
+                            // come out from under, and while it shuts, what
+                            // closes over them.
                             .drawWithContent {
                                 val mixer = stage.mixerRect
                                 if (mixer == null) {
@@ -1102,19 +1119,14 @@ class Service : AccessibilityService() {
                                     }
                                 }
                             }
-                            .onPlaced {
-                                stage.mixerRoot = it
-                                stage.updateMediaRow()
-                            }
                     ) {
                         CompositionLocalProvider(
                             LocalContentColor provides MaterialTheme.colorScheme.onBackground
                         ) {
-                            // The list's own content padding rather
-                            // than a padding round it, so its scroll
-                            // clip sits at the panel's edge and the
-                            // inset is room the rows' shadows and
-                            // motion can use.
+                            // The list's own content padding rather than a
+                            // padding round it, so its scroll clip sits at the
+                            // panel's edge and the inset is room the rows'
+                            // shadows and motion can use.
                             AppVolumeList(
                                 apps = manager.apps.values,
                                 showAll = false,
@@ -1152,13 +1164,16 @@ class Service : AccessibilityService() {
                     landscape = false,
                     rtl = false
                 )
+                stage.frameWidth = layoutFrame.width
+                stage.frameHeight = layoutFrame.height
                 val margin = (MIXER_SCREEN_MARGIN_DP * densityScale).roundToInt()
+                val mixerWidth = min(this@Service.mixerWidthPx, layoutFrame.width)
 
                 // The mixer first: where everything is going.
                 val mixerPlaceable = mixerMeasurables.firstOrNull()?.measure(
                     Constraints(
-                        minWidth = max(0, layoutFrame.width - 2 * margin),
-                        maxWidth = max(0, layoutFrame.width - 2 * margin),
+                        minWidth = mixerWidth,
+                        maxWidth = mixerWidth,
                         minHeight = 0,
                         maxHeight = max(0, layoutFrame.height - 2 * margin)
                     )
@@ -1167,24 +1182,8 @@ class Service : AccessibilityService() {
                     preferences.mixerRect(layoutFrame, it.width, it.height, densityScale)
                 }
                 stage.mixerRect = mixer
-                stage.rowRect = mixer?.let {
-                    val padding = (MIXER_PADDING_DP * densityScale).roundToInt()
-                    val media = stage.mediaRow
-                    if (media != null) {
-                        IntRect(
-                            it.left,
-                            (it.top + media.top.roundToInt() - padding).coerceAtLeast(it.top),
-                            it.right,
-                            (it.top + media.bottom.roundToInt() + padding).coerceAtMost(it.bottom)
-                        )
-                    } else {
-                        IntRect(
-                            it.left,
-                            it.top,
-                            it.right,
-                            min(it.bottom, it.top + (FALLBACK_ROW_HEIGHT_DP * densityScale).roundToInt())
-                        )
-                    }
+                if (mixer != null && !stage.mixerReady) {
+                    stage.mixerReady = true
                 }
 
                 // Then where the compact popup sits, and where the panel is
@@ -1259,6 +1258,32 @@ class Service : AccessibilityService() {
 
     /** The window as laid out, or null until it has been. See [WindowFrame]. */
     private var windowFrame by mutableStateOf<WindowFrame?>(null)
+
+    /**
+     * The mixer's width, in px: the width the platform gives a window that
+     * wraps its content (`config_prefDialogWidth`), which is exactly how wide
+     * the mixer was when its window used to wrap it -- and only falls back
+     * to [MIXER_FALLBACK_WIDTH_DP] where the platform doesn't say.
+     */
+    private val mixerWidthPx: Int by lazy {
+        val system = android.content.res.Resources.getSystem()
+        @SuppressLint("DiscouragedApi")
+        val id = system.getIdentifier("config_prefDialogWidth", "dimen", "android")
+        val platform = if (id != 0) {
+            try {
+                system.getDimensionPixelSize(id)
+            } catch (e: Exception) {
+                0
+            }
+        } else {
+            0
+        }
+        if (platform > 0) {
+            platform
+        } else {
+            (MIXER_FALLBACK_WIDTH_DP * resources.displayMetrics.density).roundToInt()
+        }
+    }
 
     /** The panel's rectangle this frame, in window px: the only part of the window that takes touches. */
     private val touchBounds = Rect()

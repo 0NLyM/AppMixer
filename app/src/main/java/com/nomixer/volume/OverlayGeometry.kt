@@ -19,17 +19,20 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * How far the expanded mixer keeps from the sides of the screen: its width
- * is the window's less twice this, so it always sits 40dp narrower than the
- * display, centred, with room for its shadow on both sides.
+ * How far the expanded mixer keeps from the top and bottom of the screen.
  */
 internal const val MIXER_SCREEN_MARGIN_DP = 20f
 
 /**
- * The inset every row of the mixer sits at inside its panel -- the list's
- * own content padding. Also how far the panel reaches past the media row
- * when it is nothing but that row, halfway through opening.
+ * The mixer's width when the platform doesn't say otherwise -- see
+ * [Service]'s own `mixerWidthPx`, which reads the width the platform gives
+ * a window that wraps its content (`config_prefDialogWidth`). That is what
+ * the mixer always was wide, back when its window wrapped it, and it is the
+ * width it keeps now that the window doesn't.
  */
+internal const val MIXER_FALLBACK_WIDTH_DP = 320f
+
+/** The inset every row of the mixer sits at inside its panel -- the list's own content padding. */
 internal const val MIXER_PADDING_DP = 16f
 
 /**
@@ -148,24 +151,29 @@ internal fun UiPreferences.compactRect(frame: WindowFrame, width: Int, height: I
  * Centred mode centres it on the **display** -- worked out from the
  * display's own size, not from wherever the popup happened to be -- so the
  * mixer lands on the exact middle of the screen as a destination computed
- * up front, and the morph simply travels there. Anchored mode keeps the
- * compact popup's own vertical anchor and offset, and is horizontally
- * centred because it is as wide as the screen allows.
+ * up front, and the morph simply travels there. Anchored mode puts it where
+ * the compact popup's own anchor and offsets put a panel its size, pulled
+ * back on screen if it would hang off.
  */
 internal fun UiPreferences.mixerRect(frame: WindowFrame, width: Int, height: Int, density: Float): IntRect {
     val margin = (MIXER_SCREEN_MARGIN_DP * density).roundToInt()
     val minTop = margin
     val maxTop = max(minTop, frame.height - height - margin)
+    val roomX = max(0, frame.width - width)
     val left: Int
     val top: Int
     if (expandedMixerCentered) {
-        left = (frame.display.exactCenterX() - width / 2f).roundToInt()
-            .coerceIn(0, max(0, frame.width - width))
+        left = (frame.display.exactCenterX() - width / 2f).roundToInt().coerceIn(0, roomX)
         top = (frame.display.exactCenterY() - height / 2f).roundToInt()
             .coerceIn(0, max(0, frame.height - height))
     } else {
-        left = (frame.width - width) / 2
+        val offsetX = (activeOffsetX() * density).roundToInt()
         val offsetY = (activeOffsetY() * density).roundToInt()
+        left = when (activeAnchor().edge(frame.rtl)) {
+            ScreenEdge.Left -> offsetX.coerceIn(0, roomX)
+            ScreenEdge.Right -> frame.width - width - offsetX.coerceIn(0, roomX)
+            else -> ((frame.width - width) / 2 + if (frame.rtl) -offsetX else offsetX).coerceIn(0, roomX)
+        }
         top = when (activeAnchor().band()) {
             VerticalBand.Top -> offsetY
             VerticalBand.Bottom -> frame.height - height - offsetY

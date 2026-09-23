@@ -33,7 +33,6 @@ import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
 import com.nomixer.volume.data.DISC_INSET
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
-import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
@@ -177,8 +176,7 @@ fun VolumeDisc(
      * unless [trackBackingGlass] -- see [GlassRingBackground]'s own
      * parameters of the same names.
      */
-    noiseColor: Color = Color.White,
-    noiseAlpha: Float = GLASS_NOISE_ALPHA_DEFAULT,
+    noiseColor: Color = GLASS_NOISE_COLOR_DEFAULT,
     /**
      * The small glyph above the reading. A composable slot rather than an
      * [androidx.compose.ui.graphics.vector.ImageVector], so the dial can be
@@ -303,7 +301,6 @@ fun VolumeDisc(
                 lightWidth = lightWidth,
                 lightStrength = lightStrength,
                 noiseColor = noiseColor,
-                noiseAlpha = noiseAlpha,
                 modifier = Modifier.size(knobDiameter)
             )
         }

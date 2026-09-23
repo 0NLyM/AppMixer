@@ -87,8 +87,6 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MAX
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MIN
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MAX
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MIN
-import com.nomixer.volume.data.GLASS_NOISE_ALPHA_MAX
-import com.nomixer.volume.data.GLASS_NOISE_ALPHA_MIN
 import com.nomixer.volume.data.POPUP_BACKGROUND_OPACITY_MIN
 import com.nomixer.volume.data.POPUP_CORNER_RADIUS_MAX
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
@@ -110,6 +108,9 @@ import com.nomixer.volume.data.activeOffsetY
 import com.nomixer.volume.data.activeOutlineColor
 import com.nomixer.volume.data.activeScale
 import com.nomixer.volume.data.activeShadowOpacity
+import com.nomixer.volume.data.activeShadowWidth
+import com.nomixer.volume.data.withShadowWidth
+import com.nomixer.volume.data.POPUP_SHADOW_WIDTH_MAX_DP
 import com.nomixer.volume.data.withShadowOpacity
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
@@ -513,8 +514,7 @@ private fun PreviewPanelBackground(preferences: UiPreferences, shape: Shape, mod
                 blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                 lightAngle = preferences.glassLightAngle,
                 lightWidth = preferences.glassLightWidth,
-                noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
-                noiseAlpha = preferences.glassNoiseAlpha,
+                noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                 modifier = Modifier.matchParentSize()
             )
 
@@ -619,7 +619,7 @@ private fun CollapsedPopupPreviewContent(
                     PanelShadow(
                         color = shadow,
                         shape = shape,
-                        blurRadius = PANEL_SHADOW_BLUR_DP,
+                        blurRadius = preferences.activeShadowWidth().dp,
                         modifier = Modifier.matchParentSize()
                     )
                     PreviewPanelBackground(
@@ -696,7 +696,7 @@ private fun CollapsedPopupPreviewContent(
                     PanelShadow(
                         color = shadow,
                         shape = shape,
-                        blurRadius = PANEL_SHADOW_BLUR_DP,
+                        blurRadius = preferences.activeShadowWidth().dp,
                         modifier = Modifier.matchParentSize()
                     )
                     PreviewPanelBackground(
@@ -831,8 +831,7 @@ private fun CollapsedPopupPreviewContent(
                     lightAngle = preferences.glassLightAngle,
                     lightWidth = preferences.glassLightWidth,
                     blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                    noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
-                    noiseAlpha = preferences.glassNoiseAlpha,
+                    noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                     icon = if (showIcon) {
                         {
                             Icon(
@@ -891,7 +890,7 @@ private fun ExpandedMixerPreview(preferences: UiPreferences) {
         PanelShadow(
             color = shadow,
             shape = shape,
-            blurRadius = PANEL_SHADOW_BLUR_DP,
+            blurRadius = preferences.activeShadowWidth().dp,
             modifier = Modifier.matchParentSize()
         )
         Box(
@@ -1195,19 +1194,10 @@ fun CustomizationScreen(
                                 // is on its own.
                                 ColorSettingRow(
                                     label = stringResource(R.string.glass_noise_color),
-                                    color = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
+                                    color = glassNoiseColorOf(preferences.glassNoiseColor),
                                     isCustom = preferences.glassNoiseColor != null,
                                     onColorChange = { color -> onUpdate { it.copy(glassNoiseColor = color.toArgb()) } },
                                     onReset = { onUpdate { it.copy(glassNoiseColor = null) } }
-                                )
-                                SliderSetting(
-                                    label = stringResource(R.string.glass_noise_alpha),
-                                    valueLabel = "${(preferences.glassNoiseAlpha * 100).roundToInt()}%",
-                                    value = preferences.glassNoiseAlpha,
-                                    valueRange = GLASS_NOISE_ALPHA_MIN..GLASS_NOISE_ALPHA_MAX,
-                                    onValueChange = { value ->
-                                        onUpdate { it.copy(glassNoiseAlpha = value) }
-                                    }
                                 )
                             }
 
@@ -1478,6 +1468,17 @@ fun CustomizationScreen(
                 exit = shrinkVertically(tween(MotionTokens.Screen.morphMillis, easing = MotionTokens.Screen.emphasized)) +
                     fadeOut(tween(160))
             ) {
+                Column {
+                SliderSetting(
+                    label = stringResource(R.string.shadow_width),
+                    valueLabel = "${preferences.activeShadowWidth()}dp",
+                    value = preferences.activeShadowWidth().toFloat(),
+                    valueRange = 0f..POPUP_SHADOW_WIDTH_MAX_DP.toFloat(),
+                    steps = POPUP_SHADOW_WIDTH_MAX_DP - 1,
+                    onValueChange = { value ->
+                        onUpdate { it.withShadowWidth(value.roundToInt()) }
+                    }
+                )
                 SliderSetting(
                     label = stringResource(R.string.shadow_opacity),
                     valueLabel = "${(preferences.activeShadowOpacity() * 100).roundToInt()}%",
@@ -1487,6 +1488,7 @@ fun CustomizationScreen(
                         onUpdate { it.withShadowOpacity(value) }
                     }
                 )
+                }
             }
 
             AnimatedVisibility(
@@ -1603,7 +1605,6 @@ fun CustomizationScreen(
                             atmosphereGrainIntensity = defaults.atmosphereGrainIntensity,
                             atmosphereGrainSize = defaults.atmosphereGrainSize,
                             glassNoiseColor = defaults.glassNoiseColor,
-                            glassNoiseAlpha = defaults.glassNoiseAlpha,
                             expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,
                             discPopupShowValue = defaults.discPopupShowValue,

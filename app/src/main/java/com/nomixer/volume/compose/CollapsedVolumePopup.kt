@@ -58,6 +58,7 @@ import com.nomixer.volume.data.activeBackground
 import com.nomixer.volume.data.activeButtonCornerRadius
 import com.nomixer.volume.data.activeOffsetX
 import com.nomixer.volume.data.activeScale
+import com.nomixer.volume.data.activeShadowWidth
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
@@ -73,12 +74,6 @@ private const val TAG = "NoMixer.CollapsedPopup"
 
 /** Base size of the ringer button and, at 1x, the vertical bar's width. */
 private const val BUTTON_SIZE_DP = 48
-
-/**
- * How far a panel's own halo reaches past its edge -- fixed: the user
- * chooses how dark the shadow is, not how far it spreads.
- */
-internal val PANEL_SHADOW_BLUR_DP = 12.dp
 
 /** A single element's shadow (ringer button or slider) when the panel is hidden. */
 private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp
@@ -509,7 +504,7 @@ fun CollapsedVolumePopup(
             PanelShadow(
                 color = shadow,
                 shape = panelShape,
-                blurRadius = PANEL_SHADOW_BLUR_DP,
+                blurRadius = preferences.activeShadowWidth().dp,
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -521,8 +516,7 @@ fun CollapsedVolumePopup(
                 lightAngle = beam.angle,
                 lightWidth = preferences.glassLightWidth,
                 lightStrength = beam.strength,
-                noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
-                noiseAlpha = preferences.glassNoiseAlpha,
+                noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -752,8 +746,7 @@ fun CollapsedVolumePopup(
                         lightWidth = preferences.glassLightWidth,
                         lightStrength = beam.strength,
                         blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                        noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
-                        noiseAlpha = preferences.glassNoiseAlpha,
+                        noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                         icon = if (showIcon) {
                             {
                                 VolumeGlyph(
