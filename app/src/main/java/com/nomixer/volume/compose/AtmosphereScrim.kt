@@ -8,16 +8,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipPath
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_DEFAULT
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_SIZE_DEFAULT
 import com.nomixer.volume.ui.theme.LocalAmbientEnter
@@ -27,19 +22,27 @@ import kotlin.random.Random
 
 /**
  * The Atmosphere background: a Nothing-OS-flavoured alternative to
- * [GlassBackground]'s lit glass and a flat Solid fill. A field of coarse
- * grain, wound around the panel's own center, that *turns* through
- * [ATMOSPHERE_TURN_RADIANS] as the popup appears and then holds perfectly
- * still -- the rotation is the whole character of it, the way Nothing's own
- * generator sweeps a field around rather than boiling it in place. An
- * earlier pass reshuffled the noise every frame instead, which read as
- * static going in every direction at once rather than one thing moving; a
- * later one left it turning forever on a lap of its own, which is a panel
- * that never finishes arriving. It moves while the popup is arriving, and
- * not otherwise -- see [rememberAtmosphereMotion].
+ * [GlassBackground]'s lit glass and a flat Solid fill -- the look Nothing's
+ * launcher gives a wallpaper, made from generated noise instead of a photo.
  *
- * Its two colors are handed in by the caller ([colors], both here and in
- * [drawAtmosphereRing]) rather than sampled by this file at all -- see
+ * Built in the order the eye reads it, and that order is the point:
+ *
+ * 1. a flat fill, one soft gradient between the two colours;
+ * 2. large soft blobs of colour painted *into* that fill -- where each one
+ *    starts and which way it drifts is a fresh draw of the dice every time
+ *    the popup opens;
+ * 3. grain over the result, fill and blobs together.
+ *
+ * The blobs used to be laid over the grain afterwards, which is why they read
+ * as stickers on the surface rather than as part of it. Now the grain comes
+ * last and dithers everything below it at once, including the edges of the
+ * blobs, which break up into grain instead of ending in a clean line.
+ *
+ * The field turns through [ATMOSPHERE_TURN_RADIANS] and the blobs travel their
+ * paths as the popup appears, and then it holds perfectly still -- see
+ * [rememberAtmosphereMotion].
+ *
+ * Its two colors are handed in by the caller ([colors]) rather than sampled by this file at all -- see
  * [com.nomixer.volume.Service.sampleForegroundAppColors] for where they
  * actually come from: the launcher icon of whatever app is underneath the
  * popup, read via [android.content.pm.PackageManager], run through
@@ -55,8 +58,8 @@ import kotlin.random.Random
  * No real blur or separate graphics layer needed here, unlike
  * [GlassBackground]: there's nothing to keep out of the panel's own content,
  * only a colored noise field painted straight into whatever shape is asked
- * for, so both the flat panels and [VolumeDisc]'s own ring (see
- * [drawAtmosphereRing]) can just draw it directly.
+ * for, so both the flat panels and [VolumeDisc]'s own knob face can just
+ * draw it directly.
  */
 private const val ATMOSPHERE_SHADER_SRC = """
     uniform float2 resolution;
@@ -67,18 +70,19 @@ private const val ATMOSPHERE_SHADER_SRC = """
     uniform float grainScale;
     uniform float grainPhase;
     uniform float2 drift;
-    uniform float speckle;
+    uniform float seed;
+    uniform float travel;
 
     float hash(float2 p) {
         return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
     }
 
-    // One complete grain field, identified by a whole-numbered seed. Two
-    // hashes rather than one so a cell's value isn't a straight function of
-    // its position, which reads as a pattern rather than as grain.
-    float grainField(float2 cell, float seed) {
-        return hash(cell + seed * 37.0) * 0.55 +
-            hash(cell * 1.37 + 19.7 - seed * 11.0) * 0.45;
+    // One complete grain field, identified by a seed. Two hashes rather
+    // than one so a cell's value isn't a straight function of its position,
+    // which reads as a pattern rather than as grain.
+    float grainField(float2 cell, float fieldSeed) {
+        return hash(cell + fieldSeed * 37.0) * 0.55 +
+            hash(cell * 1.37 + 19.7 - fieldSeed * 11.0) * 0.45;
     }
 
     half4 main(float2 fragCoord) {
@@ -91,67 +95,66 @@ private const val ATMOSPHERE_SHADER_SRC = """
         float2 p = fragCoord - center - drift * longest;
 
         // One rigid turn of the whole field about that center: every sample
-        // below reads off these rotated coordinates, so the grain and the
-        // color sweep travel together instead of each wandering off.
+        // below reads off these rotated coordinates, so the grain, the sweep
+        // and the blobs travel together instead of each wandering off.
         float s = sin(rotation);
         float c = cos(rotation);
         float2 turned = float2(p.x * c - p.y * s, p.x * s + p.y * c);
 
-        // The coarse sweep: the two colors wound around the center, pulled
-        // outward a little with radius so it spirals rather than pinwheels.
-        float angle = atan(turned.y, turned.x);
-        float radius = length(turned) / longest;
-        float sweep = fract(angle / 6.2831853 + radius * 0.9 + 1.0);
-        float band = 0.5 - 0.5 * cos(sweep * 6.2831853);
-
-        // Grain in chunky cells rather than per pixel, so it reads as
-        // actual grain at a glance instead of sensor noise. grainScale is
-        // the cell divisor itself -- smaller means coarser (bigger) flecks.
-        //
-        // Real film grain is a *new* field of silver every frame, not one
-        // still field lit differently, so the cells are resampled several
-        // times a second and dissolved between two consecutive fields
-        // rather than being hashed anew per frame. Hashing per frame is
-        // what an earlier pass did, and it reads as static going in every
-        // direction at once; a dissolve between whole fields reads as
-        // grain that is alive.
+        // The grain, worked out first because everything below is made of
+        // it. Chunky cells rather than per pixel, so it reads as grain at a
+        // glance rather than as sensor noise; dissolving between whole
+        // fields on the way in, then still. The seed is part of every
+        // field, so the grain it settles on differs from one opening to
+        // the next.
         float2 cell = floor(turned * grainScale);
         float settled = floor(grainPhase);
         float grain = mix(
-            grainField(cell, settled),
-            grainField(cell, settled + 1.0),
+            grainField(cell, settled + seed * 97.0),
+            grainField(cell, settled + 1.0 + seed * 97.0),
             grainPhase - settled
         );
+        float dither = (grain - 0.5) * grainIntensity;
 
-        // grainIntensity scales how much the grain perturbs both the color
-        // mix and the brightness -- 0 is a perfectly smooth two-color sweep
-        // with no texture at all, 1 is the full grain these constants always
-        // produced before this was adjustable.
-        float mixAmount = 0.5 * grainIntensity;
-        float3 color = mix(colorA, colorB, clamp(band + (grain - 0.5) * mixAmount, 0.0, 1.0));
+        // 1. The flat fill: one soft gradient from one colour to the other,
+        //    across whichever way the field has turned. Not wound round a
+        //    centre any more -- a pinwheel has a point in the middle where
+        //    every colour meets, and it read as a hole in the painting.
+        float band = clamp(0.5 + turned.x / longest * 1.1, 0.0, 1.0);
+        band = band * band * (3.0 - 2.0 * band);
+        float3 color = mix(colorA, colorB, clamp(band + dither * 0.5, 0.0, 1.0));
+
+        // 2. The blobs, painted *into* that fill: large soft pools of
+        //    colour, each thrown somewhere new every time the panel opens
+        //    and carried along a path of its own while the panel settles.
+        //    Their weight is dithered by the same grain as everything else,
+        //    so their edges break up into grain rather than sitting on top
+        //    of it as a smooth decal.
+        float2 q = turned / longest;
+        for (int i = 0; i < 6; i++) {
+            float fi = float(i);
+            float2 home = float2(hash(float2(seed * 3.1, fi * 1.7 + 0.3)),
+                                 hash(float2(fi * 2.3 + 0.9, seed * 5.7))) - 0.5;
+            float heading = hash(float2(seed + fi * 0.61, 5.3)) * 6.2831853;
+            float reach = 0.30 + 0.35 * hash(float2(fi + 1.3, seed * 9.1));
+            float2 at = home * 1.2 + float2(cos(heading), sin(heading)) * reach * travel;
+            float size = 0.20 + 0.28 * hash(float2(seed * 1.3 + fi, 2.9));
+            float d = length(q - at) / size;
+            float weight = exp(-d * d * 2.0) * (0.55 + 0.40 * hash(float2(fi + 4.4, seed)));
+            weight = clamp(weight + dither * 1.3 * smoothstep(0.0, 0.3, weight), 0.0, 1.0);
+            float pick = hash(float2(fi + 7.7, seed * 0.7));
+            float3 tint = pick < 0.38 ? colorA
+                : (pick < 0.76 ? colorB
+                : (pick < 0.88 ? mix(colorA, float3(1.0), 0.45) : colorB * 0.35));
+            color = mix(color, tint, weight);
+        }
+
+        // 3. Grain over the whole thing, fill and blobs together.
         float brightnessBase = 1.0 - 0.26 * grainIntensity;
         float brightnessRange = 0.48 * grainIntensity;
         color = color * (brightnessBase + grain * brightnessRange);
 
-        // Speckles: marks in the material rather than the material's own
-        // texture -- far bigger and far sparser than the grain cells, one
-        // to a cell and only in some cells at all. Drawn here, inside the
-        // field, precisely so they are *subject* to it: the grain under a
-        // speckle modulates it, and it turns and drifts with everything
-        // else instead of sitting on top as a layer of pasted-on circles.
-        float speckleSize = longest / 9.0;
-        float2 speckleCell = floor(turned / speckleSize);
-        float2 withinCell = turned / speckleSize - speckleCell;
-        float2 speckleAt = float2(hash(speckleCell + 3.1), hash(speckleCell + 7.7));
-        float speckleRadius = 0.14 + 0.30 * hash(speckleCell + 11.3);
-        float present = step(0.42, hash(speckleCell + 23.0));
-        float edge = length(withinCell - speckleAt);
-        float mark = present * (1.0 - smoothstep(speckleRadius * 0.30, speckleRadius, edge));
-        mark = mark * speckle * (0.40 + 0.60 * grain);
-        float tone = hash(speckleCell + 41.0) > 0.5 ? 1.0 : -1.0;
-        color = color * (1.0 + tone * mark * 0.42);
-
-        return half4(color, 1.0);
+        return half4(clamp(color, 0.0, 1.0), 1.0);
     }
 """
 
@@ -246,7 +249,8 @@ private fun DrawScope.atmosphereBrush(
     grainPhase: Float = 0f,
     driftX: Float = 0f,
     driftY: Float = 0f,
-    speckle: Float = 1f
+    seed: Float = 0f,
+    travel: Float = 0f
 ): Brush? {
     val shader = atmosphereShaderOrNull() ?: return null
     return try {
@@ -259,7 +263,8 @@ private fun DrawScope.atmosphereBrush(
         shader.setFloatUniform("grainScale", grainScaleFor(grainSize))
         shader.setFloatUniform("grainPhase", grainPhase)
         shader.setFloatUniform("drift", driftX, driftY)
-        shader.setFloatUniform("speckle", speckle.coerceIn(0f, 1f))
+        shader.setFloatUniform("seed", seed)
+        shader.setFloatUniform("travel", travel)
         ShaderBrush(shader)
     } catch (e: Throwable) {
         Log.w("GlassScrim", "Atmosphere shader failed to update", e)
@@ -280,7 +285,15 @@ internal class AtmosphereMotion(
     val driftX: () -> Float,
     val driftY: () -> Float,
     /** Which grain field the shader is dissolving through -- see [GRAIN_FIELDS_ON_ENTER]. */
-    val grainPhase: () -> Float
+    val grainPhase: () -> Float,
+    /**
+     * This appearance's own draw of the dice, 0 to 1: where each blob
+     * starts, which way it travels, and which grain field the whole thing
+     * settles on -- so no two openings are quite the same painting.
+     */
+    val seed: Float,
+    /** How much of its path each blob still has ahead of it, 1 down to 0. */
+    val travel: () -> Float
 )
 
 /**
@@ -314,7 +327,8 @@ internal class AtmosphereMotion(
  * element:  the atmosphere field.
  * model:    a field of particles, settling once the panel is there.
  * token:    [MotionTokens.Ambient.enter], through [LocalAmbientEnter].
- * property: shader rotation, shader center offset, shader grain phase.
+ * property: shader rotation, shader center offset, shader grain phase,
+ *           and how far along its path each blob is.
  *           Never the container: the panel this is painted into is a
  *           rectangle that sits perfectly still.
  */
@@ -325,7 +339,7 @@ internal fun rememberAtmosphereMotion(): AtmosphereMotion {
     // One draw of the dice per appearance: where the field settles, how far
     // off center it sits when it gets there, and which way round its own
     // little arc it comes in from.
-    val seed = remember { List(3) { Random.nextFloat() } }
+    val seed = remember { List(4) { Random.nextFloat() } }
 
     return remember(seed, settling) {
         val settledAngle = seed[0] * TWO_PI
@@ -347,7 +361,9 @@ internal fun rememberAtmosphereMotion(): AtmosphereMotion {
                 val turned = orbitPhase + ATMOSPHERE_ORBIT_RADIANS * away()
                 settledDriftY + (sin(turned) - sin(orbitPhase)) * ATMOSPHERE_ORBIT_RADIUS
             },
-            grainPhase = { GRAIN_FIELDS_ON_ENTER * away() }
+            grainPhase = { GRAIN_FIELDS_ON_ENTER * away() },
+            seed = seed[3],
+            travel = away
         )
     }
 }
@@ -370,10 +386,6 @@ fun AtmosphereBackground(
 ) {
     val motion = rememberAtmosphereMotion()
 
-    // The speckles arrive with the field they are in -- same ambient
-    // spring, read in the draw phase like everything else here.
-    val settling = LocalAmbientEnter.current
-
     Box(
         modifier
             .clip(shape)
@@ -387,7 +399,8 @@ fun AtmosphereBackground(
                     motion.grainPhase(),
                     motion.driftX(),
                     motion.driftY(),
-                    settling()
+                    motion.seed,
+                    motion.travel()
                 )
                 if (brush != null) {
                     drawRect(brush, alpha = baseColor.alpha)
@@ -396,74 +409,4 @@ fun AtmosphereBackground(
                 }
             }
     )
-}
-
-/**
- * The same grain as [AtmosphereBackground], confined to a ring -- for
- * [VolumeDisc]'s own track, painted straight into its Canvas rather than
- * through a Compose layout node (unlike Glass, Atmosphere never needs a real
- * blur, so there's no need for a separate graphics layer here the way
- * [GlassRingBackground] needs one). [rotation] is read straight from the
- * caller's own draw phase (see [rememberAtmosphereMotion]); [colors] is handed
- * in the same way as [AtmosphereBackground]'s own (see this file's top
- * comment).
- *
- * Draws no rim of its own -- unlike Glass, which lights its ring's edge to
- * match its own beam, Atmosphere leaves that to VolumeDisc's ordinary
- * outline strokes (the disc face's own inner border, and the ring's plain
- * outer one), the same as Solid mode already does. A beam-lit glass edge on
- * a panel with no beam of its own read as a mismatched leftover from Glass.
- */
-fun DrawScope.drawAtmosphereRing(
-    baseColor: Color,
-    colors: Pair<Color, Color>?,
-    rotation: Float,
-    center: Offset,
-    ringRadius: Float,
-    ringWidth: Float,
-    grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
-    grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT,
-    grainPhase: Float = 0f,
-    driftX: Float = 0f,
-    driftY: Float = 0f
-) {
-    val outerRadius = ringRadius + ringWidth / 2f
-    val innerRadius = (ringRadius - ringWidth / 2f).coerceAtLeast(0f)
-    val ring = Path().apply {
-        addOval(
-            Rect(
-                center.x - outerRadius,
-                center.y - outerRadius,
-                center.x + outerRadius,
-                center.y + outerRadius
-            )
-        )
-        addOval(
-            Rect(
-                center.x - innerRadius,
-                center.y - innerRadius,
-                center.x + innerRadius,
-                center.y + innerRadius
-            )
-        )
-        fillType = PathFillType.EvenOdd
-    }
-
-    clipPath(ring) {
-        val brush = atmosphereBrush(
-            colors,
-            baseColor.copy(alpha = 1f),
-            rotation,
-            grainIntensity,
-            grainSize,
-            grainPhase,
-            driftX,
-            driftY
-        )
-        if (brush != null) {
-            drawRect(brush, alpha = baseColor.alpha)
-        } else {
-            drawRect(baseColor)
-        }
-    }
 }

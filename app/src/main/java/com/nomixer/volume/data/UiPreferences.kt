@@ -316,19 +316,14 @@ data class UiPreferences(
     /** Same as [popupShowShadow], but the disc's own independent switch. */
     val discPopupShowShadow: Boolean = true,
     /**
-     * How far the panel's own shadow reaches past its edge, in dp -- the
-     * blur radius of the halo behind a bar or the expanded mixer (see
-     * `PanelShadow`), and with it how much invisible room the popup's
-     * window carries for that halo to bleed into.
-     *
-     * A wide shadow needs the window to be wider than the panel by roughly
-     * as much again, so this is not purely cosmetic: it is also why the
-     * window is the size it is. Ignored while [popupShowShadow] is off,
-     * where there is no halo at all.
+     * How dark the panel's own shadow is at its densest, 0 to 1 -- the
+     * halo behind a bar, the expanded mixer and the disc's ring alike.
+     * Its reach is fixed (see `PANEL_SHADOW_BLUR_DP`); only its strength is
+     * the user's to choose. Ignored while [popupShowShadow] is off.
      */
-    val popupShadowWidth: Int = 12,
-    /** Same as [popupShadowWidth], for the disc's own independent shadow. */
-    val discPopupShadowWidth: Int = 12,
+    val popupShadowOpacity: Float = POPUP_SHADOW_ALPHA_DEFAULT,
+    /** Same as [popupShadowOpacity], for the disc's own independent shadow. */
+    val discPopupShadowOpacity: Float = POPUP_SHADOW_ALPHA_DEFAULT,
     /**
      * Puts the volume value beside the ringer switch, in the disc's hollow
      * middle, instead of below it.
@@ -624,40 +619,33 @@ fun UiPreferences.paintedPanelAlpha(): Float =
         PopupBackground.Atmosphere -> 1f
     }
 
-/** Peak alpha of the popup's own shadow, at its brightest point. Deliberately light. */
-private const val POPUP_SHADOW_ALPHA = 0.35f
+/** The shadow's own default strength, at its densest point. Deliberately light. */
+const val POPUP_SHADOW_ALPHA_DEFAULT = 0.35f
 
 /**
- * Alpha of the popup's own shadow -- just [popupShowShadow]'s on/off, at a
- * fixed, light intensity of its own rather than sharing
- * [popupBackgroundOpacity]: that slider is dedicated to the panel's own
- * fill, a different quantity from this separate shadow painted right behind
- * the disc's ring or a bar's track.
+ * Alpha of the popup's own shadow right now, for whichever style is
+ * active -- the user's own strength while [UiPreferences.popupShowShadow]
+ * (or the disc's own switch) is on, and nothing at all while it is off.
+ * Deliberately separate from [UiPreferences.popupBackgroundOpacity]: that
+ * slider is the panel's own fill, a different quantity from the shadow
+ * painted behind it.
  */
 fun UiPreferences.shadowAlpha(): Float =
-    if (activeShowShadow()) POPUP_SHADOW_ALPHA else 0f
-
-/** The widest the shadow's own reach can be set to, in dp. */
-const val POPUP_SHADOW_WIDTH_MAX_DP = 40
-
-/**
- * How far the panel's shadow reaches past its edge right now, in dp, for
- * whichever style is active -- zero while the shadow is switched off, so a
- * caller can use this alone to decide both how wide to blur and how much
- * room to leave for it.
- */
-fun UiPreferences.activeShadowWidth(): Int =
     if (!activeShowShadow()) {
-        0
+        0f
     } else if (popupStyle == PopupStyle.Disc) {
-        discPopupShadowWidth
+        discPopupShadowOpacity.coerceIn(0f, 1f)
     } else {
-        popupShadowWidth
+        popupShadowOpacity.coerceIn(0f, 1f)
     }
 
-fun UiPreferences.withShadowWidth(value: Int): UiPreferences =
+/** The shadow strength the slider edits, ignoring the on/off switch. */
+fun UiPreferences.activeShadowOpacity(): Float =
+    if (popupStyle == PopupStyle.Disc) discPopupShadowOpacity else popupShadowOpacity
+
+fun UiPreferences.withShadowOpacity(value: Float): UiPreferences =
     if (popupStyle == PopupStyle.Disc) {
-        copy(discPopupShadowWidth = value)
+        copy(discPopupShadowOpacity = value)
     } else {
-        copy(popupShadowWidth = value)
+        copy(popupShadowOpacity = value)
     }

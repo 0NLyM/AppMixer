@@ -20,41 +20,51 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.palette.graphics.Palette
@@ -66,303 +76,276 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
-import com.nomixer.volume.compose.CollapsedVolumePopup
-import com.nomixer.volume.compose.RevealEdge
-import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.AtmosphereBackground
+import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.GlassBackground
+import com.nomixer.volume.compose.LocalMediaHandover
+import com.nomixer.volume.compose.LocalMediaRowAnchor
+import com.nomixer.volume.compose.LocalRowCascade
+import com.nomixer.volume.compose.PANEL_SHADOW_BLUR_DP
+import com.nomixer.volume.compose.PanelShadow
+import com.nomixer.volume.compose.RowCascade
+import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
+import com.nomixer.volume.compose.compactPanelCornerRadius
 import com.nomixer.volume.compose.glassEdgeLightBrush
 import com.nomixer.volume.compose.rememberGlassBeam
-import com.nomixer.volume.compose.PanelShadow
-import com.nomixer.volume.data.shadowAlpha
-import com.nomixer.volume.data.DISC_EDGE_GAP_DP
-import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
 import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
-import com.nomixer.volume.data.PopupAnchor
-import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
-import com.nomixer.volume.data.UiPreferences
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupStyle
+import com.nomixer.volume.data.UiPreferences
 import com.nomixer.volume.data.activeAnchor
 import com.nomixer.volume.data.activeBackground
-import com.nomixer.volume.data.activeOffsetX
-import com.nomixer.volume.data.activeOffsetY
-import com.nomixer.volume.data.activeScale
-import com.nomixer.volume.data.activeShadowWidth
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.paintedPanelAlpha
-import com.nomixer.volume.ui.theme.LocalArrival
+import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.ui.theme.LocalAmbientEnter
-import com.nomixer.volume.ui.theme.LocalCompactTurn
+import com.nomixer.volume.ui.theme.LocalArrival
 import com.nomixer.volume.ui.theme.LocalArrivalFade
-import com.nomixer.volume.ui.theme.NoMixerTheme
 import com.nomixer.volume.ui.theme.MotionTokens
+import com.nomixer.volume.ui.theme.NoMixerTheme
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Objects
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
-
-/**
- * Where the panel actually sits right now -- **the one position state**, read
- * by the window's own layout and by the composition's motion alike.
- *
- * Splitting those two was the bug this exists to make impossible. The
- * window was centered for the expanded mixer by a plain
- * `updateViewLayout` -- a jump, outside any animation -- while the
- * composition went on deriving its entrance from the *anchor*, which still
- * said "left edge". So the mixer was laid out at the center and animated
- * toward the side: it played a lateral reveal, ran its morph out toward a
- * rectangle beyond the centered window's own bounds (where the window
- * clipped it), and landed at the center with nothing animating the last
- * part of the journey. Read as: it comes in from the side, then snaps.
- *
- * With one state there is no "still said": a placement that centers the
- * window is the same placement the entrance is built from.
- */
-private enum class PanelPlacement {
-    /** Hugging a screen edge -- the edge the panel is uncovered from. */
-    Left,
-    Right,
-    Top,
-    Bottom,
-
-    /**
-     * On its anchor's own center, with the user's offsets still applied.
-     * No edge to be uncovered from, so it simply grows where it is.
-     */
-    Center,
-
-    /**
-     * Dead center of the display, offsets deliberately ignored: the
-     * expanded mixer's own centered mode. Motion-wise identical to
-     * [Center] -- it is only the window's layout that treats it specially.
-     */
-    DisplayCenter;
-
-    /** True for both centered placements: the ones with no edge to come out of. */
-    val isCentered: Boolean
-        get() = this == Center || this == DisplayCenter
-
-    /**
-     * The screen edge this panel is revealed from as it arrives, so it
-     * opens out of the side of the screen rather than being uncovered from
-     * some direction that has nothing to do with where it sits.
-     *
-     * Sideways wins for a corner anchor, the same way the transform origin
-     * below resolves one: the vertical bar lives in corners and still
-     * belongs to the side of the screen, not to the top of it.
-     */
-    val revealEdge: RevealEdge
-        get() = when (this) {
-            Left -> RevealEdge.Left
-            Right -> RevealEdge.Right
-            Top -> RevealEdge.Top
-            Bottom -> RevealEdge.Bottom
-            Center, DisplayCenter -> RevealEdge.None
-        }
-}
-
-private fun PopupAnchor.placement(): PanelPlacement = when (this) {
-    PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> PanelPlacement.Left
-    PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> PanelPlacement.Right
-    PopupAnchor.TopCenter -> PanelPlacement.Top
-    PopupAnchor.BottomCenter -> PanelPlacement.Bottom
-    PopupAnchor.Center -> PanelPlacement.Center
-}
-
-/**
- * The placement the popup has in [expanded] -- the single call both the
- * window's gravity and the composition's entrance go through.
- *
- * The expanded mixer's own "center it" switch is resolved here and nowhere
- * else, which is what keeps the window and the animation from ever
- * disagreeing about where the panel is.
- */
-private fun UiPreferences.panelPlacement(expanded: Boolean): PanelPlacement =
-    if (expanded && expandedMixerCentered) {
-        PanelPlacement.DisplayCenter
-    } else {
-        activeAnchor().placement()
-    }
+import kotlin.math.sin
 
 /**
  * How far past the **display's** own edge a compact panel starts, before
  * it slides out of it.
  *
  * The panel's travel is this plus whatever gap the user's offset leaves
- * between the panel and that edge (see [Service.edgeGapPx]), so the
- * thing it comes out from is always the side of the screen. Measuring the
- * travel from the panel's own edge instead is what made an offset popup
- * appear to be uncovered by nothing at all -- a sheet sliding out from
- * behind a line drawn in mid-air, a few dp to its left.
+ * between the panel and that edge, so the thing it comes out from is
+ * always the side of the screen rather than a line drawn in mid-air a few
+ * dp from the panel.
  */
 private val ENTER_TRAVEL_DP = 14.dp
 
 /**
- * How far under its final size a centered panel starts. Small, and
- * deliberately not zero: a panel scaled to nothing has no size for its own
- * spring to overshoot around, so it reads as being conjured rather than as
- * opening out.
+ * How far under its final size a panel with no edge to come out of starts
+ * (a centred popup), and how far under it the mixer ends as it leaves.
+ * Small, and deliberately not zero: a panel scaled to nothing has no size
+ * for its own spring to overshoot around, so it reads as conjured rather
+ * than as opening out.
  */
 private const val CENTER_EXPAND_SQUASH = 0.08f
 
-/**
- * Deliberately oversized: [RoundedCornerShape] clamps a corner radius to
- * at most half the shape's own shorter side, so this reads as a true
- * circle/stadium at any panel size rather than a specific curve tuned to
- * one -- the same trick the disc's own hole-in-the-middle math elsewhere
- * relies on staying that generic.
- */
-private const val DISC_MIXER_CORNER_RADIUS_DP = 999f
+/** The quarter turn a vertical bar makes on its way to lying as the media row lies. */
+private const val COMPACT_TURN_DEGREES = 90f
 
 /**
- * How coarsely the disc's uncurl is rounded before it becomes a shape --
- * the step at which a corner radius stops being a different corner radius
- * to look at. See the quantise at its own call site for why a
- * composition-phase value has to be quantised at all.
+ * How far through its journey to the media row the compact popup is when
+ * its own content starts handing over to that row's -- past halfway, so
+ * the bar is seen turning and travelling before it changes into anything.
+ */
+private const val HANDOVER_AT = 0.6f
+
+/**
+ * How far through the same journey the panel is when it starts opening
+ * into the mixer and the rows start coming out.
+ *
+ * Not 1. Two springs one after the other, each starting from a standstill,
+ * is exactly the pause this whole transition used to have in the middle of
+ * it: the first comes to rest, and only then does the second begin. Started
+ * while the first is still carrying the last of its speed, the two read as
+ * one movement that turns a corner.
+ */
+private const val OPEN_AT = 0.82f
+
+/**
+ * On the way out: how far the panel has closed back down to the media row
+ * before the whole thing starts to fade and settle away.
+ */
+private const val LEAVE_AT = 0.3f
+
+/**
+ * The longest the expand waits for the mixer to report where its media row
+ * is -- a hidden media row never does, and then the panel opens out of the
+ * top of the mixer instead. Not a motion value: a timeout on a measurement.
+ */
+private const val MEDIA_ROW_WAIT_MS = 250L
+
+/** How tall the panel is on its way through a mixer with no media row to travel to. */
+private const val FALLBACK_ROW_HEIGHT_DP = 88f
+
+/**
+ * How coarsely the disc's corners are rounded on their way to the mixer's --
+ * the step at which one corner radius stops looking different from the
+ * next. A Shape is built in composition, so every distinct value is a
+ * recomposition of the panel; this keeps it to the handful the eye resolves.
  */
 private const val UNCURL_STEP_DP = 6f
 
 /**
- * How much room a shadow of a given width needs past the panel's own edge.
+ * Everything the overlay animates, and the geometry it animates between.
  *
- * More than the width itself: a Gaussian doesn't stop at its radius, it
- * fades across it, and cutting the tail off is exactly as visible as
- * cutting the whole thing off. Half again is where it stops reading as
- * clipped.
+ * **One panel.** The compact popup and the mixer it opens into are not two
+ * surfaces handing over to one another any more: there is one panel -- one
+ * shadow, one sheet of glass or grain, one rim -- whose rectangle travels
+ * from the compact popup's own to the mixer's, with the compact popup's
+ * content and the mixer's rows inside it taking turns. See [panelRect].
+ *
+ * **One window, which never moves.** The overlay's window covers the whole
+ * screen and stays exactly where it is (see [Service.createView]); every
+ * frame of arriving, opening and leaving happens inside it. The old window
+ * was only ever the size of the panel, so the panel could only change
+ * shape by having the window resized and moved under it -- a round trip
+ * through the window manager that always landed a frame early or a frame
+ * late, and a window that had to be hidden while it was swapped for a
+ * bigger one. Those were the jumps.
  */
-private const val SHADOW_ROOM_FACTOR = 1.6f
+@Stable
+private class OverlayStage {
+    /** The compact popup coming out of its edge, and everything leaving at the very end. */
+    val appear = Animatable(0f)
 
-/**
- * Whether this panel actually has a [PanelShadow] halo to make room for.
- *
- * The disc never does: it paints its own shadow as a radial fade inside
- * its own Canvas (see VolumeDisc's own doc comment on `backdropColor`),
- * which needs no room outside its own bounds at all. Nor does a panel
- * with its background switched off -- there is no panel-level halo left
- * to make room for, only the per-element ones, which already have their
- * own clearance inside the panel's own padding (see
- * CollapsedVolumePopup's `ELEMENT_SHADOW_CLEARANCE_DP`).
- *
- * The single source of truth both the composition (which actually
- * reserves the room, by padding the outer layer) and the window's own
- * position math (which has to know how much of the window's measured
- * size is that invisible margin rather than panel) read, so the two can
- * never disagree about how much room there really is.
- */
-private fun UiPreferences.hasShadowHalo(expanded: Boolean): Boolean =
-    activeShadowWidth() > 0 &&
-        if (expanded) {
-            activeShowBackground()
-        } else {
-            popupStyle != PopupStyle.Disc && activeShowBackground()
+    /** [appear]'s own effects channel: the whole overlay's opacity. */
+    val fade = Animatable(0f)
+
+    /** Phase one of opening: the compact panel travelling (and a vertical bar turning) to the media row. */
+    val toRow = Animatable(0f)
+
+    /** Phase two: the panel opening out of the media row into the whole mixer. */
+    val toMixer = Animatable(0f)
+
+    /** The compact popup's content fading out as the media row's fades in, in the same place. */
+    val handover = Animatable(0f)
+
+    /** The light on the glass and the Atmosphere field settling, once per appearance. */
+    val settling = Animatable(0f)
+
+    /** The mixer's rows, one object at a time. */
+    val cascade = RowCascade()
+
+    /** The compact popup's own natural size, as it last measured. */
+    var compactSize by mutableStateOf(IntSize.Zero)
+
+    /** Where the media row sits inside the mixer, in the mixer's own px. */
+    var mediaRow by mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+
+    var mixerRoot: LayoutCoordinates? = null
+    var mediaCoordinates: LayoutCoordinates? = null
+
+    // Worked out in the layout pass each frame, and read back by the draw
+    // phase of that same frame and by the window's touch region.
+    var compactRect = IntRect.Zero
+    var mixerRect: IntRect? = null
+    var rowRect: IntRect? = null
+
+    /** Works out [mediaRow] from whichever of the two ends was placed last. */
+    fun updateMediaRow() {
+        val root = mixerRoot ?: return
+        val media = mediaCoordinates ?: return
+        if (!root.isAttached || !media.isAttached) {
+            return
         }
-
-/**
- * The invisible margin the window carries past the panel's own edge on
- * every side, so [PanelShadow]'s halo has somewhere to bleed into -- the
- * platform's window surface is only ever as big as it measures to, so
- * there is nowhere else that room could come from. Zero when there is no
- * halo to make room for (see [hasShadowHalo]), and otherwise as wide as
- * the user's own shadow setting needs.
- */
-/**
- * Adds [room] of margin on every side **without taking it out of the
- * panel's own width**.
- *
- * A plain `padding` would: it shrinks the constraints it passes down, so
- * the panel inside laid itself out in a window's worth of space minus
- * twice the margin and the mixer came back visibly narrower than it had
- * been. This measures the child against the constraints it was given and
- * only then reports a bigger box, which is what the margin actually is --
- * room around the panel, not room taken from it.
- *
- * The reported size can exceed the incoming maximum, and is meant to:
- * `FLAG_LAYOUT_NO_LIMITS` lets the window hang off the display, so a
- * shadow at the screen's edge falls off it rather than pushing the panel
- * inward.
- */
-private fun Modifier.shadowRoom(room: Dp): Modifier =
-    if (room <= 0.dp) {
-        this
-    } else {
-        this.layout { measurable, constraints ->
-            val placeable = measurable.measure(constraints)
-            val inset = room.roundToPx()
-            layout(placeable.width + inset * 2, placeable.height + inset * 2) {
-                placeable.place(inset, inset)
-            }
+        val box = root.localBoundingBoxOf(media, clipBounds = false)
+        if (box != mediaRow) {
+            mediaRow = box
         }
     }
 
-private fun UiPreferences.shadowRoom(expanded: Boolean): Dp =
-    if (hasShadowHalo(expanded)) {
-        (activeShadowWidth() * SHADOW_ROOM_FACTOR).dp
-    } else {
-        0.dp
+    /**
+     * The panel's own rectangle this frame, in the window's px.
+     *
+     * The compact popup's rectangle, travelling to the media row's on
+     * [toRow] and opening from there into the mixer's on [toMixer] -- the
+     * two phases chained, so that however far each has got, the other
+     * picks up from exactly where it is. Reads both springs, so any layout
+     * or draw that calls this follows them frame by frame.
+     */
+    fun panelRect(expanded: Boolean): androidx.compose.ui.geometry.Rect {
+        val compact = compactRect.toRectF()
+        val mixer = mixerRect
+        if (!expanded || mixer == null) {
+            return compact
+        }
+        val row = (rowRect ?: mixer).toRectF()
+        val atRow = lerp(compact, row, toRow.value)
+        return lerp(atRow, mixer.toRectF(), toMixer.value)
     }
 
+    private fun IntRect.toRectF() = androidx.compose.ui.geometry.Rect(
+        left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat()
+    )
+}
+
 /**
- * Where the mixer starts its morph: the compact popup's own rectangle,
- * expressed in the mixer's own layer -- how much smaller it was in each
- * axis, and how far its centre sat from where the mixer's centre now is.
+ * The one panel the compact popup and the mixer share: its shadow, its
+ * face (tint, glass or grain) and its rim, filling whatever rectangle it is
+ * given -- which is the panel's rectangle for this frame, travelling.
  *
- * Feeding those straight into a graphics layer at morph 0 puts the mixer
- * *exactly* where the compact panel was and at exactly its size, so running
- * the number to 1 is a real matched-geometry morph between the two rather
- * than a new panel appearing near where the old one used to be.
+ * Nothing in here scales: the rectangle is *laid out* at each size on the
+ * way rather than drawn at one size and stretched, so the shadow keeps its
+ * width, the rim keeps its hairline and the glass keeps its grain the whole
+ * way from the compact popup to the mixer.
  */
-private class MixerMorphOrigin(
-    val scaleX: Float,
-    val scaleY: Float,
-    val translationX: Float,
-    val translationY: Float,
-    /**
-     * The compact style this morph grew out of, read once at capture time
-     * (a user's popup style doesn't change mid-gesture). Drives the two
-     * per-origin flourishes riding this same morph -- the vertical bar's
-     * own turn and the disc's own uncurl -- so each keeps playing its own
-     * shape's entrance even though all three now share one transform.
-     */
-    val originStyle: PopupStyle,
-    /**
-     * Whether the travel above is carried by the **window's** own position
-     * rather than by the layer inside it.
-     *
-     * It has to be whenever the rectangle the morph starts at doesn't fit
-     * inside the window the panel is drawn in -- a mixer centered on the
-     * display coming out of a bar that hugged the side of the screen is the
-     * obvious case. The window is only ever as big as the panel itself, so
-     * a layer translated out there is a layer outside its own window, which
-     * the compositor simply cuts off: a slice of panel sliding in at the
-     * edge of the window, the rest of the journey missing, and the mixer
-     * appearing to arrive at the center by teleport. Moving the window
-     * instead puts the same travel somewhere it can actually be seen.
-     *
-     * It is still one number either way. The window's offset and the
-     * layer's scale are both read off the single morph value, so they
-     * cannot disagree about how far along the journey is.
-     */
-    val travelsWithWindow: Boolean
-)
-
-/**
- * The point an anchored popup should grow from: the edge it hugs, so it
- * looks like it slid out of the side of the screen rather than being
- * dropped on top of it.
- */
-private fun PopupAnchor.transformOrigin(): TransformOrigin {
-    val x = when (this) {
-        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> 0f
-        PopupAnchor.TopEnd, PopupAnchor.CenterEnd, PopupAnchor.BottomEnd -> 1f
-        else -> 0.5f
+@Composable
+private fun SharedPanel(
+    preferences: UiPreferences,
+    shape: Shape,
+    showBackground: Boolean,
+    panelColor: Color,
+    shadowColor: Color,
+    atmosphereColors: Pair<Color, Color>?,
+    modifier: Modifier = Modifier
+) {
+    val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
+    val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
+    Box(modifier) {
+        if (showBackground) {
+            PanelShadow(
+                color = shadowColor,
+                shape = shape,
+                blurRadius = PANEL_SHADOW_BLUR_DP,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+        when {
+            panelGlass -> MixerGlassFace(
+                shape = shape,
+                baseColor = panelColor,
+                lightAngle = preferences.glassLightAngle,
+                lightWidth = preferences.glassLightWidth,
+                blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
+                noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
+                noiseAlpha = preferences.glassNoiseAlpha,
+                modifier = Modifier.matchParentSize()
+            )
+            panelAtmosphere -> AtmosphereBackground(
+                shape = shape,
+                baseColor = panelColor,
+                colors = atmosphereColors,
+                grainIntensity = preferences.atmosphereGrainIntensity,
+                grainSize = preferences.atmosphereGrainSize,
+                modifier = Modifier.matchParentSize()
+            )
+            showBackground -> Box(Modifier.matchParentSize().background(panelColor, shape))
+        }
+        if (panelGlass) {
+            MixerGlassRim(
+                shape = shape,
+                lightAngle = preferences.glassLightAngle,
+                lightWidth = preferences.glassLightWidth,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+        if (panelAtmosphere) {
+            // A normal outline, not the beam-lit glass edge -- see
+            // AtmosphereScrim.kt's own doc comment.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            )
+        }
     }
-    val y = when (this) {
-        PopupAnchor.TopStart, PopupAnchor.TopCenter, PopupAnchor.TopEnd -> 0f
-        PopupAnchor.BottomStart, PopupAnchor.BottomCenter, PopupAnchor.BottomEnd -> 1f
-        else -> 0.5f
-    }
-    return TransformOrigin(x, y)
 }
 
 /**
@@ -426,16 +409,6 @@ private fun MixerGlassRim(
     )
 }
 
-/**
- * An arrival that has already happened.
- *
- * For the one thing inside the overlay that is *not* arriving: the compact
- * panel still on screen underneath the mixer that is morphing out of it
- * (see the hand-over in [Service.createView]). It has arrived already --
- * handing it the arrival the mixer is riding would re-form its disc and
- * re-flare its glass at the exact moment it is standing still and leaving.
- */
-private val SettledArrival: () -> Float = { 1f }
 
 /**
  * Makes a subtree ignore touch entirely: every change is taken on the
@@ -522,7 +495,7 @@ class Service : AccessibilityService() {
             lifecycle?.currentState = Lifecycle.State.DESTROYED
             windowManager.removeView(view)
             view = null
-            windowRevealed = false
+            windowFrame = null
         }
 
         /** Cancels a pending teardown, for a popup that came back. */
@@ -649,6 +622,7 @@ class Service : AccessibilityService() {
         return colors
     }
 
+
     private fun createView(): View {
         val owner = object : SavedStateRegistryOwner {
             private val lifecycleRegistry = LifecycleRegistry(this)
@@ -675,20 +649,8 @@ class Service : AccessibilityService() {
                 setViewTreeSavedStateRegistryOwner(owner)
             }
 
-            /**
-             * How much of this view's own current edge, in px, is
-             * the shadow's own room rather than panel -- kept in sync by a
-             * `SideEffect` in [Content] below, since [hasShadowHalo] can
-             * change live (the background switch, the popup style) and
-             * [onTouchEvent] is a plain View callback with no composition of
-             * its own to read it from.
-             */
-            var shadowRoomPx: Float = 0f
-
-            // This ComposeView is the window's own root now (see the return
-            // value below) -- FLAG_WATCH_OUTSIDE_TOUCH delivers
-            // ACTION_OUTSIDE straight to the root view's own onTouchEvent,
-            // never down into a child, so this has to live here.
+            // FLAG_WATCH_OUTSIDE_TOUCH delivers ACTION_OUTSIDE straight to
+            // the window's root view -- this one.
             @SuppressLint("ClickableViewAccessibility")
             override fun onTouchEvent(event: MotionEvent): Boolean {
                 if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
@@ -696,23 +658,18 @@ class Service : AccessibilityService() {
                     return true
                 }
 
-                // A touch that lands inside this view's own bounds but
-                // inside [shadowRoomPx]'s own invisible margin is a touch on
-                // nothing -- that ring exists only so PanelShadow's halo has
-                // somewhere to bleed into, and carries no content of its
-                // own for ACTION_OUTSIDE above to have caught. Left
-                // unhandled it fell through to here and did nothing at all,
-                // which read as the popup silently swallowing a tap on the
-                // wallpaper right at its own edge.
-                if (event.actionMasked == MotionEvent.ACTION_DOWN && shadowRoomPx > 0f) {
-                    val x = event.x
-                    val y = event.y
-                    if (x < shadowRoomPx || y < shadowRoomPx ||
-                        x > width - shadowRoomPx || y > height - shadowRoomPx
-                    ) {
-                        this@Service.handler.hideView()
-                        return true
-                    }
+                // Only reachable without a touchable region (see
+                // [TouchableRegion]): the window then takes every touch on
+                // the screen, and one that lands off the panel is a touch on
+                // the app underneath that this window happened to be in
+                // front of. It dismisses the popup, which is what a touch
+                // outside it does anyway.
+                if (event.actionMasked == MotionEvent.ACTION_DOWN &&
+                    !this@Service.touchRegionInstalled &&
+                    !this@Service.touchBounds.contains(event.x.roundToInt(), event.y.roundToInt())
+                ) {
+                    this@Service.handler.hideView()
+                    return true
                 }
 
                 return super.onTouchEvent(event)
@@ -721,1588 +678,624 @@ class Service : AccessibilityService() {
             @Composable
             override fun Content() {
                 val preferences = manager.uiPreferences
-                // Captured before any nested composable lambda can shadow
-                // `this` -- [onTouchEvent] reads shadowRoomPx off this exact
-                // instance, so the SideEffect below has to write to it and
-                // not to whatever receiver a later lambda happens to have.
-                val hostView = this
 
                 // The overlay is the one place the user's color choices
                 // apply: they're picked for the popup, not for the app.
                 return NoMixerTheme(preferences = preferences, applyColorOverrides = true) {
-                    // Starts collapsed every time a fresh overlay window is
-                    // created (i.e. each time the popup reappears after
-                    // being fully hidden) -- only expands for the duration
-                    // this particular window stays up.
-                    var expanded by remember { mutableStateOf(false) }
-
-                    // Animated, so switching translucent/solid or nudging the
-                    // opacity bleeds from one background to the other. Same
-                    // switch as the collapsed popup: with the background off
-                    // there's no panel at all, and the shadow below moves
-                    // onto each slider individually instead.
-                    val showBackground = preferences.activeShowBackground()
-
-                    // Kept in sync with [hasShadowHalo] itself rather than
-                    // duplicating its condition, so the window's own
-                    // position math (Service's imperative half, via
-                    // shadowRoomPx(expanded)) and what's actually reserved
-                    // here can never disagree about how much of the
-                    // window's measured size is margin rather than panel.
-                    val shadowRoomDp = preferences.shadowRoom(expanded)
-                    // element:  -- not a spring; a plain field write.
-                    // model:    -- [onTouchEvent] is a raw View callback
-                    //           with no composition of its own to read
-                    //           this from.
-                    // token:    --
-                    // property: --
-                    val shadowRoomPx = with(LocalDensity.current) { shadowRoomDp.toPx() }
-                    SideEffect { hostView.shadowRoomPx = shadowRoomPx }
-
-                    val panelGlass = showBackground && preferences.activeBackground() == PopupBackground.Translucent
-                    val panelAtmosphere = showBackground && preferences.activeBackground() == PopupBackground.Atmosphere
-                    val panelColor by animateColorAsState(
-                        targetValue = if (!showBackground) {
-                            Color.Transparent
-                        } else {
-                            MaterialTheme.colorScheme.background.copy(
-                                alpha = preferences.paintedPanelAlpha()
-                            )
-                        },
-                        animationSpec = MotionTokens.Effects.color,
-                        label = "mixerPanel"
-                    )
-                    val sliderShadowColor by animateColorAsState(
-                        targetValue = if (showBackground) {
-                            Color.Transparent
-                        } else {
-                            Color.Black.copy(alpha = preferences.shadowAlpha())
-                        },
-                        animationSpec = MotionTokens.Effects.color,
-                        label = "mixerSliderShadow"
-                    )
-                    // The panel's own shadow around its outer edge -- same
-                    // [PanelShadow] the collapsed bar styles already use,
-                    // applied here to the mixer's own Surface instead:
-                    // unlike [sliderShadowColor] above, it only matters
-                    // while there's a panel to sit behind (showBackground
-                    // off already moves the shadow onto each slider
-                    // individually). Black, for the same reason
-                    // CollapsedVolumePopup's own is.
-                    val panelShadowColor by animateColorAsState(
-                        targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
-                        animationSpec = MotionTokens.Effects.color,
-                        label = "mixerPanelShadow"
-                    )
-
-                    // The composition owns the whole appearance now: the
-                    // window is simply present and every frame of arriving,
-                    // morphing and leaving happens in here. Two springs,
-                    // and between them they cover both shapes the popup can
-                    // take:
-                    //
-                    //  - appear is "is this panel on screen at all": the
-                    //    compact panel's reveal out of its screen edge, its
-                    //    fade, and the same thing backwards on the way out.
-                    //  - morph is "how far from the compact panel's own
-                    //    rectangle to the mixer's": 0 puts the mixer
-                    //    exactly where the compact panel was, and at its
-                    //    size, so running it to 1 is a real morph between
-                    //    the two rather than a second panel appearing.
-                    //
-                    // Deliberately not an AnimatedContent with a
-                    // SizeTransform: this window is WRAP_CONTENT, so an
-                    // animated size makes the window itself resize on every
-                    // frame, and while both panels are alive it measures to
-                    // the union of the two. The result was a window that
-                    // jumped to the full mixer's size before the mixer had
-                    // faded in. Morphing the mixer's own layer out of the
-                    // geometry the compact panel occupied keeps the
-                    // window's own size a single step while still being a
-                    // continuous transition on screen.
-                    // The one position state, for this composition's own
-                    // notion of expanded -- the same call the window's
-                    // gravity goes through, so the panel can never be laid
-                    // out in one place and animated toward another. See
-                    // [PanelPlacement].
-                    val anchor = preferences.activeAnchor()
-                    val placement = preferences.panelPlacement(expanded)
-                    // A centered panel grows out of its own middle. Taking
-                    // the anchor's origin here instead is exactly how the
-                    // centered mixer used to end up expanding toward a side
-                    // it wasn't on.
-                    val origin = if (placement.isCentered) {
-                        TransformOrigin.Center
-                    } else {
-                        anchor.transformOrigin()
-                    }
-                    // The disc has no edge to be uncovered from -- it forms
-                    // by turning instead (see VolumeDisc's own formation
-                    // turn), and a straight-edged wipe across a circle would
-                    // fight that.
-                    val compactIsDisc = !expanded && preferences.popupStyle == PopupStyle.Disc
-                    val revealEdge = if (compactIsDisc) RevealEdge.None else placement.revealEdge
-                    // How far past the display's own edge the panel starts,
-                    // resolved here because the effect that pushes the
-                    // window is a coroutine with no density of its own.
-                    val enterTravelPx = with(LocalDensity.current) { ENTER_TRAVEL_DP.toPx() }
-                    val morphOrigin = mixerMorphOrigin
-                    val revealed = windowRevealed
-                    val visible = contentVisible
-
-                    // "Is this panel on screen at all" -- deliberately
-                    // *outside* the key below. That is a fact about the
-                    // popup, not about whichever shape it currently has, so
-                    // changing shape must not reset it: a panel already up
-                    // carries on from exactly where (and how fast) it is,
-                    // rather than replaying an entrance it has already
-                    // played. Keying it was what made a placement change on
-                    // a visible panel fire the lateral enter a second time.
-                    val appear = remember { Animatable(0f) }
-
-                    // The same arrival on the effects channel. Outside the
-                    // key for the same reason [appear] is, and a spring of
-                    // its own because alpha is not a thing with mass: the
-                    // spatial spring overshoots past 1, and a clamped
-                    // overshoot on alpha is a panel that reaches full
-                    // opacity, sits there, and then eases off it -- a
-                    // flicker at the end of an otherwise clean arrival.
-                    val fade = remember { Animatable(0f) }
-
-                    // element:  the compact bar, lying down.
-                    // model:    a bar hinged on the ringer switch it hangs
-                    //           from.
-                    // token:    MotionTokens.Spatial.turn.
-                    // property: rotationZ, 0 to a right angle about that
-                    //           switch's own centre -- applied inside the
-                    //           compact panel, the only scope that knows
-                    //           where its own switch is. See
-                    //           [LocalCompactTurn].
-                    //
-                    // Outside the key, and before the expand rather than
-                    // inside it: the bar turns while it is still the only
-                    // thing on screen, in its *own* window, which grows to
-                    // hold the turning rectangle (see CollapsedVolumePopup).
-                    // Turning it inside the mixer's window instead -- which
-                    // is short at that moment, because its rows haven't
-                    // unfolded yet -- is what cut the bar off mid-turn, and
-                    // it also meant the mixer had to guess at the rectangle
-                    // the bar ended up occupying rather than being handed
-                    // the real one.
-                    val turn = remember { Animatable(0f) }
-                    var turning by remember { mutableStateOf(false) }
-
-                    // Everything the expand does once whatever had to
-                    // happen first has happened. Pulled out of the compact
-                    // popup's own callback so the turn can run in between
-                    // the tap and this, rather than alongside it.
-                    val beginExpand = {
-                        // The rectangle the compact panel occupies *now* --
-                        // which, for a bar that has just turned, is the
-                        // turned one, because its own window grew to hold
-                        // it. That is the whole reason the turn happens
-                        // before this: the mixer is handed the rectangle the
-                        // bar really ended up in instead of a guess at it,
-                        // and the hand-over has nothing left to give away.
-                        this@Service.captureCompactBounds()
-                        this@Service.windowRevealed = false
-                        expanded = true
-                        // The window is about to resize for the mixer's own
-                        // (usually much wider) content -- a fresh one-shot
-                        // listener catches that resize and repositions for
-                        // it, since a lateral disc's own x is deliberately
-                        // tuned for its own, narrower window and would
-                        // otherwise carry over stale, pushing the wider
-                        // mixer off-screen.
-                        //
-                        // That correction can't land until the mixer's own
-                        // first layout pass, so the window is hidden right
-                        // away instead of staying visible in the meantime.
-                        this@Service.view?.let {
-                            this@Service.layoutParams.alpha = 0f
-                            this@Service.windowManager.updateViewLayout(it, this@Service.layoutParams)
-                            this@Service.clampToScreenOnceLaidOut(it, expanded = true) {
-                                // One extra main-thread hop past the
-                                // correction, in case the mixer's content (a
-                                // lazy app list among it) needs a second
-                                // layout pass to settle -- a plain post, not
-                                // another layout listener, so this always
-                                // actually fires.
-                                it.post { this@Service.revealMorphedInto(it) }
-                            }
-                        }
-                        this@Service.handler.startIdleTimer()
-                    }
-
-                    // The turn, and then the expand -- in that order and
-                    // with no overlap, because the expand is literally
-                    // started by the turn finishing.
-                    LaunchedEffect(turning) {
-                        if (!turning) {
-                            return@LaunchedEffect
-                        }
-                        turn.animateTo(1f, MotionTokens.Spatial.turn())
-                        turning = false
-                        beginExpand()
-                    }
-
-                    key(expanded) {
-                        // Keyed, unlike [appear]: this one *is* about the
-                        // current shape -- how far from the compact panel's
-                        // own rectangle to the mixer's -- so a new shape
-                        // genuinely starts a new one.
-                        val morph = remember { Animatable(0f) }
-
-                        // The same morph on the effects channel: how far
-                        // the mixer's own face has replaced the compact
-                        // panel's, 0 to 1.
-                        //
-                        // One transition, two channels -- exactly as
-                        // [appear] and [fade] are, and for the same reason.
-                        // The crossfade between the two faces starts on the
-                        // very frame the morph does and is over when it is,
-                        // but an alpha carried by [morph]'s own spatial
-                        // spring overshoots past 1, and a clamped overshoot
-                        // on alpha is a face that reaches full opacity,
-                        // sits there and then eases back off it.
-                        //
-                        // element:  the panel's face, changing.
-                        // model:    -- opacity is not an object.
-                        // token:    MotionTokens.Effects.default.
-                        // property: alpha, on both faces at once.
-                        val morphFade = remember { Animatable(0f) }
-
-                        // Whether the compact panel is still on screen --
-                        // true from the frame a morph starts until the
-                        // frame it finishes, either way round.
-                        //
-                        // The mixer does not replace the compact panel: it
-                        // *is* the compact panel, changed shape, so the
-                        // panel it grew out of stays composed underneath it
-                        // for as long as the change is still happening and
-                        // hands its face over on [morphFade]. A flag
-                        // flipped once at each end of the morph rather than
-                        // a `morph.value < 1f` read, which would recompose
-                        // the whole mixer on every frame of it.
-                        //
-                        // Starts true for the mixer, so the very first
-                        // frame it is composed for already has the compact
-                        // panel under it and its own face still at nothing.
-                        // Started false and flipped by the effect below, it
-                        // would be a frame of the mixer alone, at full
-                        // opacity, squashed into the compact panel's own
-                        // rectangle.
-                        var morphing by remember { mutableStateOf(expanded) }
-
-                        // The geometry the morph running right now is
-                        // travelling out of. A *different* one means a
-                        // different journey -- the mixer that just opened,
-                        // or a panel whose placement changed under it while
-                        // it was up -- and a journey starts at its start.
-                        var startedFrom by remember { mutableStateOf<MixerMorphOrigin?>(null) }
-
-                        // The placement this panel has actually been laid
-                        // out at. When the one the preferences resolve to
-                        // moves away from it -- the centered-mixer switch,
-                        // flipped while the mixer is on screen -- the
-                        // window is re-placed at the new one and the panel
-                        // travels there from where it currently is, on the
-                        // morph below. Interpolated, never jumped: the
-                        // switch is a change of destination, and a panel
-                        // that is already somewhere has to get there.
-                        //
-                        // Expanded only. The compact popup's own anchor is
-                        // read afresh every time it appears, and moving a
-                        // window out from under a finger that is dragging
-                        // its slider is not a fix for anything.
-                        var placedAt by remember { mutableStateOf(placement) }
-                        LaunchedEffect(placement, visible, revealed) {
-                            if (!expanded || !visible || !revealed || placement == placedAt) {
-                                return@LaunchedEffect
-                            }
-                            placedAt = placement
-                            this@Service.relocateForPlacement(expanded = true)
-                        }
-
-                        LaunchedEffect(visible, revealed, morphOrigin) {
-                            if (visible) {
-                                // Nothing starts until the window is
-                                // actually on screen. The mixer's window is
-                                // deliberately held invisible for a frame
-                                // or two while it is repositioned for its
-                                // own size (see onExpand below), and an
-                                // animation that began under that would
-                                // simply have some of itself missing.
-                                if (!revealed) {
-                                    return@LaunchedEffect
-                                }
-
-                                // element:  the whole panel.
-                                // model:    -- opacity is not an object.
-                                // token:    MotionTokens.Effects.default.
-                                // property: alpha.
-                                //
-                                // Launched rather than awaited: it starts
-                                // on the same frame as the spatial half
-                                // below, so the two are one transition,
-                                // and it is simply on the channel that
-                                // suits what it drives.
-                                launch { fade.animateTo(1f, MotionTokens.Effects.default()) }
-
-                                if (expanded && morphOrigin != null) {
-                                    // The mixer doesn't arrive -- it is the
-                                    // compact panel, changed shape. So it
-                                    // is present from the first frame and
-                                    // the morph is the entrance.
-                                    //
-                                    // element:  the panel changing shape.
-                                    // model:    a sheet, still on screen,
-                                    //           taking a different size and
-                                    //           place.
-                                    // token:    MotionTokens.Spatial.default.
-                                    // property: translation + scale, from
-                                    //           the matched geometry in
-                                    //           [MixerMorphOrigin].
-                                    appear.snapTo(1f)
-                                    if (morphOrigin !== startedFrom) {
-                                        // A journey this one hasn't run
-                                        // yet: back to its start, which is
-                                        // where the panel currently is --
-                                        // its shape *and* its face, since
-                                        // what is on screen at the start of
-                                        // this journey is the compact panel
-                                        // itself.
-                                        startedFrom = morphOrigin
-                                        morph.snapTo(0f)
-                                        morphFade.snapTo(0f)
-                                    }
-                                    // The compact panel stays composed for
-                                    // the whole of it: it is what the first
-                                    // frame of the morph actually shows.
-                                    // Already lying flat by now, if it is a
-                                    // bar that turns -- the turn finished
-                                    // before this transition was started at
-                                    // all.
-                                    morphing = true
-                                    // Launched rather than awaited, so the
-                                    // face and the shape are one transition
-                                    // starting on one frame -- each simply
-                                    // on the channel that suits what it
-                                    // drives.
-                                    val handingOver =
-                                        launch { morphFade.animateTo(1f, MotionTokens.Effects.default()) }
-                                    // element:  a centered panel travelling
-                                    //           to the middle of the display.
-                                    // model:    the same sheet changing
-                                    //           shape -- its travel carried
-                                    //           by the window it is in,
-                                    //           because a layer translated
-                                    //           outside its own window is a
-                                    //           layer the compositor cuts
-                                    //           off.
-                                    // token:    MotionTokens.Spatial.travel
-                                    //           -- this *is* the morph, not
-                                    //           a second animation of it.
-                                    // property: the window's own x/y.
-                                    //
-                                    // Pushed from the animation's own
-                                    // per-frame callback, so the window
-                                    // moves on the very frame the value
-                                    // changes rather than on the one after.
-                                    morph.animateTo(1f, MotionTokens.Spatial.travel()) {
-                                        if (morphOrigin.travelsWithWindow) {
-                                            val away = 1f - value
-                                            this@Service.displaceWindow(
-                                                morphOrigin.translationX * away,
-                                                morphOrigin.translationY * away
-                                            )
-                                        }
-                                    }
-                                    // Both channels, not just the
-                                    // travelling one. Under reduced motion
-                                    // the morph collapses to a snap while
-                                    // the crossfade stays a spring (a fade
-                                    // carries no travel for that setting to
-                                    // object to), so dropping the compact
-                                    // panel when the *shape* was done would
-                                    // leave the mixer fading up out of
-                                    // nothing -- with the panel it is
-                                    // supposed to be crossfading from
-                                    // already gone.
-                                    handingOver.join()
-                                    // Nothing left of the panel it came
-                                    // out of, so nothing left to keep.
-                                    morphing = false
-                                } else {
-                                    // element:  the panel arriving.
-                                    // model:    a sheet uncovered at the
-                                    //           edge it is anchored to, or
-                                    //           expanding in place at the
-                                    //           center.
-                                    // token:    MotionTokens.Spatial.default.
-                                    // property: translation along that edge
-                                    //           axis (plus the reveal
-                                    //           outline derived from the
-                                    //           same value) and alpha on
-                                    //           MotionTokens.Effects.
-                                    //
-                                    // animateTo, so a panel already partway
-                                    // in or out bends toward its new target
-                                    // from where it is rather than jumping
-                                    // back to the start.
-                                    morph.snapTo(1f)
-                                    morphFade.snapTo(1f)
-                                    // No matched geometry to morph out of,
-                                    // so nothing to hand over from either.
-                                    morphing = false
-                                    appear.animateTo(1f, MotionTokens.Spatial.travel())
-                                }
-                            } else {
-                                // The exit runs the entrance backwards, in
-                                // the order it was built: the mixer folds
-                                // back into the compact panel's own
-                                // rectangle first, and only then does that
-                                // rectangle close back into the screen
-                                // edge it came out of.
-                                val fadingOut =
-                                    launch { fade.animateTo(0f, MotionTokens.Effects.default()) }
-                                if (expanded && morphOrigin != null) {
-                                    // The expanded panel leaves as itself.
-                                    //
-                                    // It used to hand its face back to the
-                                    // compact panel on the way out, which
-                                    // meant re-composing that panel
-                                    // underneath and crossfading to it --
-                                    // and since nothing follows this exit
-                                    // but the window being torn down, all
-                                    // that ever did was flash a bar nobody
-                                    // asked for across the middle of the
-                                    // dismissal. So [morphing] stays false
-                                    // and [morphFade] stays where it is:
-                                    // there is no second panel in this
-                                    // animation at all.
-                                    //
-                                    // What runs instead is the row reveal
-                                    // backwards, off this very value: the
-                                    // rows retract one at a time from the
-                                    // bottom up, each behind the one above
-                                    // it, and the panel's own border closes
-                                    // down after them at the same gap it
-                                    // keeps at rest. See
-                                    // SystemVolumePanel's mixerRowReveal.
-                                    morph.animateTo(0f, MotionTokens.Spatial.travel())
-                                }
-                                appear.animateTo(0f, MotionTokens.Spatial.travel())
-                                // Both channels, not just the travelling
-                                // one: tearing the window down while the
-                                // fade still had a frame to run is the
-                                // exit's own version of a snap.
-                                fadingOut.join()
-                                // Posted rather than called straight from
-                                // here: this coroutine belongs to the
-                                // composition the window is about to be
-                                // torn down with.
-                                this@Service.handler.post {
-                                    this@Service.handler.finishHide()
-                                }
-                            }
-                        }
-
-                        // Deliberately *after* the transition above: both
-                        // restart together when a new geometry arrives, and
-                        // they are started in the order they are written,
-                        // so the morph is already back at its start by the
-                        // time this reads it. The other way round, the
-                        // first thing this would push is the *settled*
-                        // position -- one frame of the panel at its
-                        // destination before it jumps back to travel there.
-                        //
-                        // element:  a centered panel travelling to the
-                        //           middle of the display.
-                        // model:    the same sheet changing shape -- with
-                        //           its travel carried by the window it is
-                        //           in, because a layer translated outside
-                        //           its own window is a layer the
-                        //           compositor cuts off.
-                        // token:    MotionTokens.Spatial.default -- this
-                        //           *is* the morph above, read off the very
-                        //           same value rather than animated again.
-                        // property: the window's own x/y.
-                        // Nothing here any more: the window is pushed from
-                        // inside the morph's own per-frame callback (see
-                        // the transition above), not from a second
-                        // coroutine collecting the value it writes.
-                        //
-                        // That collector was the last of the snap. A
-                        // snapshotFlow emits on the frame *after* the one
-                        // that changed the value, and it conflates, so the
-                        // window was always at least one frame behind the
-                        // layer's own scale and skipped steps whenever a
-                        // frame ran long. At the end of a long travel that
-                        // reads as the panel arriving and the window
-                        // catching up after it.
-
-                        // element:  the compact panel arriving.
-                        // model:    a sheet behind the side of the screen,
-                        //           slid out of it -- so the travel is the
-                        //           window's, for the same reason the
-                        //           centered mixer's is: a layer pushed
-                        //           outside its own window is cut off by
-                        //           the compositor, and this window is
-                        //           exactly the panel's size.
-                        // token:    MotionTokens.Spatial.default -- read
-                        //           off [appear], the arrival itself,
-                        //           rather than animated a second time.
-                        // property: the window's own x/y.
-                        //
-                        // Outward is negative on both axes whichever edge
-                        // the panel hugs, because LayoutParams.x and .y are
-                        // measured from the anchored edge inward -- the
-                        // same convention the lateral disc's own offset
-                        // already relies on.
-                        LaunchedEffect(revealEdge, expanded) {
-                            if (expanded || revealEdge == RevealEdge.None) {
-                                return@LaunchedEffect
-                            }
-                            snapshotFlow { appear.value }.collect { arrived ->
-                                val away = (1f - arrived).coerceIn(0f, 1f)
-                                val travel = (enterTravelPx + edgeGapPx) * away
-                                this@Service.displaceWindow(
-                                    dx = if (revealEdge.isHorizontal) -travel else 0f,
-                                    dy = if (revealEdge.isHorizontal) 0f else -travel
-                                )
-                            }
-                        }
-
-                        // Handed down so the parts that phase their own
-                        // motion off the arrival -- the disc's formation
-                        // turn, the glass beam's entering sweep,
-                        // Atmosphere's entering rotation -- ride this
-                        // spring instead of each starting one of their own.
-                        // Remembered, so providing it doesn't invalidate
-                        // every reader on each recomposition.
-                        //
-                        // **Both springs, not just [appear].** Whichever of
-                        // the two is the entrance this panel is actually
-                        // playing, the other is parked at 1: a compact
-                        // panel coming out of its edge travels on [appear]
-                        // with [morph] snapped to 1, and a mixer morphing
-                        // out of that panel travels on [morph] with
-                        // [appear] snapped to 1. Reading only [appear] is
-                        // why the mixer's glass came up with its light
-                        // already settled and its Atmosphere field already
-                        // still -- the arrival those two phase off was
-                        // never moving for the one entrance the mixer has.
-                        // The product is the arrival either way, and it is
-                        // still one spring at a time.
-                        val arrival = remember(appear, morph) { { appear.value * morph.value } }
-                        val arrivalFade = remember(fade, morphFade) { { fade.value * morphFade.value } }
-
-                        // element:  the light on the glass, and the
-                        //           Atmosphere field.
-                        // model:    a condition of a surface settling down
-                        //           once that surface is there -- not the
-                        //           surface arriving a second time.
-                        // token:    MotionTokens.Ambient.enter.
-                        // property: the beam's angle and brightness, and
-                        //           the field's rotation, centre and grain
-                        //           phase. Never the pane, never the
-                        //           container.
-                        //
-                        // Its own spring, and the only thing in the overlay
-                        // that does not ride the arrival. It is meant to
-                        // outlast the panel: on the arrival both effects
-                        // were over in the time a panel takes to slide out
-                        // of an edge, underneath the much larger motion
-                        // doing the sliding, and neither was ever visible.
-                        // Enter-only -- it runs once as the panel shows up
-                        // and freezes where it lands. No exit: by then the
-                        // panel is fading, and a light retreating under a
-                        // fading panel is motion nobody asked to see.
-                        val settling = remember { Animatable(0f) }
-                        LaunchedEffect(revealed) {
-                            if (revealed) {
-                                settling.animateTo(1f, MotionTokens.Ambient.enter())
-                            }
-                        }
-                        val ambientEnter = remember(settling) { { settling.value } }
-
-                        val compactTurn = remember(turn) { { turn.value } }
-
-                        CompositionLocalProvider(
-                            LocalArrival provides arrival,
-                            LocalArrivalFade provides arrivalFade,
-                            LocalAmbientEnter provides ambientEnter,
-                            LocalCompactTurn provides compactTurn
-                        ) {
-                        Box(
-                            // The margin [hasShadowHalo] reserves, outside
-                            // the transform below rather than inside it: a
-                            // fixed reservation at layout time, so the room
-                            // PanelShadow's halo bleeds into stays the same
-                            // number of real pixels throughout the whole
-                            // morph instead of shrinking along with
-                            // whatever the panel's own scale is doing that
-                            // frame.
-                            modifier = Modifier
-                                .shadowRoom(shadowRoomDp)
-                                .graphicsLayer {
-                                val arrived = appear.value.coerceIn(0f, 1f)
-
-                                if (expanded && morphOrigin != null) {
-                                    // Straight from the compact panel's own
-                                    // rectangle to this one. Centre origin,
-                                    // because the translation below is what
-                                    // carries the difference in position --
-                                    // an edge origin would apply it twice.
-                                    // Only on the way *in*. The expanded
-                                    // panel's exit is its own animation now
-                                    // and has nothing to do with the
-                                    // rectangle it once grew out of: its
-                                    // rows retract one at a time and the
-                                    // panel closes down behind them (see the
-                                    // exit branch of the transition above).
-                                    // Running the matched geometry
-                                    // backwards as well would squash the
-                                    // mixer into a compact bar's footprint
-                                    // -- a shape the compact panel isn't
-                                    // even being drawn in any more.
-                                    //
-                                    // Continuous either way: a settled
-                                    // panel is already at morph 1, which is
-                                    // exactly the identity this leaves
-                                    // behind.
-                                    val morphed = if (visible) morph.value else 1f
-                                    val away = 1f - morphed
-                                    transformOrigin = TransformOrigin.Center
-                                    scaleX = morphOrigin.scaleX + (1f - morphOrigin.scaleX) * morphed
-                                    scaleY = morphOrigin.scaleY + (1f - morphOrigin.scaleY) * morphed
-                                    if (!morphOrigin.travelsWithWindow) {
-                                        translationX = morphOrigin.translationX * away
-                                        translationY = morphOrigin.translationY * away
-                                    }
-                                    // The other case puts the very same
-                                    // number on the window instead -- see
-                                    // [MixerMorphOrigin.travelsWithWindow]
-                                    // and the effect that pushes it. It is
-                                    // deliberately not *also* applied here:
-                                    // that would be the journey travelled
-                                    // twice.
-                                } else {
-                                    val away = 1f - arrived
-                                    transformOrigin = origin
-
-                                    when {
-                                        // A sheet at a screen edge. It
-                                        // slides out of that edge and does
-                                        // nothing else: the push along the
-                                        // edge axis and the reveal below
-                                        // are the same number, so they are
-                                        // one motion rather than two.
-                                        //
-                                        // No scale. A panel that grows as
-                                        // it arrives reads as a thing being
-                                        // created; a sheet at an edge is a
-                                        // thing being uncovered, already
-                                        // full size behind the edge it is
-                                        // coming out from. The 8% it used
-                                        // to grow by also scaled the glass
-                                        // pane with it, which is the one
-                                        // thing glass may never do.
-                                        //
-                                        // element:  the compact panel.
-                                        // model:    a sheet on the edge.
-                                        // token:    MotionTokens.Spatial.default.
-                                        // property: translation, edge axis
-                                        //           only (+ the reveal
-                                        //           outline, derived from
-                                        //           the same value).
-                                        revealEdge != RevealEdge.None -> {
-                                            // Nothing here, deliberately.
-                                            // This travel is carried by the
-                                            // window, not by the layer --
-                                            // see the effect below. A layer
-                                            // pushed out past the edge of a
-                                            // WRAP_CONTENT window is a
-                                            // layer the compositor cuts
-                                            // off, and this window is
-                                            // exactly the panel's own size,
-                                            // so every pixel of the journey
-                                            // happened somewhere nobody
-                                            // could see it. The further the
-                                            // user's offset pushed the
-                                            // panel in, the longer that
-                                            // journey was and the more of
-                                            // it was thrown away: at any
-                                            // real offset the panel simply
-                                            // appeared where it belonged.
-                                            Unit
-                                        }
-
-                                        // No edge to be uncovered from, so
-                                        // there is nowhere to travel from
-                                        // either: it expands where it is,
-                                        // around its own centre.
-                                        //
-                                        // element:  a centered panel.
-                                        // model:    a sheet expanding in
-                                        //           place.
-                                        // token:    MotionTokens.Spatial.default.
-                                        // property: uniform scale, never
-                                        //           from 0 -- see
-                                        //           [CENTER_EXPAND_SQUASH].
-                                        placement.isCentered -> {
-                                            val grown = 1f - CENTER_EXPAND_SQUASH * away
-                                            scaleX = grown
-                                            scaleY = grown
-                                        }
-
-                                        // A laterally-anchored disc: no
-                                        // edge wipe (a straight-edged wipe
-                                        // across a circle fights its shape)
-                                        // and no scale either. It forms by
-                                        // turning -- see VolumeDisc's own
-                                        // formation turn, which rides this
-                                        // very spring through LocalArrival.
-                                        else -> Unit
-                                    }
-                                }
-
-                                // The effects channel, never [arrived].
-                                // Alpha has no mass, and a spatial spring's
-                                // overshoot past 1 is clamped by the
-                                // compositor -- so the panel would hold at
-                                // full opacity through the overshoot and
-                                // then ease back off it.
-                                alpha = fade.value.coerceIn(0f, 1f)
-
-                                // No clip of its own. Uncovering the
-                                // panel by wiping it open inside its own
-                                // bounds is a wipe that always starts at
-                                // the panel's own edge -- which is the one
-                                // thing this is not supposed to look like.
-                                // Now that the window is what travels, the
-                                // panel is genuinely off the side of the
-                                // display at the start of its entrance and
-                                // the *display* does the uncovering, which
-                                // is the only edge that was ever meant to.
-                            }
-                        ) {
-                            if (expanded) {
-                                // element:  the mixer panel's own corners.
-                                // model:    a disc's roundness relaxing
-                                //           into the mixer's flatter ones.
-                                // token:    MotionTokens.Spatial.default --
-                                //           morph.value itself.
-                                // property: corner radius, an oversized
-                                //           (effectively circular -- see
-                                //           RoundedCornerShape's own clamp
-                                //           to half the shorter side) value
-                                //           down to the configured mixer
-                                //           radius.
-                                //
-                                // Disc origin only: the bars already arrive
-                                // at the mixer's own corner radius, nothing
-                                // to relax there. A composition-phase read,
-                                // unlike the rotation beside it -- an
-                                // animated Shape has no draw-phase form to
-                                // read it in instead -- but only for the
-                                // one style, and only for the length of its
-                                // own morph.
-                                val mixerCornerRadiusDp = if (morphOrigin?.originStyle == PopupStyle.Disc) {
-                                    val uncurled = morph.value.coerceIn(0f, 1f)
-                                    val radius = DISC_MIXER_CORNER_RADIUS_DP +
-                                        (preferences.popupCornerRadius - DISC_MIXER_CORNER_RADIUS_DP) * uncurled
-                                    // Quantised, because this one is read in
-                                    // the composition phase: a Shape is built
-                                    // there, not drawn, so every distinct
-                                    // value recomposes the whole mixer. At
-                                    // full precision that was sixty
-                                    // recompositions of a lazy list for an
-                                    // effect the eye resolves in about eight,
-                                    // and it is why the disc's own morph went
-                                    // from smooth to stuttering.
-                                    (radius / UNCURL_STEP_DP).roundToInt() * UNCURL_STEP_DP
-                                } else {
-                                    preferences.popupCornerRadius.toFloat()
-                                }
-                                val mixerShape = RoundedCornerShape(mixerCornerRadiusDp.dp)
-
-                                // The panel this one is still becoming.
-                                //
-                                // The mixer does not appear in place of the
-                                // compact popup -- it *is* the compact
-                                // popup, changed shape -- so for as long as
-                                // the change is still running, the panel it
-                                // came out of is still here, underneath it,
-                                // handing its face over. Without this the
-                                // transition was the one thing a matched
-                                // morph is supposed to rule out: one panel
-                                // removed and another one drawn, with only
-                                // the rectangle they were drawn in agreeing
-                                // about what had happened.
-                                //
-                                // It carries no motion of its own. The
-                                // layer below cancels, exactly, the scale
-                                // the morphing container is applying -- so
-                                // the compact panel sits at its own true
-                                // size, over the very pixels it occupied a
-                                // frame ago, and travels only because the
-                                // container's centre does. What changes is
-                                // its alpha, on the morph's own effects
-                                // channel.
-                                //
-                                // element:  the compact panel's face,
-                                //           handing over.
-                                // model:    -- opacity is not an object.
-                                // token:    MotionTokens.Effects.default,
-                                //           through [morphFade].
-                                // property: alpha. Its scale is the
-                                //           container's own, inverted, and
-                                //           so is not an animation of its
-                                //           own at all.
-                                val morphedOutOf = morphOrigin
-                                if (morphing && morphedOutOf != null) {
-                                    CompositionLocalProvider(
-                                        // Settled, deliberately: this panel
-                                        // has already arrived -- it is the
-                                        // one the user has been looking at.
-                                        // Handing it the arrival the mixer
-                                        // is riding would re-form its disc
-                                        // and re-flare its glass at the
-                                        // very moment it is supposed to be
-                                        // standing still and going.
-                                        LocalArrival provides SettledArrival,
-                                        LocalArrivalFade provides SettledArrival,
-                                        // Its light settled too: this panel
-                                        // has been on screen long enough to
-                                        // have finished settling, and
-                                        // re-flaring it on the way out is a
-                                        // thing nobody asked for.
-                                        LocalAmbientEnter provides SettledArrival
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .matchParentSize()
-                                                .wrapContentSize(unbounded = true)
-                                                .graphicsLayer {
-                                                    val morphed = morph.value
-                                                    val containerX =
-                                                        morphedOutOf.scaleX + (1f - morphedOutOf.scaleX) * morphed
-                                                    val containerY =
-                                                        morphedOutOf.scaleY + (1f - morphedOutOf.scaleY) * morphed
-                                                    transformOrigin = TransformOrigin.Center
-                                                    scaleX = if (containerX > 0.001f) 1f / containerX else 1f
-                                                    scaleY = if (containerY > 0.001f) 1f / containerY else 1f
-                                                    alpha = (1f - morphFade.value).coerceIn(0f, 1f)
-                                                }
-                                                .untouchable()
-                                        ) {
-                                            CollapsedVolumePopup(
-                                                audioManager = manager.audioManager,
-                                                preferences = preferences,
-                                                atmosphereColors = atmosphereColorsState,
-                                                // Nothing to expand into --
-                                                // it is already happening --
-                                                // and nothing to keep awake:
-                                                // the mixer on top of this
-                                                // owns both now.
-                                                onExpand = {},
-                                                onInteract = {}
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // A real blur needs a genuinely separate
-                                // graphics layer from whatever it isn't
-                                // supposed to blur (see GlassBackground's own
-                                // doc comment), so the glass background and
-                                // its edge light are painted as Surface's own
-                                // siblings in this Box rather than through a
-                                // Modifier chained onto Surface itself.
-                                //
-                                // The same outer-edge halo the collapsed
-                                // bar styles already paint behind their own
-                                // panel (CollapsedVolumePopup's PanelShadow)
-                                // -- this panel never had one of its own
-                                // before, only its individual sliders did
-                                // once the panel itself was switched off.
-                                Box(
-                                    // The other half of the same crossfade:
-                                    // the mixer's own face arriving as the
-                                    // compact panel's goes. Only while
-                                    // there is a morph to arrive on -- with
-                                    // no matched geometry to run out of
-                                    // there is no hand-over either, and the
-                                    // panel is simply present.
-                                    modifier = Modifier.graphicsLayer {
-                                        alpha = if (morphOrigin != null) {
-                                            morphFade.value.coerceIn(0f, 1f)
-                                        } else {
-                                            1f
-                                        }
-                                    }
-                                ) {
-                                    if (showBackground) {
-                                        PanelShadow(
-                                            color = panelShadowColor,
-                                            shape = mixerShape,
-                                            blurRadius = preferences.activeShadowWidth().dp,
-                                            modifier = Modifier.matchParentSize()
-                                        )
-                                    }
-                                    if (panelGlass) {
-                                        MixerGlassFace(
-                                            shape = mixerShape,
-                                            baseColor = panelColor,
-                                            lightAngle = preferences.glassLightAngle,
-                                            lightWidth = preferences.glassLightWidth,
-                                            blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                                            noiseColor = preferences.glassNoiseColor?.let { Color(it) } ?: Color.White,
-                                            noiseAlpha = preferences.glassNoiseAlpha,
-                                            modifier = Modifier.matchParentSize()
-                                        )
-                                    }
-                                    if (panelAtmosphere) {
-                                        AtmosphereBackground(
-                                            shape = mixerShape,
-                                            baseColor = panelColor,
-                                            colors = atmosphereColorsState,
-                                            grainIntensity = preferences.atmosphereGrainIntensity,
-                                            grainSize = preferences.atmosphereGrainSize,
-                                            modifier = Modifier.matchParentSize()
-                                        )
-                                    }
-                                    Surface(
-                                        color = if (panelGlass || panelAtmosphere) Color.Transparent else panelColor,
-                                        contentColor = MaterialTheme.colorScheme.onBackground,
-                                        shape = mixerShape
-                                    ) {
-                                        // One inset all round, and it is
-                                        // the *list's* own content padding
-                                        // rather than a Column's around it.
-                                        //
-                                        // A lazy list clips to its own
-                                        // bounds along the axis it scrolls,
-                                        // and padding it from outside puts
-                                        // that clip line exactly on the
-                                        // rows' own edges: a row arriving
-                                        // or leaving (see animateItem) was
-                                        // cut in half at the top and bottom
-                                        // of the list by an edge with
-                                        // nothing drawn on it, and every
-                                        // row's shadow was cut off along
-                                        // the same line. Moved inside, the
-                                        // clip sits at the panel's own edge
-                                        // and the inset is sixteen dp of
-                                        // room the animations and the
-                                        // shadows can actually use.
-                                        AppVolumeList(
-                                            apps = manager.apps.values,
-                                            showAll = false,
-                                            contentPadding = PaddingValues(16.dp),
-                                            shadowColor = sliderShadowColor,
-                                            onChange = this@Service.handler::startIdleTimer
-                                        ) {
-                                            item("system_volume_panel") {
-                                                SystemVolumePanel(
-                                                    audioManager = manager.audioManager,
-                                                    notificationManagerProxy = manager.notificationManagerProxy,
-                                                    showCallVolumeAlways = false,
-                                                    applyVisibilityFilter = true,
-                                                    allowVisibilityConfig = false,
-                                                    isSliderVisible = manager::isSystemSliderVisible,
-                                                    onSliderVisibilityChange = manager::setSystemSliderVisible,
-                                                    shadowColor = sliderShadowColor,
-                                                    onChange = this@Service.handler::startIdleTimer
-                                                )
-                                            }
-                                        }
-                                    }
-                                    if (panelGlass) {
-                                        MixerGlassRim(
-                                            shape = mixerShape,
-                                            lightAngle = preferences.glassLightAngle,
-                                            lightWidth = preferences.glassLightWidth,
-                                            modifier = Modifier.matchParentSize()
-                                        )
-                                    }
-                                    if (panelAtmosphere) {
-                                        // Normal outline, not the beam-lit
-                                        // glass edge -- see
-                                        // AtmosphereScrim.kt's own doc
-                                        // comment on drawAtmosphereRing.
-                                        Box(
-                                            Modifier
-                                                .matchParentSize()
-                                                .border(1.dp, MaterialTheme.colorScheme.outline, mixerShape)
-                                        )
-                                    }
-                                }
-                            } else {
-                                CollapsedVolumePopup(
-                                    audioManager = manager.audioManager,
-                                    preferences = preferences,
-                                    atmosphereColors = atmosphereColorsState,
-                                    onExpand = {
-                                        // A vertical bar lies down first and
-                                        // expands afterwards; every other
-                                        // shape has nothing to turn, so it
-                                        // goes straight there.
-                                        if (preferences.popupStyle == PopupStyle.VerticalBar) {
-                                            turning = true
-                                        } else {
-                                            beginExpand()
-                                        }
-                                    },
-                                    onInteract = this@Service.handler::startIdleTimer
-                                )
-                            }
-                        }
-                        }
-                    }
+                    OverlayContent(preferences)
                 }
             }
         }
 
-        // The ComposeView is the window's own root directly -- no native
-        // blur to shape into a disc-ring reveal any more (see NOTICE.md),
-        // so there's no separate sibling view left to wrap it in a
-        // FrameLayout for.
         return composeView
     }
 
+    /**
+     * The whole overlay: one panel that is the compact popup and then the
+     * mixer, and the mixer's rows inside it.
+     *
+     * The choreography, in order:
+     *
+     * 1. **Arriving.** The compact popup slides out of the screen edge it
+     *    hugs (or, with no edge, grows out of its own middle), as one
+     *    object -- panel, content and shadow together. The disc too.
+     * 2. **Opening, phase one.** The panel travels to exactly where the
+     *    mixer's media row will be, and takes that row's shape on the way.
+     *    A vertical bar turns a quarter clockwise as it goes, so it arrives
+     *    lying the way the row lies. Past halfway, the popup's own content
+     *    hands over to the media row's, in place.
+     * 3. **Opening, phase two.** Before phase one has quite come to rest,
+     *    the panel opens out of that row into the whole mixer, and the
+     *    other rows come out from under it one at a time (see
+     *    [RowCascade]).
+     * 4. **Leaving.** The mixer's rows tuck back in, bottom first, the panel
+     *    closes back down to the media row, and the whole thing settles
+     *    away and fades. A compact popup simply goes back into its edge.
+     *
+     * Every destination is worked out before anything moves: the mixer's
+     * rectangle from the display's own size (see [mixerRect]), the media
+     * row's from where the mixer actually lays it out. The motion only ever
+     * travels between rectangles that are already known, which is why
+     * nothing here can arrive and then correct itself.
+     */
+    @Composable
+    private fun OverlayContent(preferences: UiPreferences) {
+        val stage = remember { OverlayStage() }
+        var expanded by remember { mutableStateOf(false) }
+        val visible = contentVisible
+        val frame = windowFrame
+        val density = LocalDensity.current
+        val densityScale = density.density
+        val ready = frame != null && stage.compactSize != IntSize.Zero
+
+        val showBackground = preferences.activeShowBackground()
+        val isDisc = preferences.popupStyle == PopupStyle.Disc
+        val turnsIntoRow = preferences.popupStyle == PopupStyle.VerticalBar
+        val edge = preferences.activeAnchor().edge(frame?.rtl ?: false)
+        val enterTravelPx = with(density) { ENTER_TRAVEL_DP.toPx() }
+
+        val panelColor by animateColorAsState(
+            targetValue = if (!showBackground) {
+                Color.Transparent
+            } else {
+                MaterialTheme.colorScheme.background.copy(alpha = preferences.paintedPanelAlpha())
+            },
+            animationSpec = MotionTokens.Effects.color,
+            label = "panel"
+        )
+        // Black: a shadow tinted like the panel it sits behind is invisible
+        // against any background close to that colour.
+        val panelShadowColor by animateColorAsState(
+            targetValue = Color.Black.copy(alpha = preferences.shadowAlpha()),
+            animationSpec = MotionTokens.Effects.color,
+            label = "panelShadow"
+        )
+        // With the panel switched off there is no halo to cast, so the
+        // shadow moves onto each of the mixer's sliders instead.
+        val sliderShadowColor by animateColorAsState(
+            targetValue = if (showBackground) {
+                Color.Transparent
+            } else {
+                Color.Black.copy(alpha = preferences.shadowAlpha())
+            },
+            animationSpec = MotionTokens.Effects.color,
+            label = "sliderShadow"
+        )
+
+        // Whether the compact popup's own content has finished handing over
+        // to the media row and can be let go. Derived, so the whole overlay
+        // recomposes once when it flips rather than on every frame of the
+        // hand-over.
+        val compactGone by remember {
+            derivedStateOf { expanded && stage.handover.value >= 1f }
+        }
+
+        // The panel's corners: the compact popup's own, then the mixer's.
+        // For the bars those are the same number and nothing changes; the
+        // disc's round panel relaxes into the mixer's corners on its way to
+        // the media row.
+        //
+        // element:  the panel's corners.
+        // model:    a disc's roundness relaxing into a sheet's corners.
+        // token:    MotionTokens.Spatial.turn -- the journey to the media
+        //           row itself, read rather than animated again.
+        // property: corner radius, quantised (see [UNCURL_STEP_DP]).
+        val compactCorner = preferences.compactPanelCornerRadius().value
+        val mixerCorner = preferences.popupCornerRadius.toFloat()
+        val cornerDp by remember(compactCorner, mixerCorner) {
+            derivedStateOf {
+                if (!expanded) {
+                    compactCorner
+                } else {
+                    val relaxed = compactCorner +
+                        (mixerCorner - compactCorner) * stage.toRow.value.coerceIn(0f, 1f)
+                    (relaxed / UNCURL_STEP_DP).roundToInt() * UNCURL_STEP_DP
+                }
+            }
+        }
+        val panelShape = RoundedCornerShape(cornerDp.dp)
+
+        // -- Arriving and leaving ------------------------------------------
+        LaunchedEffect(visible, ready) {
+            if (!ready) {
+                return@LaunchedEffect
+            }
+            if (visible) {
+                // element:  the whole panel.
+                // model:    -- opacity is not an object.
+                // token:    MotionTokens.Effects.default.
+                // property: alpha.
+                launch { stage.fade.animateTo(1f, MotionTokens.Effects.default()) }
+                // element:  the light on the glass, and the Atmosphere field.
+                // model:    a condition of a surface settling once it is there.
+                // token:    MotionTokens.Ambient.enter.
+                // property: beam angle and strength; field rotation, centre,
+                //           grain phase and blob paths. Never the pane.
+                launch { stage.settling.animateTo(1f, MotionTokens.Ambient.enter()) }
+                if (expanded) {
+                    // Called back in the middle of leaving: open back up
+                    // from wherever it had got to.
+                    launch { stage.toMixer.animateTo(1f, MotionTokens.Spatial.travel()) }
+                    launch { stage.cascade.reveal() }
+                }
+                // element:  the compact panel.
+                // model:    a sheet slid out of the edge it hugs, or expanding
+                //           in place with no edge to come out of.
+                // token:    MotionTokens.Spatial.travel.
+                // property: translation along the edge axis, or uniform
+                //           scale, never from 0 -- see the layer below.
+                stage.appear.animateTo(1f, MotionTokens.Spatial.travel())
+            } else {
+                if (expanded) {
+                    // The rows go first, bottom row first, each tucking
+                    // back under the one above; the panel closes back down
+                    // to the media row after them; and before it has quite
+                    // finished, the whole thing starts to settle away.
+                    launch { stage.cascade.conceal() }
+                    val effect = this
+                    var leaving: Job? = null
+                    // Only the fade is waited for: once the panel is
+                    // invisible, the last of the squash's settle is nothing
+                    // anyone can see, and the window can go.
+                    val leave: () -> Job = {
+                        effect.launch { stage.appear.animateTo(0f, MotionTokens.Spatial.travel()) }
+                        effect.launch { stage.fade.animateTo(0f, MotionTokens.Effects.default()) }
+                    }
+                    // element:  the panel closing.
+                    // model:    the same sheet, folding back to one row.
+                    // token:    MotionTokens.Spatial.travel.
+                    // property: its laid-out rectangle.
+                    stage.toMixer.animateTo(0f, MotionTokens.Spatial.travel()) {
+                        if (leaving == null && value <= LEAVE_AT) {
+                            leaving = leave()
+                        }
+                    }
+                    (leaving ?: leave()).join()
+                } else {
+                    launch { stage.appear.animateTo(0f, MotionTokens.Spatial.travel()) }
+                    stage.fade.animateTo(0f, MotionTokens.Effects.default())
+                }
+                // Posted rather than called straight from here: this
+                // coroutine belongs to the composition the window is about
+                // to be torn down with.
+                this@Service.handler.post { this@Service.handler.finishHide() }
+            }
+        }
+
+        // -- Opening -------------------------------------------------------
+        LaunchedEffect(expanded) {
+            if (!expanded) {
+                return@LaunchedEffect
+            }
+            // The mixer has to be laid out before anything can travel to
+            // it: its rectangle and its media row are the destinations. A
+            // frame or two, with the compact popup standing still in the
+            // meantime.
+            withTimeoutOrNull(MEDIA_ROW_WAIT_MS) {
+                snapshotFlow { stage.mediaRow }.first { it != null }
+            }
+            val effect = this
+            var handingOver = false
+            var opening = false
+            val handOver = {
+                handingOver = true
+                // element:  the compact popup's content, and the media row's.
+                // model:    -- opacity is not an object.
+                // token:    MotionTokens.Effects.default.
+                // property: alpha, one out as the other comes in.
+                effect.launch { stage.handover.animateTo(1f, MotionTokens.Effects.default()) }
+            }
+            val open = {
+                opening = true
+                if (this@Service.contentVisible) {
+                    // element:  the panel opening into the mixer.
+                    // model:    one sheet, unfolding out of a single row.
+                    // token:    MotionTokens.Spatial.travel.
+                    // property: its laid-out rectangle.
+                    effect.launch { stage.toMixer.animateTo(1f, MotionTokens.Spatial.travel()) }
+                    effect.launch { stage.cascade.reveal() }
+                }
+            }
+            // element:  the compact panel, travelling to the media row.
+            // model:    the same sheet taking the row's place -- and, for a
+            //           vertical bar, the bar lying down as it goes.
+            // token:    MotionTokens.Spatial.turn.
+            // property: its laid-out rectangle, and the content's
+            //           rotationZ (vertical bar only, a quarter clockwise).
+            stage.toRow.animateTo(1f, MotionTokens.Spatial.turn()) {
+                if (!handingOver && value >= HANDOVER_AT) {
+                    handOver()
+                }
+                if (!opening && value >= OPEN_AT) {
+                    open()
+                }
+            }
+            if (!handingOver) {
+                handOver()
+            }
+            if (!opening) {
+                open()
+            }
+        }
+
+        val onExpand: () -> Unit = {
+            if (!expanded) {
+                stage.mediaRow = null
+                expanded = true
+                this@Service.handler.startIdleTimer()
+            }
+        }
+
+        val mediaAnchor: (LayoutCoordinates) -> Unit = remember(stage) {
+            { coordinates ->
+                stage.mediaCoordinates = coordinates
+                stage.updateMediaRow()
+            }
+        }
+
+        CompositionLocalProvider(
+            LocalArrival provides remember(stage) { { stage.appear.value } },
+            LocalArrivalFade provides remember(stage) { { stage.fade.value } },
+            LocalAmbientEnter provides remember(stage) { { stage.settling.value } },
+            LocalRowCascade provides stage.cascade,
+            LocalMediaHandover provides remember(stage) { { stage.handover.value } },
+            LocalMediaRowAnchor provides mediaAnchor
+        ) {
+            // The one panel, and the compact popup's content in it.
+            val panelSlot: @Composable () -> Unit = {
+                Box(
+                    Modifier.graphicsLayer {
+                        // Per draw call rather than through an
+                        // offscreen buffer the size of the panel,
+                        // which would cut the shadow's halo off at
+                        // the panel's own edge while it fades.
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                        alpha = stage.fade.value.coerceIn(0f, 1f)
+                        val away = 1f - stage.appear.value
+                        if (expanded || edge == ScreenEdge.None) {
+                            // element:  a panel with no edge to come
+                            //           out of -- and the mixer leaving.
+                            // model:    a sheet expanding in place.
+                            // token:    MotionTokens.Spatial.travel.
+                            // property: uniform scale, never from 0.
+                            val grown = 1f - CENTER_EXPAND_SQUASH * away
+                            scaleX = grown
+                            scaleY = grown
+                        } else {
+                            // element:  the compact panel.
+                            // model:    a sheet slid out of its edge.
+                            // token:    MotionTokens.Spatial.travel.
+                            // property: translation, edge axis only.
+                            val compact = stage.compactRect
+                            val gap = when (edge) {
+                                ScreenEdge.Left -> compact.left.toFloat()
+                                ScreenEdge.Right -> (frame?.width ?: 0) - compact.right.toFloat()
+                                ScreenEdge.Top -> compact.top.toFloat()
+                                else -> (frame?.height ?: 0) - compact.bottom.toFloat()
+                            }.coerceAtLeast(0f)
+                            val travel = (enterTravelPx + gap) * away
+                            when (edge) {
+                                ScreenEdge.Left -> translationX = -travel
+                                ScreenEdge.Right -> translationX = travel
+                                ScreenEdge.Top -> translationY = -travel
+                                else -> translationY = travel
+                            }
+                        }
+                    }
+                ) {
+                    SharedPanel(
+                        preferences = preferences,
+                        shape = panelShape,
+                        showBackground = showBackground,
+                        panelColor = panelColor,
+                        shadowColor = panelShadowColor,
+                        atmosphereColors = atmosphereColorsState,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer {
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
+                                // The disc's own panel is never
+                                // painted -- the dial is the whole
+                                // popup -- so the shared one only
+                                // comes up as the dial hands over to
+                                // the media row.
+                                alpha = if (isDisc) stage.handover.value.coerceIn(0f, 1f) else 1f
+                            }
+                    )
+                    if (!compactGone) {
+                        Box(
+                            Modifier
+                                .matchParentSize()
+                                .wrapContentSize(unbounded = true)
+                                .onSizeChanged { stage.compactSize = it }
+                                .graphicsLayer {
+                                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                                    // element:  the vertical bar.
+                                    // model:    a bar lying down.
+                                    // token:    MotionTokens.Spatial.turn,
+                                    //           through toRow.
+                                    // property: rotationZ, a quarter
+                                    //           clockwise, about its middle.
+                                    val turned = if (turnsIntoRow) COMPACT_TURN_DEGREES * stage.toRow.value else 0f
+                                    rotationZ = turned
+                                    // element:  the compact popup's content.
+                                    // model:    the thing in the panel staying inside the panel
+                                    //           while the panel reshapes round it.
+                                    // token:    -- derived from phase one, not animated.
+                                    // property: uniform scale, only ever down from 1, just
+                                    //           enough to fit.
+                                    //
+                                    // Halfway through its turn a bar is a diagonal, and a
+                                    // diagonal is wider and taller than either the upright bar
+                                    // or the row it becomes; the disc is taller than the row it
+                                    // becomes the whole way. Rather than poke out through the
+                                    // panel it is in, the content gives way to it.
+                                    if (expanded) {
+                                        val panel = stage.panelRect(true)
+                                        val radians = Math.toRadians(turned.toDouble())
+                                        val cosine = abs(cos(radians)).toFloat()
+                                        val sine = abs(sin(radians)).toFloat()
+                                        val contentWidth = size.width * cosine + size.height * sine
+                                        val contentHeight = size.width * sine + size.height * cosine
+                                        if (contentWidth > 0f && contentHeight > 0f) {
+                                            val fit = min(1f, min(panel.width / contentWidth, panel.height / contentHeight))
+                                            scaleX = fit
+                                            scaleY = fit
+                                        }
+                                    }
+                                    alpha = (1f - stage.handover.value).coerceIn(0f, 1f)
+                                }
+                                .then(if (expanded) Modifier.untouchable() else Modifier)
+                        ) {
+                            CollapsedVolumePopup(
+                                audioManager = manager.audioManager,
+                                preferences = preferences,
+                                atmosphereColors = atmosphereColorsState,
+                                onExpand = onExpand,
+                                onInteract = this@Service.handler::startIdleTimer,
+                                drawPanel = false
+                            )
+                        }
+                    }
+                }
+            }
+            // The mixer's rows -- composed only once it is asked for.
+            val mixerSlot: @Composable () -> Unit = {
+                if (expanded) {
+                    Box(
+                        Modifier
+                            .graphicsLayer {
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
+                                alpha = stage.fade.value.coerceIn(0f, 1f)
+                                val mixer = stage.mixerRect
+                                if (mixer != null && mixer.width > 0 && mixer.height > 0) {
+                                    // Leaving together with the panel:
+                                    // the same squash about the same
+                                    // point.
+                                    val panel = stage.panelRect(true)
+                                    transformOrigin = TransformOrigin(
+                                        (panel.center.x - mixer.left) / mixer.width,
+                                        (panel.center.y - mixer.top) / mixer.height
+                                    )
+                                    val grown = 1f - CENTER_EXPAND_SQUASH * (1f - stage.appear.value)
+                                    scaleX = grown
+                                    scaleY = grown
+                                }
+                            }
+                            // Nothing of the mixer outside the panel it
+                            // is in: while the panel is still opening,
+                            // its edge is what the rows come out from
+                            // under.
+                            .drawWithContent {
+                                val mixer = stage.mixerRect
+                                if (mixer == null) {
+                                    drawContent()
+                                } else {
+                                    val panel = stage.panelRect(true)
+                                    clipRect(
+                                        left = panel.left - mixer.left,
+                                        top = panel.top - mixer.top,
+                                        right = panel.right - mixer.left,
+                                        bottom = panel.bottom - mixer.top
+                                    ) {
+                                        this@drawWithContent.drawContent()
+                                    }
+                                }
+                            }
+                            .onPlaced {
+                                stage.mixerRoot = it
+                                stage.updateMediaRow()
+                            }
+                    ) {
+                        CompositionLocalProvider(
+                            LocalContentColor provides MaterialTheme.colorScheme.onBackground
+                        ) {
+                            // The list's own content padding rather
+                            // than a padding round it, so its scroll
+                            // clip sits at the panel's edge and the
+                            // inset is room the rows' shadows and
+                            // motion can use.
+                            AppVolumeList(
+                                apps = manager.apps.values,
+                                showAll = false,
+                                contentPadding = PaddingValues(MIXER_PADDING_DP.dp),
+                                shadowColor = sliderShadowColor,
+                                onChange = this@Service.handler::startIdleTimer
+                            ) {
+                                item("system_volume_panel") {
+                                    SystemVolumePanel(
+                                        audioManager = manager.audioManager,
+                                        notificationManagerProxy = manager.notificationManagerProxy,
+                                        showCallVolumeAlways = false,
+                                        applyVisibilityFilter = true,
+                                        allowVisibilityConfig = false,
+                                        isSliderVisible = manager::isSystemSliderVisible,
+                                        onSliderVisibilityChange = manager::setSystemSliderVisible,
+                                        shadowColor = sliderShadowColor,
+                                        onChange = this@Service.handler::startIdleTimer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Layout(
+                contents = listOf(panelSlot, mixerSlot),
+                modifier = Modifier.fillMaxSize()
+            ) { (panelMeasurables, mixerMeasurables), constraints ->
+                val layoutFrame = frame ?: WindowFrame(
+                    width = constraints.maxWidth,
+                    height = constraints.maxHeight,
+                    display = Rect(0, 0, constraints.maxWidth, constraints.maxHeight),
+                    cutouts = emptyList(),
+                    landscape = false,
+                    rtl = false
+                )
+                val margin = (MIXER_SCREEN_MARGIN_DP * densityScale).roundToInt()
+
+                // The mixer first: where everything is going.
+                val mixerPlaceable = mixerMeasurables.firstOrNull()?.measure(
+                    Constraints(
+                        minWidth = max(0, layoutFrame.width - 2 * margin),
+                        maxWidth = max(0, layoutFrame.width - 2 * margin),
+                        minHeight = 0,
+                        maxHeight = max(0, layoutFrame.height - 2 * margin)
+                    )
+                )
+                val mixer = mixerPlaceable?.let {
+                    preferences.mixerRect(layoutFrame, it.width, it.height, densityScale)
+                }
+                stage.mixerRect = mixer
+                stage.rowRect = mixer?.let {
+                    val padding = (MIXER_PADDING_DP * densityScale).roundToInt()
+                    val media = stage.mediaRow
+                    if (media != null) {
+                        IntRect(
+                            it.left,
+                            (it.top + media.top.roundToInt() - padding).coerceAtLeast(it.top),
+                            it.right,
+                            (it.top + media.bottom.roundToInt() + padding).coerceAtMost(it.bottom)
+                        )
+                    } else {
+                        IntRect(
+                            it.left,
+                            it.top,
+                            it.right,
+                            min(it.bottom, it.top + (FALLBACK_ROW_HEIGHT_DP * densityScale).roundToInt())
+                        )
+                    }
+                }
+
+                // Then where the compact popup sits, and where the panel is
+                // between the two this frame.
+                val compactSize = stage.compactSize
+                stage.compactRect = preferences.compactRect(
+                    layoutFrame, compactSize.width, compactSize.height, densityScale
+                )
+                val panel = stage.panelRect(expanded)
+                val panelLeft = panel.left.roundToInt()
+                val panelTop = panel.top.roundToInt()
+                val panelWidth = max(0, panel.width.roundToInt())
+                val panelHeight = max(0, panel.height.roundToInt())
+                this@Service.touchBounds.set(panelLeft, panelTop, panelLeft + panelWidth, panelTop + panelHeight)
+
+                val panelPlaceable = panelMeasurables.first().measure(Constraints.fixed(panelWidth, panelHeight))
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    panelPlaceable.place(panelLeft, panelTop)
+                    if (mixerPlaceable != null && mixer != null) {
+                        mixerPlaceable.place(mixer.left, mixer.top)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The overlay's window: the whole screen, fixed.
+     *
+     * It used to be exactly the panel's size (WRAP_CONTENT), which meant
+     * the panel could only move or change shape by having the window moved
+     * and resized under it, frame by frame, through the window manager --
+     * always a frame early or a frame late, and hidden outright while it was
+     * swapped for the mixer's. Now it never changes at all. The panel moves
+     * inside it, and [TouchableRegion] keeps it from catching any touch that
+     * doesn't land on the panel.
+     */
     private val layoutParams by lazy {
         WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, // Width
-            WindowManager.LayoutParams.WRAP_CONTENT, // Height
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             // FLAG_NOT_FOCUSABLE keeps the on-screen keyboard up: a
-            // focusable overlay takes focus from whatever is typing, which
-            // dismisses the IME and brings it back when the popup goes away.
-            // Touch still reaches the popup -- only key/focus events don't,
-            // and volume keys arrive through the accessibility service
-            // rather than this window.
+            // focusable overlay takes focus from whatever is typing.
             //
-            // FLAG_LAYOUT_NO_LIMITS lets x/y actually place the window
-            // partly off the display -- a lateral disc's whole point is to
-            // sit half (or more) off the physical screen at low offset,
-            // cut only by the screen's own edge. Without it the platform
-            // quietly clamps the window back on screen itself, undoing
-            // that positioning before it ever reaches the compositor.
+            // FLAG_LAYOUT_NO_LIMITS and FLAG_LAYOUT_IN_SCREEN keep the
+            // window's frame the same reference the anchors and offsets were
+            // always measured against.
             //
-            // FLAG_HARDWARE_ACCELERATED matters for more than performance
-            // here: unlike an Activity's own window (which inherits
-            // android:hardwareAccelerated from the manifest automatically),
-            // a raw window a Service adds via WindowManager.addView() stays
-            // software-rendered unless this flag is set explicitly. The
-            // glass panel's real blur, the panel's own PanelShadow halo, and
-            // small-element shadows (softShadow, Modifier.shadow) all need a
-            // hardware-accelerated RenderNode to draw anything at all --
-            // without it they don't throw or log, they just silently paint
-            // nothing, which is exactly the "blur/shadow does nothing"
-            // behaviour this fixes.
+            // FLAG_HARDWARE_ACCELERATED matters for more than performance: a
+            // raw window a service adds stays software-rendered without it,
+            // and the glass blur, the panel's halo and the elements' own
+            // shadows all need a hardware RenderNode to draw anything at all.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT // Make the background translucent
+            PixelFormat.TRANSLUCENT
         ).apply {
-            applyConfiguredPosition(this)
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
         }
     }
 
-    /**
-     * Places the overlay per the user's anchor and offsets. The START/END
-     * gravities follow layout direction, so a right-anchored popup mirrors
-     * correctly in RTL locales.
-     */
-    private fun applyConfiguredPosition(params: WindowManager.LayoutParams) {
-        val preferences = manager.uiPreferences
-        val density = resources.displayMetrics.density
-
-        params.gravity = when (preferences.activeAnchor()) {
-            PopupAnchor.TopStart -> Gravity.TOP or Gravity.START
-            PopupAnchor.TopCenter -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            PopupAnchor.TopEnd -> Gravity.TOP or Gravity.END
-            PopupAnchor.CenterStart -> Gravity.CENTER_VERTICAL or Gravity.START
-            PopupAnchor.Center -> Gravity.CENTER
-            PopupAnchor.CenterEnd -> Gravity.CENTER_VERTICAL or Gravity.END
-            PopupAnchor.BottomStart -> Gravity.BOTTOM or Gravity.START
-            PopupAnchor.BottomCenter -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            PopupAnchor.BottomEnd -> Gravity.BOTTOM or Gravity.END
-        }
-
-        params.x = (preferences.activeOffsetX() * density).toInt()
-        params.y = (preferences.activeOffsetY() * density).toInt()
-    }
-
-    /**
-     * The window is WRAP_CONTENT, so its real size is unknown until its
-     * first layout pass -- only then can its position be corrected against
-     * that real size. Registers a one-shot listener, so this has to be
-     * called again for every layout the window's own size can change with
-     * -- collapsed on first show, and again on [expanded] toggling true,
-     * since the expanded mixer is a completely different (and usually much
-     * wider) size than whatever collapsed style it grew from.
-     *
-     * A bar-style popup always stays fully on screen: an offset that would
-     * push it past the display edge is pulled back in rather than letting
-     * the display cut it off. The expanded mixer behaves exactly like a bar
-     * here too, whatever the collapsed style underneath it was -- it's
-     * always a plain rounded rectangle, never revealed by degrees the way a
-     * lateral disc is.
-     *
-     * A laterally-anchored disc (hugging a side, not the horizontal center)
-     * while collapsed is deliberately the opposite: the disc itself is
-     * always drawn whole (see VolumeDisc's own doc comment), but the
-     * *window* holding it is allowed to sit partly off the physical screen,
-     * cut only by the display's own edge rather than by any clipping in the
-     * app -- exactly like a stock Android control that pokes out from the
-     * side. Horizontal offset controls how much of it pokes out: at zero
-     * the window sits half off-screen, and by the top of the offset range
-     * it's fully back on screen with a small gap left to the edge, rather
-     * than sliding further in from there the way a bar would.
-     *
-     * [onPositioned], when given, runs right after the correction lands (or
-     * immediately, if none was needed) -- never if the view was swapped out
-     * or torn down before its first layout ever fired. The expand
-     * transition uses it to reveal the window only once it's actually
-     * sitting in its final spot; see the call in `onExpand` below for why.
-     */
-
-    /**
-     * Nudges a would-be position's own absolute top coordinate (screen
-     * space, same as [bounds] and the cutout's own bounding rects -- *not*
-     * the gravity-relative offset [WindowManager.LayoutParams.y] actually
-     * stores; the caller converts both ways) away from the display's camera
-     * cutout, so a vertical or horizontal slider (or a disc) never lands
-     * partly behind it -- landscape only. Portrait's own cutout sits in the
-     * status bar strip above where any collapsed popup ever lands, but
-     * landscape rotates that same cutout onto one of the screen's long
-     * edges, at whatever height the front camera physically is -- exactly
-     * the height a center-anchored popup would land at too, on the same
-     * side. Only ever moves the top coordinate: the cutout occupies a band
-     * across part of the vertical axis at a fixed horizontal edge, so
-     * clearing it is a vertical nudge, never a horizontal one.
-     *
-     * Shifts toward whichever side (above or below the cutout) leaves more
-     * room, then re-clamps within [bounds] so the nudge itself can never
-     * push the popup back off the opposite edge of the screen.
-     */
-    private fun avoidCameraCutout(absoluteLeft: Int, absoluteTop: Int, width: Int, height: Int, bounds: Rect): Int {
-        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
-            return absoluteTop
-        }
-
-        val cutouts = windowManager.currentWindowMetrics.windowInsets.displayCutout?.boundingRects
-        if (cutouts.isNullOrEmpty()) {
-            return absoluteTop
-        }
-
-        val popupRect = Rect(absoluteLeft, absoluteTop, absoluteLeft + width, absoluteTop + height)
-        val overlapping = cutouts.firstOrNull { Rect.intersects(it, popupRect) } ?: return absoluteTop
-
-        val roomAbove = overlapping.top
-        val roomBelow = bounds.height() - overlapping.bottom
-        val adjustedTop = if (roomBelow >= roomAbove) overlapping.bottom else overlapping.top - height
-
-        return adjustedTop.coerceIn(0, (bounds.height() - height).coerceAtLeast(0))
-    }
-
-    private fun clampToScreenOnceLaidOut(target: View, expanded: Boolean, onPositioned: (() -> Unit)? = null) {
-        target.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                target.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                if (view !== target || target.width == 0 || target.height == 0) {
-                    return
-                }
-
-                val preferences = manager.uiPreferences
-                val placement = preferences.panelPlacement(expanded)
-
-                // The expanded mixer can skip all the clamp math below
-                // entirely: centering doesn't depend on the mixer's own
-                // measured size the way clamping does, so gravity alone
-                // (resolved by the platform against whatever size the
-                // window turns out to be) already lands it dead center.
-                //
-                // Read through [panelPlacement] rather than off the
-                // preference directly, because the composition builds its
-                // entrance from exactly the same call -- that shared
-                // reading is the whole point of the state existing.
-                if (placement == PanelPlacement.DisplayCenter) {
-                    layoutParams.gravity = Gravity.CENTER
-                    layoutParams.x = 0
-                    layoutParams.y = 0
-                    panelBaseX = 0
-                    panelBaseY = 0
-                    // Nothing to be uncovered from, so nothing to measure a
-                    // gap to.
-                    edgeGapPx = 0f
-                    windowManager.updateViewLayout(target, layoutParams)
-                    onPositioned?.invoke()
-                    return
-                }
-
-                val density = resources.displayMetrics.density
-                val bounds = windowManager.currentWindowMetrics.bounds
-                val horizontalGravity = layoutParams.gravity and Gravity.HORIZONTAL_GRAVITY_MASK
-                val verticalGravity = layoutParams.gravity and Gravity.VERTICAL_GRAVITY_MASK
-
-                val isLateralDisc = !expanded && preferences.popupStyle == PopupStyle.Disc &&
-                    (horizontalGravity == Gravity.LEFT || horizontalGravity == Gravity.RIGHT)
-
-                // How much of target.width/height below is
-                // the shadow's own room rather than panel -- always 0 for
-                // isLateralDisc, since [hasShadowHalo] never grants a disc
-                // any room in the first place, so every formula in that
-                // branch stays exactly what it always was.
-                val insetPx = shadowRoomPx(expanded).roundToInt()
-
-                val clampedX = if (isLateralDisc) {
-                    // Positive x always moves the window inward, off the
-                    // edge it hugs, whichever side that is -- the same
-                    // formula covers both LEFT and RIGHT gravity.
-                    val hiddenX = -(target.width / 2)
-                    val revealedX = (DISC_EDGE_GAP_DP * density).toInt()
-                    val revealFraction =
-                        (preferences.activeOffsetX().toFloat() / POPUP_OFFSET_X_MAX_DP).coerceIn(0f, 1f)
-                    (hiddenX + (revealedX - hiddenX) * revealFraction).roundToInt()
-                } else {
-                    when (horizontalGravity) {
-                        // The offset the user set is a distance from the
-                        // screen edge to the **panel's** own edge, so the
-                        // window starts insetPx further out than that and
-                        // its margin -- with the halo in it -- hangs off
-                        // the display. Otherwise the margin quietly became
-                        // part of the offset and a zero-offset panel sat
-                        // 20dp off the edge it is supposed to be hugging.
-                        //
-                        // Recomputed from the preference rather than read
-                        // off layoutParams.x, so that a second pass over an
-                        // already-shifted position (the expand handler
-                        // clamps without re-applying the configured
-                        // position first) can't shift it twice.
-                        Gravity.LEFT, Gravity.RIGHT -> {
-                            val requestedX = (preferences.activeOffsetX() * density).toInt()
-                            val minX = -insetPx
-                            val maxX = (bounds.width() - target.width + insetPx).coerceAtLeast(minX)
-                            (requestedX - insetPx).coerceIn(minX, maxX)
-                        }
-                        else -> layoutParams.x
-                    }
-                }
-                val clampedY = when (verticalGravity) {
-                    Gravity.TOP, Gravity.BOTTOM -> {
-                        val requestedY = (preferences.activeOffsetY() * density).toInt()
-                        val minY = -insetPx
-                        val maxY = (bounds.height() - target.height + insetPx).coerceAtLeast(minY)
-                        (requestedY - insetPx).coerceIn(minY, maxY)
-                    }
-                    else -> layoutParams.y
-                }
-
-                // avoidCameraCutout works in absolute screen coordinates,
-                // the same space bounds and the cutout's own bounding rects
-                // are already in -- but LayoutParams.y (like .x) is relative
-                // to whichever edge (or center) the window's gravity is
-                // actually anchored to, so it's converted there and back
-                // around the call.
-                val absoluteLeft = when (horizontalGravity) {
-                    Gravity.LEFT -> clampedX
-                    Gravity.RIGHT -> bounds.width() - target.width - clampedX
-                    else -> (bounds.width() - target.width) / 2 + clampedX
-                }
-                val absoluteTop = when (verticalGravity) {
-                    Gravity.TOP -> clampedY
-                    Gravity.BOTTOM -> bounds.height() - target.height - clampedY
-                    else -> (bounds.height() - target.height) / 2 + clampedY
-                }
-                val adjustedAbsoluteTop =
-                    avoidCameraCutout(absoluteLeft, absoluteTop, target.width, target.height, bounds)
-                val cutoutAdjustedY = when (verticalGravity) {
-                    Gravity.TOP -> adjustedAbsoluteTop
-                    Gravity.BOTTOM -> bounds.height() - target.height - adjustedAbsoluteTop
-                    else -> adjustedAbsoluteTop - (bounds.height() - target.height) / 2
-                }
-
-                // Where the panel has actually ended up: what a later
-                // displacement is measured from (see [displaceWindow]), and
-                // how far it is from the display edge it comes out of (see
-                // [edgeGapPx]). Both are read off the clamped, cutout-
-                // adjusted position rather than the requested one, because
-                // what the entrance has to come out from is the edge the
-                // panel really ended up near.
-                panelBaseX = clampedX
-                panelBaseY = cutoutAdjustedY
-                // + insetPx on every edge alike: absoluteLeft/adjustedAbsoluteTop
-                // above are the *window's* own edge, and the panel's real
-                // edge sits insetPx further in from it on whichever side is
-                // doing the revealing.
-                edgeGapPx = when (placement.revealEdge) {
-                    RevealEdge.Left -> absoluteLeft.toFloat() + insetPx
-                    RevealEdge.Right -> (bounds.width() - absoluteLeft - target.width).toFloat() + insetPx
-                    RevealEdge.Top -> adjustedAbsoluteTop.toFloat() + insetPx
-                    RevealEdge.Bottom -> (bounds.height() - adjustedAbsoluteTop - target.height).toFloat() + insetPx
-                    RevealEdge.None -> 0f
-                }.coerceAtLeast(0f)
-
-                if (clampedX != layoutParams.x || cutoutAdjustedY != layoutParams.y) {
-                    layoutParams.x = clampedX
-                    layoutParams.y = cutoutAdjustedY
-                    windowManager.updateViewLayout(target, layoutParams)
-                }
-                onPositioned?.invoke()
-            }
-        })
-    }
-
-    /** The overlay window's own root view -- [createView]'s return value, added to [windowManager] directly. */
+    /** The overlay window's own root view -- [createView]'s return value. */
     private var view: View? = null
     private var viewVisible = false
 
     /**
-     * Whether the composition should be playing its arrival or its exit.
-     * The window's own alpha is no longer what fades -- it is either fully
-     * present or not added at all -- so this is the single switch the whole
-     * appearance hangs off, read by [createView]'s own springs.
+     * Whether the composition should be playing its arrival or its exit --
+     * the single switch the whole appearance hangs off.
      */
     private var contentVisible by mutableStateOf(true)
 
-    /**
-     * Whether the window is actually on screen yet. It is added invisible
-     * and only revealed once it has been laid out and repositioned for its
-     * own measured size (twice over, for the mixer -- see the expand
-     * handler in [createView]), and an arrival that began before that would
-     * have had some of itself happen where nobody could see it.
-     */
-    private var windowRevealed by mutableStateOf(false)
+    /** The window as laid out, or null until it has been. See [WindowFrame]. */
+    private var windowFrame by mutableStateOf<WindowFrame?>(null)
+
+    /** The panel's rectangle this frame, in window px: the only part of the window that takes touches. */
+    private val touchBounds = Rect()
+
+    /** Whether [touchBounds] is actually enforced by the platform -- see [TouchableRegion]. */
+    private var touchRegionInstalled = false
 
     /**
-     * How far the panel's own revealing edge sits from the display edge it
-     * is revealed from, in px, once the window has actually been laid out
-     * and clamped -- the user's offset, as the panel really ended up
-     * wearing it.
-     *
-     * The compact panel's entrance is measured from the *screen's* edge, so
-     * this is part of its travel: see [ENTER_TRAVEL_DP]. Compose state
-     * rather than a plain field, because it is read from inside a graphics
-     * layer that has to repaint when it changes.
+     * Reads the window's own frame once it has been laid out, and again
+     * whenever its size changes (a rotation) -- never per frame: the
+     * display's metrics are a query to the window manager.
      */
-    private var edgeGapPx by mutableFloatStateOf(0f)
-
-    /**
-     * The window position the current placement actually resolved to --
-     * what [WindowManager.LayoutParams.x] and `y` are when the panel is
-     * sitting exactly where it belongs.
-     *
-     * [displaceWindow] moves the window relative to these rather than to
-     * zero, because "where it belongs" is only zero for the mixer's own
-     * dead-center mode; a center anchor keeps the user's offsets, and a
-     * panel that travelled home to 0,0 would quietly throw those away.
-     */
-    private var panelBaseX = 0
-    private var panelBaseY = 0
-
-    /**
-     * The compact panel's own screen rectangle, captured the moment an
-     * expand is asked for and consumed once the mixer has been measured --
-     * see [captureMixerMorphOrigin].
-     */
-    private var compactBounds: Rect? = null
-
-    /** Where the mixer morphs out of, or null if the two couldn't be compared. */
-    private var mixerMorphOrigin by mutableStateOf<MixerMorphOrigin?>(null)
-
-    /**
-     * Offsets the window from the placement it was laid out at, by [dx],
-     * [dy] px -- the centered mixer's own travel out of the compact panel's
-     * rectangle, one frame at a time (see
-     * [MixerMorphOrigin.travelsWithWindow]).
-     *
-     * Position only: the window keeps the size and gravity it was given, so
-     * this is the cheap half of a relayout rather than a remeasure, and
-     * `FLAG_LAYOUT_NO_LIMITS` is what lets it hang off the display while
-     * the panel inside it is still scaled down to where it came from.
-     */
-    private fun displaceWindow(dx: Float, dy: Float) {
-        val target = view ?: return
-        if (!target.isAttachedToWindow) {
-            // The window can be taken down while the composition inside it
-            // still has a frame's worth of coroutine left to run, and
-            // repositioning a view the WindowManager no longer knows about
-            // throws.
-            return
-        }
-
-        val x = panelBaseX + dx.roundToInt()
-        val y = panelBaseY + dy.roundToInt()
-        if (layoutParams.x == x && layoutParams.y == y) {
-            return
-        }
-
-        layoutParams.x = x
-        layoutParams.y = y
-        windowManager.updateViewLayout(target, layoutParams)
-    }
-
-    /**
-     * Moves the window to whatever placement the preferences now resolve
-     * to, while the panel is already on screen, and leaves behind the
-     * geometry for it to travel there from: where it was, against where it
-     * has ended up.
-     *
-     * The panel itself doesn't move here at all -- this only re-places the
-     * window and hands [mixerMorphOrigin] the difference, which is what the
-     * composition's own morph then runs out of. That is the whole point:
-     * the destination changes, the journey to it is animated, and there is
-     * never a frame where the panel is simply somewhere else.
-     */
-    private fun relocateForPlacement(expanded: Boolean) {
-        val target = view ?: return
-        val from = visibleBoundsOnScreen(target, shadowRoomPx(expanded)) ?: return
-
-        compactBounds = from
-        // Hidden while it is moved, exactly as an expand hides it: the
-        // window cannot be re-placed and have the panel's own travel
-        // applied to it in the same pass, and a frame of the panel sitting
-        // at its destination before it travels there is the teleport this
-        // whole thing exists to remove.
-        windowRevealed = false
-        layoutParams.alpha = 0f
-        applyConfiguredPosition(layoutParams)
-        windowManager.updateViewLayout(target, layoutParams)
-        clampToScreenOnceLaidOut(target, expanded) {
-            // One hop past the correction, for the same reason the expand
-            // handler takes one: the panel's own content may need a second
-            // pass to settle before its rectangle means anything.
-            target.post { this@Service.revealMorphedInto(target) }
-        }
-    }
-
-    /**
-     * Compares where the panel was with where it has just been laid out,
-     * puts the window at the very first frame of the morph between the two,
-     * and only then shows it again.
-     *
-     * All in one layout pass, deliberately. Revealing the window and *then*
-     * displacing it is one frame of the panel at its destination -- the
-     * mixer full size in the middle of the display before it jumps back to
-     * the bar it is supposed to be growing out of.
-     */
-    private fun revealMorphedInto(target: View) {
-        val origin = captureMixerMorphOrigin(target)
-        if (origin != null && origin.travelsWithWindow) {
-            layoutParams.x = panelBaseX + origin.translationX.roundToInt()
-            layoutParams.y = panelBaseY + origin.translationY.roundToInt()
-        }
-        layoutParams.alpha = 1f
-        windowManager.updateViewLayout(target, layoutParams)
-        windowRevealed = true
-    }
-
-    /**
-     * The panel's own rectangle on screen right now, or null if it isn't
-     * laid out -- [insetPx] shrinks in from the view's own edge on every
-     * side, for a window carrying invisible
-     * margin around the real panel (see [hasShadowHalo]): the geometry a
-     * morph runs out of, or that the popup is measured as being from a
-     * screen edge, has to be the panel's true rectangle, never the
-     * window's own larger one.
-     */
-    private fun viewBoundsOnScreen(target: View, insetPx: Float = 0f): Rect? {
+    private fun measureWindowFrame(target: View) {
         if (target.width <= 0 || target.height <= 0) {
-            return null
+            return
         }
         val at = IntArray(2)
         target.getLocationOnScreen(at)
-        val inset = insetPx.roundToInt()
-        return Rect(at[0] + inset, at[1] + inset, at[0] + target.width - inset, at[1] + target.height - inset)
-            .takeIf { it.width() > 0 && it.height() > 0 }
-    }
-
-    /**
-     * The panel's rectangle as far as the *display* is concerned: its own
-     * bounds, cut down to the part of them that is actually on screen.
-     *
-     * A laterally anchored disc deliberately sits half off the side of the
-     * screen, and the window it lives in is allowed past the display's edge
-     * (FLAG_LAYOUT_NO_LIMITS). Starting a morph from that rectangle put the
-     * mixer's first frame where the disc really is -- which is partly
-     * nowhere -- so the panel opened already cut off by the screen and then
-     * had to travel in from a place it should never have been. The journey
-     * begins at the part the user can see instead.
-     */
-    private fun visibleBoundsOnScreen(target: View, insetPx: Float = 0f): Rect? {
-        val bounds = viewBoundsOnScreen(target, insetPx) ?: return null
-        val display = windowManager.currentWindowMetrics.bounds
-        if (!bounds.intersect(display)) {
-            return null
+        val metrics = windowManager.currentWindowMetrics
+        val display = Rect(metrics.bounds).apply { offset(-at[0], -at[1]) }
+        val cutouts = metrics.windowInsets.displayCutout?.boundingRects.orEmpty().map {
+            Rect(it).apply { offset(-at[0], -at[1]) }
         }
-        return bounds.takeIf { it.width() > 0 && it.height() > 0 }
-    }
-
-    /**
-     * The shadow's own room in px, for whichever shape [expanded]
-     * describes -- the same [shadowRoom] the composition
-     * itself reserves the room under, so this can never assume more (or
-     * less) margin than the window actually carries right now.
-     */
-    private fun shadowRoomPx(expanded: Boolean): Float =
-        manager.uiPreferences.shadowRoom(expanded).value * resources.displayMetrics.density
-
-    private fun captureCompactBounds() {
-        compactBounds = view?.let { visibleBoundsOnScreen(it, shadowRoomPx(expanded = false)) }
-        mixerMorphOrigin = null
-    }
-
-    /**
-     * Turns the two rectangles -- where the panel was, where it now is --
-     * into the transform that lays it exactly over the old one, for the
-     * morph to run out of.
-     *
-     * Nothing measurable on either side means no morph, and the mixer falls
-     * back to growing out of its anchor, which is what it always did.
-     *
-     * Which of the two carries the travel is decided here, and it is
-     * decided by geometry rather than by which mode the user picked: the
-     * layer can carry it exactly when the rectangle it starts at still
-     * fits inside the window it is drawn in. When it doesn't -- a mixer
-     * centered on the display, morphing out of a bar that was against the
-     * side of the screen, or that same mixer sent back to its anchor while
-     * it is up -- a layer translated out there is a layer outside its own
-     * window, and the compositor cuts it off. So the window travels
-     * instead. Either way the travel is the same single number, read off
-     * the same morph.
-     */
-    private fun captureMixerMorphOrigin(target: View): MixerMorphOrigin? {
-        // No correction for the turn any more: a bar that turns does it in
-        // its own window, and that window grows to hold the turning
-        // rectangle, so what was captured *is* the rectangle the bar ended
-        // up lying in.
-        val from = compactBounds
-        compactBounds = null
-        val to = from?.let { viewBoundsOnScreen(target, shadowRoomPx(expanded = true)) } ?: return null
-        val originStyle = manager.uiPreferences.popupStyle
-
-        val origin = MixerMorphOrigin(
-            scaleX = (from.width().toFloat() / to.width()).coerceIn(0.05f, 3f),
-            scaleY = (from.height().toFloat() / to.height()).coerceIn(0.05f, 3f),
-            translationX = from.exactCenterX() - to.exactCenterX(),
-            translationY = from.exactCenterY() - to.exactCenterY(),
-            // `from` is exactly what the layer draws at morph 0, so this is
-            // literally "would the first frame of the morph be clipped".
-            travelsWithWindow = !to.contains(from),
-            originStyle = originStyle
+        windowFrame = WindowFrame(
+            width = target.width,
+            height = target.height,
+            display = display,
+            cutouts = cutouts,
+            landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+            rtl = target.layoutDirection == View.LAYOUT_DIRECTION_RTL
         )
-        mixerMorphOrigin = origin
-        return origin
     }
 
     private fun showView() {
         // Before anything else: a popup asked for again while the last one
         // is still playing its exit bends straight back to arriving, from
-        // wherever it had got to and at the speed it was already carrying,
-        // rather than restarting from nothing.
+        // wherever it had got to, rather than restarting from nothing.
         contentVisible = true
         handler.keepView()
 
@@ -2312,24 +1305,16 @@ class Service : AccessibilityService() {
             // user was actually looking at that Atmosphere's grain is made
             // of, not this popup's own window once it's already up.
             atmosphereColorsState = sampleForegroundAppColors()
-            // The view doesn't respond to input events if reused
-            view = createView()
-            windowRevealed = false
-            mixerMorphOrigin = null
-            // Added invisible and revealed by the layout pass below, so the
-            // window never shows itself at an unclamped position for a
-            // frame. Not a fade: the composition owns that.
-            layoutParams.alpha = 0f
-            // Position settings may have changed since the last time the
-            // popup was shown.
-            applyConfiguredPosition(layoutParams)
-            windowManager.addView(view, layoutParams)
-            clampToScreenOnceLaidOut(view!!, expanded = false) {
-                view?.let {
-                    layoutParams.alpha = 1f
-                    windowManager.updateViewLayout(it, layoutParams)
+            windowFrame = null
+            touchBounds.setEmpty()
+            val created = createView()
+            view = created
+            windowManager.addView(created, layoutParams)
+            touchRegionInstalled = TouchableRegion.install(created) { touchBounds }
+            created.addOnLayoutChangeListener { target, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                if (windowFrame == null || right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                    measureWindowFrame(target)
                 }
-                windowRevealed = true
             }
         }
 

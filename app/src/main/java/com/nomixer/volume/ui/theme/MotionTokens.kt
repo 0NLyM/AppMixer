@@ -34,30 +34,24 @@ import androidx.compose.ui.graphics.Color
  *
  * | element             | model                 | token                       | property                              |
  * |---------------------|-----------------------|-----------------------------|---------------------------------------|
- * | Edge panel          | sheet on the edge     | [Spatial.travel]            | translation, edge axis only -- no scale |
- * | Edge panel reveal   | sheet on the edge     | (the same value)            | clip outline, derived -- not a spring |
+ * | Edge panel          | sheet on the edge     | [Spatial.travel]            | translation, edge axis only -- no scale. |
+ * |                     |                       |                             | The disc too: it arrives as one object |
  * | Centered panel      | sheet expanding in place | [Spatial.travel]         | uniform scale, never from 0           |
- * | Mixer morph         | sheet changing shape  | [Spatial.travel]            | translation + scale, matched geometry |
- * | Compact turn        | the compact bar lying down about the  | [Spatial.turn]      | rotationZ, 0->90 about the ringer   |
- * |                     | ringer switch it hangs from -- vertical-bar |               | switch's own centre, inward: the    |
- * |                     | origin only, and finished before the mixer |                | side it is anchored to decides the  |
- * |                     | starts opening at all                    |                  | sign                                |
- * | Mixer morph uncurl  | a disc's own roundness relaxing into the | [Spatial.default]  | the mixer panel's own corner        |
- * |                     | mixer's flatter corners -- disc origin only |                | radius, disc-round down to the      |
- * |                     |                       |                             | configured mixer radius              |
- * | Mixer row reveal    | a row unfolding from behind the one above | [Spatial.defaultSoft] + | the row's own laid-out    |
- * |                     | it, a later slice of the morph above | [Effects.default]       | **height** (so the panel around it  |
- * |                     |                       |                             | grows with it and its border stays  |
- * |                     |                       |                             | the same gap away from the rows the |
- * |                     |                       |                             | whole time) + alpha. Ring's own row |
- * |                     |                       |                             | carries its ringer and Do Not       |
- * |                     |                       |                             | Disturb switches on the same slice  |
- * | Morph hand-over     | --                    | [Effects.default]           | alpha, on both faces at once -- the   |
- * |                     |                       |                             | compact panel's going as the mixer's  |
- * |                     |                       |                             | arrives, over the morph above         |
+ * | Mixer open, phase 1 | the one panel taking the media row's place | [Spatial.turn] | its laid-out rectangle, compact  |
+ * |                     |                       |                             | popup's to the media row's; corner    |
+ * |                     |                       |                             | radius (disc only, quantised)         |
+ * | Vertical bar turn   | a bar lying down as it travels | (phase 1, read)    | rotationZ of the bar's content, 0->90 |
+ * |                     |                       |                             | clockwise about its own middle         |
+ * | Mixer open, phase 2 | one sheet unfolding out of a single row | [Spatial.travel] | its laid-out rectangle, media   |
+ * |                     |                       |                             | row's to the mixer's -- started before |
+ * |                     |                       |                             | phase 1 has come to rest               |
+ * | Mixer row           | a row sliding out from under its neighbour | [Spatial.cascade] + | translationY, one pitch, |
+ * |                     |                       | [Effects.default], each row | + alpha. One row at a time, see       |
+ * |                     |                       | started [Cascade] later     | [Cascade]. Ring's row carries its     |
+ * |                     |                       |                             | ringer and Do Not Disturb switches    |
+ * | Hand-over           | --                    | [Effects.default]           | alpha: the compact content out, the   |
+ * |                     |                       |                             | media row in, in the same place       |
  * | Panel opacity       | --                    | [Effects.default]           | alpha (never a spatial spring)        |
- * | Disc pane           | a knob                | [Spatial.default]           | rotationZ (formation, anticlockwise)  |
- * | Disc hand           | the mark on a dial    | [Effects.default]           | alpha, a later slice of the arrival   |
  * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction: 1:1 under a finger,    |
  * |                     |                       |                             | magnetised to the nearest step on     |
  * |                     |                       |                             | release, velocity-retargeted          |
@@ -83,8 +77,9 @@ import androidx.compose.ui.graphics.Color
  * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |
  * | Glass highlight     | a pane that is still, | [Ambient.enter], via        | light angle and brightness --         |
  * |                     | under a light settling | [LocalAmbientEnter]        | never the pane                        |
- * | Atmosphere field    | a field of particles  | [Ambient.enter], via        | shader rotation, centre offset        |
- * |                     | settling once it is there | [LocalAmbientEnter]     | and grain phase -- never the container |
+ * | Atmosphere field    | a field of particles  | [Ambient.enter], via        | shader rotation, centre offset,       |
+ * |                     | settling once it is there | [LocalAmbientEnter]     | grain phase and each blob's place on  |
+ * |                     |                       |                             | its own path -- never the container   |
  * | Every colour role   | --                    | [Effects.color]             | colour                                |
  *
  * # Why springs, and why three tiers
@@ -216,10 +211,12 @@ object MotionTokens {
             }
 
         /**
-         * [defaultSoft]'s own spring on the same fine threshold [travel]
-         * uses, for the compact bar's own turn into the mixer: ninety
-         * degrees is as multiplied-up as a translation is, and a percent of
-         * it is very nearly a degree left on the table.
+         * The first phase of the mixer opening: the one panel travelling
+         * from the compact popup to the media row, and a vertical bar lying
+         * down on the way. Softer and slower than [travel], because it is
+         * the part of the opening there is most to watch in -- and on the
+         * same fine threshold, since ninety degrees and a panel's journey
+         * are both multiplied up from 0..1.
          */
         fun turn(): FiniteAnimationSpec<Float> =
             if (reducedMotion) {
@@ -231,6 +228,28 @@ object MotionTokens {
                     visibilityThreshold = TRAVEL_THRESHOLD
                 )
             }
+
+        /**
+         * One mixer row sliding out from under the row above it -- see
+         * [Cascade]. [defaultSoft]'s own character (a row follows, it does
+         * not lead) but slower, so each row's own journey is long enough to
+         * be seen as one object moving rather than as a flicker in a list,
+         * and on the fine threshold, because it is a one-row-high
+         * translation multiplied up from 0..1.
+         */
+        fun cascade(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = CASCADE_DAMPING,
+                    stiffness = CASCADE_STIFFNESS,
+                    visibilityThreshold = TRAVEL_THRESHOLD
+                )
+            }
+
+        private const val CASCADE_DAMPING = 0.9f
+        private const val CASCADE_STIFFNESS = 140f
 
         /** See [travel]: a 0..1 that is drawn as hundreds of pixels needs a threshold to match. */
         private const val TRAVEL_THRESHOLD = 1f / 4096f
@@ -250,7 +269,7 @@ object MotionTokens {
         private const val TRAVEL_DAMPING = 0.92f
         private const val TRAVEL_STIFFNESS = 120f
 
-        /** The bar's own turn, slower still: it is the whole of what there is to watch. */
+        /** Phase one of the opening, slower still: it is the whole of what there is to watch. */
         private const val TURN_DAMPING = 0.95f
         private const val TURN_STIFFNESS = 90f
 
@@ -323,6 +342,22 @@ object MotionTokens {
 
         /** Colour roles crossfading when the user picks a new one. */
         val color: FiniteAnimationSpec<Color> = default()
+    }
+
+    /**
+     * The mixer's rows arriving one at a time: each row is its own object on
+     * its own [Spatial.cascade] spring (plus an [Effects.default] fade), and
+     * each starts this much later than the row before it. The one place in
+     * the overlay where a delay is part of the motion -- a cascade *is* a
+     * sequence, and the gap between two rows starting is what makes them
+     * read as several things rather than one sheet growing.
+     */
+    object Cascade {
+        /** How much later each row starts than the one above it, on the way in. */
+        const val STEP_IN_MILLIS = 65L
+
+        /** The same gap on the way out, bottom row first -- quicker, a leaving panel shouldn't linger. */
+        const val STEP_OUT_MILLIS = 30L
     }
 
     /**
@@ -418,35 +453,24 @@ object MotionTokens {
 }
 
 /**
- * How far the overlay has arrived, 0 to 1, from the spring that owns its
- * whole appearance (see Service.kt). Anything inside the popup that
- * phases its own motion off the arrival -- the disc's formation turn, the
- * glass beam's entering sweep, Atmosphere's entering rotation -- reads it
- * from here rather than starting a second animation of its own. That is
- * what keeps every part of the arrival on a single curve instead of several
- * that merely begin at the same moment, and it makes every exit the same
- * entrance backwards for free.
+ * How far the overlay has arrived, 0 to 1, on the spring that brings the
+ * compact popup out of its edge and takes the whole overlay away at the end
+ * (see Service.kt). Anything that phases its own motion off the arrival
+ * reads it from here rather than starting a second animation of its own,
+ * which keeps every part of the arrival on one curve and makes every exit
+ * the entrance backwards for free.
  *
- * **Whichever entrance the panel on screen is actually playing.** The popup
- * has two shapes and one of them arrives by morphing rather than by coming
- * out of an edge, so there are two springs -- and at any moment exactly one
- * of them is travelling while the other is parked at 1. A compact panel
- * slides out of its edge on the appearance spring with the morph snapped to
- * 1; a mixer morphing out of that panel travels on the morph with the
- * appearance snapped to 1. This is their product, which is why it is still
- * one curve and still one spring at a time: reading only the first of them
- * is what left the mixer's glass lit as if it had already settled and its
- * Atmosphere field already still, through the whole of the one entrance the
- * mixer has.
+ * The mixer's own opening is not an arrival -- the panel is already there,
+ * changing shape -- so it is not in here: see the "Mixer open" rows of the
+ * table above, and [Cascade] for its rows.
  *
  * A function rather than a value, so a reader can take it in its own draw
  * phase and repaint without recomposing. Defaults to fully arrived, for
  * anywhere outside the overlay (the settings screen's preview).
  *
  * This is the **spatial** half of the arrival, and only things that move
- * may read it: a turn, a travel, a scale. Anything fading reads
- * [LocalArrivalFade] instead -- see [MotionTokens] on why the two channels
- * are never the same spring.
+ * may read it. Anything fading reads [LocalArrivalFade] instead -- see
+ * [MotionTokens] on why the two channels are never the same spring.
  */
 val LocalArrival = compositionLocalOf<() -> Float> { { 1f } }
 
@@ -482,24 +506,3 @@ val LocalArrivalFade = compositionLocalOf<() -> Float> { { 1f } }
  * anywhere outside the overlay (the settings screen's preview).
  */
 val LocalAmbientEnter = compositionLocalOf<() -> Float> { { 1f } }
-
-/**
- * How far the compact bar has turned on its way into the mixer, 0 to 1 --
- * 0 upright, 1 lying down at a right angle about the ringer switch it
- * hangs from.
- *
- * Its own value rather than a slice of [LocalArrival], because it is not
- * part of the arrival: it happens *first* and finishes completely before
- * the mixer starts opening at all, which is the whole point of it (a bar
- * that is still turning while the panel behind it is already growing reads
- * as two things happening to two different objects). See [MotionTokens.Spatial.turn].
- *
- * Which way it turns is not in here: the panel reads that off its own
- * anchor, so it always lies down *into* the screen rather than out over
- * the edge it is hugging.
- *
- * A function rather than a value, so the bar can read it in its own draw
- * phase. Defaults to upright, for every compact popup that isn't on its
- * way to becoming a mixer -- which is most of them.
- */
-val LocalCompactTurn = compositionLocalOf<() -> Float> { { 0f } }

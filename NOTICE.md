@@ -1485,6 +1485,47 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-23 — 1.0.71
+
+- **One panel, in one window that never moves.** The compact popup and the
+  mixer are no longer two surfaces handing over to each other: there is one
+  panel -- one shadow, one sheet of glass or grain, one rim -- whose
+  rectangle travels from the compact popup's to the mixer's while their
+  contents take turns inside it. The overlay's window now covers the whole
+  screen and stays perfectly still; touches that miss the panel go straight
+  through to the app underneath (the same touchable-region mechanism the
+  platform's own volume dialog uses). The window used to be exactly the
+  panel's size, so every change of shape meant moving and resizing it
+  through the window manager -- always a frame early or late, and hidden
+  outright while it was swapped for the mixer's. That was the step between
+  the two, and the snap at the end.
+- **The opening is choreographed in two chained phases.** First the panel
+  travels to exactly where the mixer's media row will be and takes its
+  shape -- a vertical bar turning a quarter clockwise on the way, its content
+  staying inside the reshaping panel -- and the popup's content hands over
+  to the media row in place. Before that has quite come to rest, the panel
+  opens out of the row into the whole mixer. Both destinations are computed
+  before anything moves; the centred mixer's from the display's own size.
+- **The rows arrive one at a time, as objects.** Each row slides out from
+  under its neighbour on a spring of its own, 65 ms after the one above it,
+  and leaves the same way in reverse. The ringer and Do Not Disturb switches
+  travel with the ring row.
+- **The mixer keeps 20 dp from each side of the screen** (40 dp narrower
+  than the display).
+- **The shadow slider sets its opacity, not its width.** The width is back
+  to its fixed 12 dp.
+- **Atmosphere's blobs are part of the fill, and the grain is on top of
+  everything.** Flat fill, then large soft blobs of colour painted into it,
+  then the grain over both -- so the blobs break up into grain at their
+  edges instead of sitting on it. Where each blob starts, which way it
+  drifts and which grain field the panel settles on are drawn afresh every
+  time the popup opens. The pinwheel the colours used to be wound in is
+  gone; it met in a point in the middle that read as a hole.
+- **The disc arrives and leaves as one object.** It slides out of its edge
+  (or grows in place) with everything on it, instead of its ring turning
+  into place under a face that stood still and its hand being drawn on
+  afterwards.
+
 ## 2026-09-22 — 1.0.70
 
 - **The bar turns before the mixer exists, and its window turns with it.**

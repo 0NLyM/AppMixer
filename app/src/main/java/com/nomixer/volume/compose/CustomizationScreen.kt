@@ -109,9 +109,8 @@ import com.nomixer.volume.data.activeOffsetX
 import com.nomixer.volume.data.activeOffsetY
 import com.nomixer.volume.data.activeOutlineColor
 import com.nomixer.volume.data.activeScale
-import com.nomixer.volume.data.activeShadowWidth
-import com.nomixer.volume.data.withShadowWidth
-import com.nomixer.volume.data.POPUP_SHADOW_WIDTH_MAX_DP
+import com.nomixer.volume.data.activeShadowOpacity
+import com.nomixer.volume.data.withShadowOpacity
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
@@ -620,7 +619,7 @@ private fun CollapsedPopupPreviewContent(
                     PanelShadow(
                         color = shadow,
                         shape = shape,
-                        blurRadius = preferences.activeShadowWidth().dp,
+                        blurRadius = PANEL_SHADOW_BLUR_DP,
                         modifier = Modifier.matchParentSize()
                     )
                     PreviewPanelBackground(
@@ -697,7 +696,7 @@ private fun CollapsedPopupPreviewContent(
                     PanelShadow(
                         color = shadow,
                         shape = shape,
-                        blurRadius = preferences.activeShadowWidth().dp,
+                        blurRadius = PANEL_SHADOW_BLUR_DP,
                         modifier = Modifier.matchParentSize()
                     )
                     PreviewPanelBackground(
@@ -892,7 +891,7 @@ private fun ExpandedMixerPreview(preferences: UiPreferences) {
         PanelShadow(
             color = shadow,
             shape = shape,
-            blurRadius = preferences.activeShadowWidth().dp,
+            blurRadius = PANEL_SHADOW_BLUR_DP,
             modifier = Modifier.matchParentSize()
         )
         Box(
@@ -1480,13 +1479,12 @@ fun CustomizationScreen(
                     fadeOut(tween(160))
             ) {
                 SliderSetting(
-                    label = stringResource(R.string.shadow_width),
-                    valueLabel = "${preferences.activeShadowWidth()}dp",
-                    value = preferences.activeShadowWidth().toFloat(),
-                    valueRange = 0f..POPUP_SHADOW_WIDTH_MAX_DP.toFloat(),
-                    steps = POPUP_SHADOW_WIDTH_MAX_DP - 1,
+                    label = stringResource(R.string.shadow_opacity),
+                    valueLabel = "${(preferences.activeShadowOpacity() * 100).roundToInt()}%",
+                    value = preferences.activeShadowOpacity(),
+                    valueRange = 0f..1f,
                     onValueChange = { value ->
-                        onUpdate { it.withShadowWidth(value.roundToInt()) }
+                        onUpdate { it.withShadowOpacity(value) }
                     }
                 )
             }

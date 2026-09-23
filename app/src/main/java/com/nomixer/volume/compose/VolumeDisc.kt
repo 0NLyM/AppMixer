@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
@@ -36,8 +35,6 @@ import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.data.GLASS_NOISE_ALPHA_DEFAULT
 import com.nomixer.volume.data.DISC_RING_WIDTH_FRACTION
-import com.nomixer.volume.ui.theme.LocalArrival
-import com.nomixer.volume.ui.theme.LocalArrivalFade
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
 import kotlin.math.acos
@@ -45,29 +42,8 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-/**
- * How far round the dial's face comes as the popup arrives -- see the
- * Canvas's own comment below. Small: a knob being turned into place, not a
- * radar sweep.
- */
-private const val DISC_FORMATION_DEGREES = 26f
-
 /** Ticks around the ring when [VolumeDisc.showDots] is on. */
 private const val TICK_COUNT = 24
-
-/**
- * How far into the arrival the hand starts drawing itself onto the dial.
- *
- * Phased off the same curve as everything else rather than run as an
- * animation of its own: there is no second spring here, only a later slice
- * of the one the panel is already riding. The dial is most of the way round
- * before its reading appears on it, and both are over together.
- */
-private const val HAND_FADE_START = 0.45f
-
-/** The hand's own opacity at [arrived] -- nothing until [HAND_FADE_START]. */
-private fun handFadeFor(arrived: Float): Float =
-    ((arrived - HAND_FADE_START) / (1f - HAND_FADE_START)).coerceIn(0f, 1f)
 
 /**
  * How many tick slots either side of the level the taper reaches. The
@@ -149,7 +125,7 @@ fun VolumeDisc(
     trackBackingGlass: Boolean = false,
     /**
      * Paints [trackBackingColor] as the Atmosphere grain (see
-     * [drawAtmosphereRing]) instead of a flat fill -- mutually exclusive
+     * [AtmosphereBackground]) instead of a flat fill -- mutually exclusive
      * with [trackBackingGlass], same as the Solid/Glass/Atmosphere choice it
      * mirrors.
      */
@@ -160,19 +136,19 @@ fun VolumeDisc(
      * [com.nomixer.volume.Service.sampleForegroundAppColors]) -- `null`
      * (there's no foreground app to sample, or this is a preview screen with
      * no accessibility service behind it at all) falls back to
-     * [trackBackingColor] itself, same as [drawAtmosphereRing]'s own
+     * [trackBackingColor] itself, same as [AtmosphereBackground]'s own
      * fallback. Ignored unless [trackBackingAtmosphere].
      */
     atmosphereColors: Pair<Color, Color>? = null,
     /**
      * How strongly the Atmosphere grain shows, ignored unless
-     * [trackBackingAtmosphere] -- see [drawAtmosphereRing]'s own parameter
+     * [trackBackingAtmosphere] -- see [AtmosphereBackground]'s own parameter
      * of the same name.
      */
     grainIntensity: Float = ATMOSPHERE_GRAIN_DEFAULT,
     /**
      * How large each Atmosphere grain fleck reads, ignored unless
-     * [trackBackingAtmosphere] -- see [drawAtmosphereRing]'s own parameter
+     * [trackBackingAtmosphere] -- see [AtmosphereBackground]'s own parameter
      * of the same name.
      */
     grainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT,
@@ -258,17 +234,6 @@ fun VolumeDisc(
 
     val latestValue by rememberUpdatedState(coercedValue)
 
-    // The arrival, on the effects channel, for the one thing on this dial
-    // that has an entrance at all: its hand. The pane -- track, ring,
-    // ticks -- arrives whole and at its final angle, because half of it is
-    // a sibling layer that cannot be turned with the rest and the half
-    // that could is glass. See the Canvas below. Read in the draw phase,
-    // so the hand appears without recomposing the disc.
-    val arrivalFade = LocalArrivalFade.current
-
-    // The spatial half of the same arrival, for the face's own turn.
-    val arrival = LocalArrival.current
-
     // element:  the disc's fill, and the tick ring read off it.
     // model:    a knob, and the detent it settles into.
     // token:    MotionTokens.Spatial.tick.
@@ -352,46 +317,14 @@ fun VolumeDisc(
                 modifier = Modifier.size(knobDiameter)
             )
         }
-        // The pane has no entrance of its own, deliberately.
-        //
-        // It used to turn into place: a rotationZ on this Canvas, read off
-        // the arrival. But the ring is not painted by this Canvas alone.
-        // Its glass backing is a *sibling* composable above -- it has to
-        // be, because a real blur needs a graphics layer of its own -- and
-        // that sibling did not turn with it. So for the whole of the
-        // entrance the lit sheet sat still under an arc, a rim and a wheel
-        // of ticks that were rotating across it: the ring visibly came
-        // apart, and the further through the turn it was the worse the two
-        // disagreed.
-        //
-        // Turning them together is not the fix either. That would rotate
-        // the glass pane, and a pane of glass that turns is not glass --
-        // it is a picture of glass on a piece of card. So nothing here
-        // turns at all: the ring arrives whole, at its final angle, and
-        // the only thing on the dial with an entrance is the hand written
-        // onto it (see [handFadeFor]).
+        // Nothing on the dial has an entrance of its own. The disc arrives
+        // and leaves as one object -- ring, ticks, face and switch together
+        // -- moved as a whole by the popup around it. A ring turning into
+        // place under a face that stood still, and a hand drawing itself on
+        // afterwards, made one knob read as three things arriving.
         Canvas(
             modifier = Modifier
                 .matchParentSize()
-                // element:  the dial's own face forming.
-                // model:    a knob being turned into place.
-                // token:    MotionTokens.Spatial.travel, through
-                //           [LocalArrival] -- a phase of the arrival, not a
-                //           spring of its own.
-                // property: rotationZ, anticlockwise, settling on 0.
-                //
-                // This came back when the background effects moved off the
-                // ring: the turn was removed because the ring's glass
-                // backing was a sibling composable that could not turn with
-                // it, so for the whole entrance a still sheet sat under a
-                // rotating arc and the two visibly came apart. The ring is
-                // nothing but this Canvas now -- the glass and the grain
-                // are on the knob's own face, and a circle looks the same
-                // at every angle -- so there is nothing left to disagree
-                // with it.
-                .graphicsLayer {
-                    rotationZ = -DISC_FORMATION_DEGREES * (1f - arrival()).coerceIn(0f, 1f)
-                }
                 .pointerInput(range) {
                     // Measured from where the ring actually is when the
                     // touch lands, so a knob caught while it is still
@@ -552,18 +485,9 @@ fun VolumeDisc(
 
             val ringCap = if (ringRoundEnds) StrokeCap.Round else StrokeCap.Butt
 
-            // element:  the hand -- the arc that reads the level.
-            // model:    the mark on a dial, written on once the dial is
-            //           round.
-            // token:    MotionTokens.Effects.default, through
-            //           LocalArrivalFade and sliced by [handFadeFor].
-            // property: alpha, and nothing else. It never travels of its
-            //           own accord: where it sits is the level, and the
-            //           level is not an animation.
-            val handFade = handFadeFor(arrivalFade())
-            if (fraction > 0f && handFade > 0f) {
+            if (fraction > 0f) {
                 drawArc(
-                    color = fillColor.copy(alpha = fillColor.alpha * handFade),
+                    color = fillColor,
                     startAngle = visibleStartAngle,
                     sweepAngle = visibleSweepAngle * fraction,
                     useCenter = false,

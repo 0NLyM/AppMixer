@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,7 +29,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.nomixer.volume.ui.theme.LocalArrival
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -116,15 +114,6 @@ fun AppVolumeList(
     val scope = rememberCoroutineScope()
     var selectedGroup by remember { mutableStateOf<String?>(null) }
 
-    // Whether the panel has finished arriving, which is the one thing the
-    // rows below need to know about it: while it hasn't, their own heights
-    // are being animated deliberately (see [mixerRowReveal]) and nothing
-    // else should be animating them as well. A derived state rather than a
-    // read of the arrival itself, so this recomposes once when it flips
-    // instead of on every frame of the entrance.
-    val arrival = LocalArrival.current
-    val settled by remember(arrival) { derivedStateOf { arrival() >= 1f } }
-
     val activePlayers = mutableListOf<App>()
     val inactivePlayers = mutableListOf<App>()
     val hiddenPlayers = mutableListOf<App>()
@@ -203,17 +192,14 @@ fun AppVolumeList(
                         shadowColor = shadowColor,
                         onChange = onChange,
                         // Part of the same cascade the system rows above
-                        // are, carrying on from the slots they reserve --
-                        // and `animateItem` only once that cascade is over.
-                        // While it runs, every row's height is changing on
-                        // purpose and on one value; a per-item spring
-                        // chasing those changes is a second opinion about
-                        // the same motion, and it was the reason the app
-                        // sliders were the only thing that appeared to move
-                        // at all.
+                        // are, carrying on after the places they take. The
+                        // cascade moves each row by a transform and never
+                        // touches its layout, so `animateItem` -- which
+                        // animates layout -- has nothing to fight with and
+                        // can stay on the whole time.
                         modifier = Modifier
-                            .mixerRowReveal(MIXER_SYSTEM_ROW_SLOTS + index)
-                            .then(if (settled) Modifier.animateItem() else Modifier)
+                            .cascadeRow(MIXER_SYSTEM_ROW_SLOTS + index)
+                            .animateItem()
                     )
                 }
             } else if (showEmpty) {

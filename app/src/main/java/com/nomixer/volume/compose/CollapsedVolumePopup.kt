@@ -37,10 +37,8 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -60,7 +58,6 @@ import com.nomixer.volume.data.activeBackground
 import com.nomixer.volume.data.activeButtonCornerRadius
 import com.nomixer.volume.data.activeOffsetX
 import com.nomixer.volume.data.activeScale
-import com.nomixer.volume.data.activeShadowWidth
 import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.data.activeShowIcon
 import com.nomixer.volume.data.activeShowRingerButton
@@ -68,14 +65,9 @@ import com.nomixer.volume.data.activeShowValue
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.shadowAlpha
 import com.nomixer.volume.data.paintedPanelAlpha
-import com.nomixer.volume.ui.theme.LocalCompactTurn
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 private const val TAG = "NoMixer.CollapsedPopup"
 
@@ -83,83 +75,10 @@ private const val TAG = "NoMixer.CollapsedPopup"
 private const val BUTTON_SIZE_DP = 48
 
 /**
- * The right angle the vertical bar lies down through on its way into the
- * mixer -- see [LocalCompactTurn], and the "Compact turn" row in
- * MotionTokens' own table.
+ * How far a panel's own halo reaches past its edge -- fixed: the user
+ * chooses how dark the shadow is, not how far it spreads.
  */
-private const val COMPACT_TURN_DEGREES = 90f
-
-/**
- * The bar lying down about the ringer switch it hangs from, box and all.
- *
- * Two halves, and the first is the one that matters: the **box grows with
- * the turn**, to exactly the rectangle the turning panel sweeps out. The
- * popup's window is only ever as big as this composition measures to, so
- * without that the bar rotated straight out through the side of its own
- * window and was cut off. Growing it also means that when the turn
- * finishes, the window *is* the lying-down bar's own rectangle -- which is
- * what the mixer is then handed to grow out of, instead of a guess.
- *
- * The second half is the rotation itself, about [pivotFromTop] down the
- * panel's own centre line. It reads [turn] in the draw phase and the box
- * reads it in the layout phase, so a frame of the turn costs a relayout of
- * one window and no recomposition at all.
- *
- * The whole panel turns, glass included, and that is not the rotating pane
- * CLAUDE.md rules out: the pane isn't turning *within* its panel as
- * decoration -- the panel is a physical thing being laid down, and the
- * sheet of glass in it travels with it the way its border and its shadow
- * do.
- */
-private fun Modifier.compactTurn(
-    turn: () -> Float,
-    direction: Float,
-    pivotFromTop: Dp
-): Modifier = this
-    .layout { measurable, constraints ->
-        val placeable = measurable.measure(constraints)
-        val turned = turn().coerceIn(0f, 1f)
-        if (turned <= 0f) {
-            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-        } else {
-            val radians = Math.toRadians((turned * COMPACT_TURN_DEGREES * direction).toDouble())
-            val cosine = cos(radians).toFloat()
-            val sine = sin(radians).toFloat()
-            val pivotX = placeable.width / 2f
-            val pivotY = pivotFromTop.toPx()
-
-            var minX = Float.MAX_VALUE
-            var maxX = -Float.MAX_VALUE
-            var minY = Float.MAX_VALUE
-            var maxY = -Float.MAX_VALUE
-            for (cornerX in listOf(0f, placeable.width.toFloat())) {
-                for (cornerY in listOf(0f, placeable.height.toFloat())) {
-                    val dx = cornerX - pivotX
-                    val dy = cornerY - pivotY
-                    val x = pivotX + dx * cosine - dy * sine
-                    val y = pivotY + dx * sine + dy * cosine
-                    minX = min(minX, x)
-                    maxX = max(maxX, x)
-                    minY = min(minY, y)
-                    maxY = max(maxY, y)
-                }
-            }
-
-            layout((maxX - minX).roundToInt(), (maxY - minY).roundToInt()) {
-                placeable.place((-minX).roundToInt(), (-minY).roundToInt())
-            }
-        }
-    }
-    .graphicsLayer {
-        val turned = turn().coerceIn(0f, 1f)
-        if (turned > 0f && size.height > 0f) {
-            transformOrigin = TransformOrigin(
-                pivotFractionX = 0.5f,
-                pivotFractionY = (pivotFromTop.toPx() / size.height).coerceIn(0f, 1f)
-            )
-            rotationZ = turned * COMPACT_TURN_DEGREES * direction
-        }
-    }
+internal val PANEL_SHADOW_BLUR_DP = 12.dp
 
 /** A single element's shadow (ringer button or slider) when the panel is hidden. */
 private val ELEMENT_SHADOW_ELEVATION_DP = 8.dp
@@ -244,6 +163,20 @@ internal fun PanelShadow(color: Color, shape: Shape, blurRadius: Dp, modifier: M
 }
 
 /**
+ * The corner radius of the compact popup's own panel: the user's own for a
+ * bar, and for the disc half its whole width, so its panel is the circle
+ * wrapped round the dial. Public so the overlay can paint the one panel
+ * this popup and the mixer share (see [CollapsedVolumePopup]'s drawPanel)
+ * in exactly the shape this popup would have painted itself.
+ */
+fun UiPreferences.compactPanelCornerRadius(): Dp =
+    if (popupStyle == PopupStyle.Disc) {
+        (220 * activeScale()).dp / 2 + DISC_PANEL_MARGIN_DP.dp
+    } else {
+        popupCornerRadius.dp
+    }
+
+/**
  * Direction the expand swipe has to travel, away from the edge the popup
  * hugs: +1 rightwards, -1 leftwards, 0 when centered and either will do.
  */
@@ -322,7 +255,13 @@ fun CollapsedVolumePopup(
      */
     atmosphereColors: Pair<Color, Color>? = null,
     onExpand: () -> Unit,
-    onInteract: () -> Unit
+    onInteract: () -> Unit,
+    /**
+     * Whether this popup paints its own panel -- shadow, fill, glass or
+     * grain, and rim. The overlay turns it off and paints one shared panel
+     * itself (see [compactPanelShape] for the shape it has to match).
+     */
+    drawPanel: Boolean = true
 ) {
     val context = LocalContext.current
     var volume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
@@ -382,7 +321,6 @@ fun CollapsedVolumePopup(
     val showIcon = preferences.activeShowIcon()
     val showValue = preferences.activeShowValue()
     val showRingerButton = preferences.activeShowRingerButton()
-    val cornerRadius = preferences.popupCornerRadius.dp
 
     // The disc gets a panel of its own too, same as a bar -- just a round
     // one, sized to hug the disc's own circle with a fixed margin rather
@@ -391,7 +329,7 @@ fun CollapsedVolumePopup(
     // popupCornerRadius setting, so it always reads as a circle wrapped
     // around the disc regardless of how big the disc itself is scaled.
     val discPanelCornerRadius = discDiameter / 2 + DISC_PANEL_MARGIN_DP.dp
-    val panelShape = RoundedCornerShape(if (isDisc) discPanelCornerRadius else cornerRadius)
+    val panelShape = RoundedCornerShape(preferences.compactPanelCornerRadius())
 
     // A dedicated switch, not just Solid at 0% or Translucent with nothing
     // granted: those still left window blur requested and a panel object
@@ -554,64 +492,28 @@ fun CollapsedVolumePopup(
     // moves onto the ringer button and slider individually below instead.
     val elementShadowColor = if (!isDisc && !showBackground) shadow else Color.Transparent
 
-    // element:  the whole compact bar.
-    // model:    a bar hinged on the ringer switch it hangs from, lying
-    //           down into the screen as the mixer takes over from it.
-    // token:    MotionTokens.Spatial.turn, through [LocalCompactTurn] --
-    //           which finishes before the mixer starts opening at all.
-    // property: rotationZ, about the switch's own centre.
-    //
-    // The whole panel turns, glass included, and that is not the rotating
-    // pane CLAUDE.md rules out: the pane isn't turning *within* its panel
-    // as a piece of decoration -- the panel itself is a physical thing
-    // being laid down, and the sheet of glass in it travels with it the
-    // way the border and the shadow do.
-    //
-    // The pivot is worked out here rather than measured: the switch sits
-    // at the top of the Column below, so its centre is exactly one
-    // padding plus half a button down from the panel's own top edge,
-    // whatever the panel's height turns out to be. Read in the draw phase
-    // against the layer's own size, so the bar turns without recomposing
-    // and without the measured position feeding back into the transform
-    // that moved it. With the switch hidden the geometry is unchanged --
-    // the bar still hinges where the switch would be.
-    val compactTurn = LocalCompactTurn.current
-    val turnPivotFromTop = 10.dp + elementShadowClearance + buttonSize / 2
-    val turnDirection = when (preferences.activeAnchor()) {
-        // Always down *into* the screen: a bar against the left edge
-        // turning the same way as one against the right would swing its
-        // whole body out over the edge it is hugging.
-        PopupAnchor.TopStart, PopupAnchor.CenterStart, PopupAnchor.BottomStart -> -1f
-        else -> 1f
-    }
-    val turns = preferences.popupStyle == PopupStyle.VerticalBar
-
     // A real blur needs a genuinely separate graphics layer from whatever
     // it isn't supposed to blur (see GlassBackground's own doc comment), so
     // -- unlike the old flat-color scrim, which was just another Modifier
     // chained onto Surface -- the glass background and its edge light are
     // now painted as Surface's own siblings in this Box, behind and above
     // it respectively, instead of through Surface's `modifier`.
-    Box(
-        modifier = if (turns) {
-            Modifier.compactTurn(
-                turn = compactTurn,
-                direction = turnDirection,
-                pivotFromTop = turnPivotFromTop
-            )
-        } else {
-            Modifier
-        }
-    ) {
-        if (!isDisc && showBackground) {
+    //
+    // [drawPanel] off leaves all of that to the caller: the overlay paints one
+    // panel shared by this popup and the mixer it turns into (see Service),
+    // so that the two are a single surface changing shape rather than two
+    // surfaces handing over. Only the content is drawn here then.
+    val paintsPanel = drawPanel && !isDisc
+    Box {
+        if (paintsPanel && showBackground) {
             PanelShadow(
                 color = shadow,
                 shape = panelShape,
-                blurRadius = preferences.activeShadowWidth().dp,
+                blurRadius = PANEL_SHADOW_BLUR_DP,
                 modifier = Modifier.matchParentSize()
             )
         }
-        if (!isDisc && panelGlass) {
+        if (paintsPanel && panelGlass) {
             GlassBackground(
                 shape = panelShape,
                 baseColor = panelColor,
@@ -624,7 +526,7 @@ fun CollapsedVolumePopup(
                 modifier = Modifier.matchParentSize()
             )
         }
-        if (!isDisc && panelAtmosphere) {
+        if (paintsPanel && panelAtmosphere) {
             AtmosphereBackground(
                 shape = panelShape,
                 baseColor = panelColor,
@@ -640,7 +542,7 @@ fun CollapsedVolumePopup(
             // look with the background off; only the ring's own track
             // (inside VolumeDisc, below) ever picks up Solid's tint,
             // Translucent's glass scrim, or Atmosphere's grain.
-            color = if (isDisc || panelGlass || panelAtmosphere) Color.Transparent else panelColor,
+            color = if (!paintsPanel || panelGlass || panelAtmosphere) Color.Transparent else panelColor,
             contentColor = MaterialTheme.colorScheme.onBackground,
             shape = panelShape
         ) {
@@ -905,7 +807,7 @@ fun CollapsedVolumePopup(
             }
         }
         }
-        if (!isDisc && panelGlass) {
+        if (paintsPanel && panelGlass) {
             Box(
                 Modifier
                     .matchParentSize()
@@ -920,11 +822,11 @@ fun CollapsedVolumePopup(
                     )
             )
         }
-        if (!isDisc && panelAtmosphere) {
+        if (paintsPanel && panelAtmosphere) {
             // A normal outline, not the beam-lit glass edge: Atmosphere has
             // no beam of its own, so that light read as a mismatched
             // leftover from Glass -- see AtmosphereScrim.kt's own doc
-            // comment on drawAtmosphereRing.
+            // comment.
             Box(
                 Modifier
                     .matchParentSize()

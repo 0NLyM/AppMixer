@@ -129,16 +129,37 @@ in composition). Prefer the draw phase.
 ### One arrival, one spring
 
 `LocalArrival` carries how far the overlay has arrived, 0 to 1, from the
-single spring that owns its whole appearance (`Service.kt`). Anything that
-phases its own motion off the arrival -- the disc's formation turn, the
-glass beam's entering sweep, Atmosphere's entering rotation -- reads it
-from there rather than starting a second animation. That keeps every part
-of the arrival on one curve, and makes every exit the entrance backwards
-for free.
+single spring that brings the compact popup out of its edge and takes the
+whole overlay away at the end (`Service.kt`). Anything that phases its own
+motion off the arrival reads it from there rather than starting a second
+animation. That keeps every part of the arrival on one curve, and makes
+every exit the entrance backwards for free.
 
-`PanelPlacement` (`Service.kt`) is the same idea for position: one state,
-read by both the window's layout and the composition's motion, so the
-panel can never be laid out in one place and animated toward another.
+The mixer opening is not an arrival -- the panel is already on screen,
+changing shape -- and it has its own two phases, chained so the second
+starts before the first has come to rest (see `OverlayContent` in
+`Service.kt`): the panel travels to the media row (`Spatial.turn`), then
+opens into the mixer (`Spatial.travel`). The mixer's rows are the one
+deliberate exception to "one spring": each row is its own object on its own
+`Spatial.cascade` spring, started `MotionTokens.Cascade` later than the one
+above it (see `RowCascade.kt`). A cascade *is* a sequence.
+
+### One window, one panel
+
+The overlay's window covers the whole screen and **never moves or
+resizes**; everything happens inside it, and a touchable region
+(`TouchableRegion` in `OverlayGeometry.kt`) lets every touch that misses the
+panel through. Do not go back to a window the size of the panel: moving and
+resizing a window under an animation is a round trip through the window
+manager that lands a frame early or late, and that was every "snap" this
+overlay ever had.
+
+The compact popup and the mixer are **one panel** (`SharedPanel`): one
+shadow, one face, one rim, whose laid-out rectangle travels from the compact
+popup's to the mixer's (`OverlayStage.panelRect`). Their contents take turns
+inside it. Every destination -- the compact popup's rectangle, the mixer's
+(centred on the display, from the display's own size), the media row's -- is
+computed before anything moves, in `OverlayGeometry.kt`.
 
 ## Building
 
