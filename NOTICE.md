@@ -1485,6 +1485,34 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-24 — 1.0.73
+
+- **The bars come out of the screen edge the way the mixer goes into it.**
+  A vertical or horizontal bar's panel now opens out of the edge it hugs --
+  from nothing at the edge to its full size -- and only then does the bar
+  itself come out onto it. On the way out the bar goes first, and the panel
+  shuts back into the edge after it.
+- **The mixer closes one step at a time.** Its rows tuck away completely
+  before the panel moves; the panel then closes along its edge to a single
+  band, and only once it has does it shut into the edge. The panel steps
+  follow the edge rather than the swipe, so the last thing it does is
+  always go into its edge -- and a centred mixer closes to a band and then
+  into its own middle, rather than drawing itself out into a long hairline
+  first. The whole close is also quicker, and no longer leaves a sliver
+  standing at the edge before it goes.
+- **Opening the mixer clears the popup at once.** The vertical bar no longer
+  drifts to the middle of the growing panel before disappearing, and the
+  disc's ticks no longer linger: the popup's content goes straight away,
+  where it is, the disc's face gives way to the panel behind it, and the
+  panel then opens as before, rows cascading in.
+- **Frosted glass.** The glass grain is coarser and sparser -- bigger dots,
+  further apart -- and the blur no longer washes it out: the blur used to
+  average the grain down to nothing, so more blur made the glass clearer.
+  It now spreads and softens each grain instead, until they run together
+  into a milky, mottled veil that hides what's behind the panel the way
+  frosted glass does, without ever capturing the screen. It's cheaper to
+  draw, too: there's no real blur pass behind the glass any more.
+
 ## 2026-09-23 — 1.0.72
 
 - **The mixer opens the way the finger went.** No turn any more: the panel

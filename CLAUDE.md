@@ -130,24 +130,36 @@ in composition). Prefer the draw phase.
 
 ### One arrival, one spring
 
-`LocalArrival` carries how far the overlay has arrived, 0 to 1, from the
-single spring that brings the compact popup out of its edge and takes the
-whole overlay away at the end (`Service.kt`). Anything that phases its own
-motion off the arrival reads it from there rather than starting a second
-animation. That keeps every part of the arrival on one curve, and makes
-every exit the entrance backwards for free.
+`LocalArrival` carries how far the overlay has arrived, 0 to 1, for
+anything that phases its own motion off the arrival rather than starting a
+second animation. For the disc that is the single spring that slides it out
+of its edge (turning slightly as it comes) and takes it away at the end. A
+bar arrives in two steps, the mixer's close run backwards: its **panel**
+opens out of the screen edge -- a laid-out rectangle growing from nothing at
+the edge to its own size -- and only then does its **content** come out onto
+it; `LocalArrival` is that content's arrival. On the way out the content goes
+first and the panel shuts into the edge after it.
 
 The mixer opening is not an arrival -- the panel is already on screen,
-changing shape -- and it has its own two phases, one per axis, chained so
-the second starts before the first has come to rest (see `OverlayContent`
-in `Service.kt`): the panel is drawn out along the axis the user swiped
-(`Spatial.turn`), then across it to the mixer's full size
-(`Spatial.travel`). No rotation. Closing runs the phases the other way and
-shuts the panel completely into the screen edge the popup came from --
-never a fade. The mixer's rows are the one deliberate exception to "one
-spring": each row is its own object on its own `Spatial.cascade` spring,
-started `MotionTokens.Cascade` later than the one above it (see
-`RowCascade.kt`). A cascade *is* a sequence.
+changing shape. The compact popup's content goes at once, where it is (a
+bar, a disc and its ticks alike; the disc's face gives way to the panel
+behind it), and the panel opens in two phases, one per axis, chained so the
+second starts before the first has come to rest (see `OverlayScene`): drawn
+out along the axis the user swiped (`Spatial.turn`), then across it to the
+mixer's full size (`Spatial.travel`). No rotation.
+
+Closing is a **strict sequence** on `Spatial.leave`, each step starting only
+once the one before it has visibly finished: the rows go, bottom first; then
+the panel closes along its edge to the compact popup's own band; then it
+shuts into the screen edge the popup came from -- never a fade. The order of
+the two panel steps is the edge's, not the swipe's (`closingOrder`), so the
+last thing a panel does is always go into its edge. With no edge it closes
+to the popup's band and then shrinks into its middle.
+
+The mixer's rows are the one deliberate exception to "one spring": each row
+is its own object on its own `Spatial.cascade` spring, started
+`MotionTokens.Cascade` later than the one above it (see `RowCascade.kt`). A
+cascade *is* a sequence.
 
 ### One window, one panel
 
@@ -159,7 +171,8 @@ resizing a window under an animation is a round trip through the window
 manager that lands a frame early or late, and that was every "snap" this
 overlay ever had.
 
-The compact popup and the mixer are **one panel** (`SharedPanel`): one
+The compact popup and the mixer are **one panel** (`SharedPanel`, in
+`OverlayScene.kt`): one
 shadow, one face, one rim, whose laid-out rectangle travels from the compact
 popup's to the mixer's (`OverlayStage.panelRect`). Their contents take turns
 inside it. Every destination -- the compact popup's rectangle, the mixer's
@@ -168,6 +181,32 @@ mixer shuts into -- is
 computed before anything moves, in `OverlayGeometry.kt`. The mixer is as
 wide as the platform makes a window that wraps its content
 (`config_prefDialogWidth`) -- the width it always had.
+
+### The glass
+
+The glass never captures what is behind it, and never asks the platform for
+cross-window blur (it is switched off under battery saver; see NOTICE.md).
+Its "blur" is worked out on its own grain, in the shader: the grains spread
+and soften until they run together into a frosted, mottled veil. Never put a
+real blur (`RenderEffect`) over the glass layer again -- it averages the
+grain down to nothing, so more blur made the glass *clearer*.
+
+## Watching the motion
+
+`OverlayFramesTest` films the overlay -- every frame of each popup style
+arriving, opening into the mixer and closing, plus the glass at three blurs
+-- through Robolectric's native graphics on a paused clock, as PNGs. It is
+skipped unless `FRAMES_OUT` is set:
+
+```sh
+FRAMES_OUT=/tmp/frames ./gradlew :app:testDebugUnitTest --tests '*OverlayFramesTest*'
+python3 tools/contact_sheet.py /tmp/frames/vbar 3close 1 12 0.3 sheet.png
+```
+
+Frames are named `<phase>_<milliseconds>.png` (`1enter`, `2open`,
+`3close`). Where Maven Central rate-limits, point Robolectric's own download
+of its Android jars at a mirror with `ROBOLECTRIC_REPO_URL`. Look at the
+frames before shipping a change to the motion.
 
 ## Building
 

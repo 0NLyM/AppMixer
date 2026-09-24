@@ -45,8 +45,8 @@ android {
         applicationId = "com.nomixer.volume"
         minSdk = 33
         targetSdk = 35
-        versionCode = 85
-        versionName = "1.0.72"
+        versionCode = 86
+        versionName = "1.0.73"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -92,6 +92,21 @@ android {
         }
     }
 
+    testOptions {
+        unitTests {
+            // The overlay's frame film (OverlayFramesTest) renders real
+            // resources through Robolectric's native graphics.
+            isIncludeAndroidResources = true
+            all { test ->
+                test.maxHeapSize = "4g"
+                System.getenv("FRAMES_OUT")?.let { test.systemProperty("frames.out", it) }
+                System.getenv("ROBOLECTRIC_REPO_URL")?.let {
+                    test.systemProperty("robolectric.dependency.repo.url", it)
+                }
+            }
+        }
+    }
+
     buildFeatures {
         compose = true
         aidl = true
@@ -129,6 +144,10 @@ dependencies {
     ksp(libs.androidaop.apt)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

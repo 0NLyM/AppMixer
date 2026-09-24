@@ -68,6 +68,13 @@ class RowCascade {
         }
     }
 
+    /**
+     * Whether every row is within [threshold] of fully gone -- how the
+     * mixer's closing knows its rows have finished before the panel moves.
+     * Reads each row's own spring, so a snapshotFlow over it follows them.
+     */
+    fun hiddenBelow(threshold: Float): Boolean = rows.values.all { it.fade.value <= threshold }
+
     /** [reveal] backwards: the bottom row goes first, each tucking back under the one above. */
     suspend fun conceal() = coroutineScope {
         open = false

@@ -34,31 +34,37 @@ import androidx.compose.ui.graphics.Color
  *
  * | element             | model                 | token                       | property                              |
  * |---------------------|-----------------------|-----------------------------|---------------------------------------|
- * | Edge panel          | sheet on the edge     | [Spatial.travel]            | translation, edge axis only -- no scale. |
- * |                     |                       |                             | The disc too: it arrives as one object |
+ * | Bar panel           | a sheet unfolding out of the side of the screen | [Spatial.travel] in, | its laid-out    |
+ * |                     |                       | [Spatial.leave] out         | rectangle, from nothing at the edge to |
+ * |                     |                       |                             | its own -- the mixer's close, backwards |
+ * | Bar content         | one object coming out onto a panel already there | [Spatial.cascade] + | translation   |
+ * |                     |                       | [Effects.default]           | toward the edge, and alpha: after the  |
+ * |                     |                       |                             | panel on the way in, before it out     |
+ * | Disc arrival        | a knob slid out of its edge | [Spatial.travel]      | translation, edge axis only -- no scale. |
+ * |                     |                       |                             | It arrives as one object               |
  * | Disc arrival turn   | a knob settling into place | [Spatial.travel], via  | rotationZ of the whole disc, face      |
  * |                     |                       | the arrival                 | included: forward into place on the   |
  * |                     |                       |                             | way in, back the other way on the way |
  * |                     |                       |                             | out. The one turning glass -- asked for |
- * | Centered panel      | sheet expanding in place | [Spatial.travel]         | uniform scale, never from 0           |
+ * | Centered disc       | a knob growing in place | [Spatial.travel]          | uniform scale, never from 0           |
  * | Mixer open, phase 1 | one sheet drawn out the way the finger went | [Spatial.turn] | its laid-out rectangle, along  |
  * |                     |                       |                             | the swipe's axis; corner radius (disc  |
  * |                     |                       |                             | only, quantised). No rotation          |
  * | Mixer open, phase 2 | the same sheet unfolding to full size | [Spatial.travel] | its laid-out rectangle, across  |
  * |                     |                       |                             | the swipe's axis -- started before     |
  * |                     |                       |                             | phase 1 has come to rest               |
- * | Disc into the mixer | the knob coming forward as its panel grows | (phase 1 + 2, read) | uniform scale, up from 1  |
- * |                     |                       |                             | only, while it fades                   |
- * | Mixer close         | a drawer shutting into the side of the screen | [Spatial.travel] | its laid-out rectangle:   |
- * |                     |                       | then [Spatial.turn]         | across first, then along, down to      |
- * |                     |                       |                             | nothing at the edge it came from. No   |
- * |                     |                       |                             | fade                                   |
+ * | Mixer close         | a drawer shutting into the side of the screen | [Spatial.leave] | its laid-out rectangle, in  |
+ * |                     |                       |                             | strict steps: rows gone, then across,  |
+ * |                     |                       |                             | then along, down to nothing at the     |
+ * |                     |                       |                             | edge it came from. No fade             |
  * | Mixer row           | a row sliding out from under its neighbour | [Spatial.cascade] + | translationY, one pitch, |
  * |                     |                       | [Effects.default], each row | + alpha. One row at a time, see       |
  * |                     |                       | started [Cascade] later     | [Cascade]. Ring's row carries its     |
  * |                     |                       |                             | ringer and Do Not Disturb switches    |
- * | Hand-over           | --                    | [Effects.default]           | alpha: the compact popup's content    |
- * |                     |                       |                             | fading out inside the growing panel   |
+ * | Hand-over           | --                    | [Effects.fast]              | alpha: the compact popup's content    |
+ * |                     |                       |                             | going at once, where it is, as the    |
+ * |                     |                       |                             | mixer is asked for; the disc's face   |
+ * |                     |                       |                             | giving way to the panel behind it     |
  * | Panel opacity       | --                    | [Effects.default]           | alpha (never a spatial spring)        |
  * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction: 1:1 under a finger,    |
  * |                     |                       |                             | magnetised to the nearest step on     |
@@ -254,6 +260,29 @@ object MotionTokens {
                     visibilityThreshold = TRAVEL_THRESHOLD
                 )
             }
+
+        /**
+         * Anything leaving, one step after another: a mixer's rows gone, its
+         * panel closing across, then shutting into its edge; a bar's panel
+         * shutting after its content. Critically damped -- a panel shutting
+         * into the side of the screen has nowhere past the edge to overshoot
+         * to -- and stiffer than [travel], because every exit here is a
+         * *sequence* of steps and a leaving panel shouldn't linger over any
+         * of them. On the fine threshold: it is a panel's journey,
+         * multiplied up from 0..1.
+         */
+        fun leave(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = 1f,
+                    stiffness = LEAVE_STIFFNESS,
+                    visibilityThreshold = TRAVEL_THRESHOLD
+                )
+            }
+
+        private const val LEAVE_STIFFNESS = 420f
 
         private const val CASCADE_DAMPING = 0.9f
         private const val CASCADE_STIFFNESS = 140f
