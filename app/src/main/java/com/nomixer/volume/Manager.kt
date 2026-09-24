@@ -40,6 +40,14 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     val shizukuStatus
         get() = _shizukuStatus
 
+    /**
+     * Whether the running accessibility service was bound with the
+     * screenshot capability the glass needs -- null while no service is
+     * running. Written by the service as it connects; the main screen offers
+     * to restart the service when it is false (see MainActivity).
+     */
+    var screenshotCapable by mutableStateOf<Boolean?>(null)
+
     // Wrapping is a local, purely reflective change to the binder proxy --
     // it doesn't touch Shizuku itself, only whether a later privileged call
     // *would* route through it -- so it isn't expected to fail here. It's

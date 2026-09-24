@@ -1485,6 +1485,20 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-25 — 1.0.75
+
+- **Restart the accessibility service from the app.** 1.0.74's glass needs
+  the service's screenshot capability, but the system only reads a
+  service's capabilities when it binds it, and an app update doesn't
+  rebind -- so a service first switched on by an older version keeps
+  running without it, and every capture is refused. On systems that list
+  no switch for the service in their accessibility settings there was no
+  way to rebind it short of restarting the phone. When the service is
+  running without the capability, the main screen now says so and offers
+  a **Restart accessibility service** button, which switches it off and
+  back on through the same secure setting the app already uses to enable
+  it. The glass's refusal in the diagnostic log now points to it.
+
 ## 2026-09-24 — 1.0.74
 
 - **Real frosted glass.** Glass is now a pane over the actual screen behind

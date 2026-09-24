@@ -54,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +70,9 @@ import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CrashReportDialog
 import com.nomixer.volume.compose.CustomizationScreen
 import com.nomixer.volume.compose.DiagnosticLogScreen
+import com.nomixer.volume.data.DiagnosticLog
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.nomixer.volume.compose.NothingDot
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.ToggleButton
@@ -170,6 +174,9 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "NoMixer.Activity"
 
         private const val SERVICE_NAME_SEPARATOR = ":"
+
+        /** See [restartAccessibilityService]. */
+        private const val SERVICE_RESTART_PAUSE_MS = 1000L
     }
 
     private lateinit var application: MyApplication
@@ -223,6 +230,39 @@ class MainActivity : ComponentActivity() {
         if (enabledAccessibilityServices == null || !enabledAccessibilityServices.contains(name)) {
             throw SecurityException("Can't enable accessibility service $name")
         }
+    }
+
+    /**
+     * Switches this app's accessibility service off and, a moment later, on
+     * again -- asked for from the main screen, for a service the system is
+     * running without the screenshot capability the glass needs.
+     *
+     * The platform reads a service's capabilities (`canTakeScreenshot`
+     * among them) when it binds it, and an app update doesn't rebind it: a
+     * service first switched on by a version that didn't declare the
+     * capability keeps running without it. Switching it off and on binds it
+     * afresh, from the current declaration. Some systems don't list the
+     * service in their accessibility settings at all, so there is no switch
+     * there to do it with; this does it through the same secure setting
+     * [enableAccessibilityService] already writes (with the
+     * WRITE_SECURE_SETTINGS permission granted through Shizuku).
+     */
+    private suspend fun restartAccessibilityService(name: String) {
+        val self = ComponentName.unflattenFromString(name)
+        val others = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            .orEmpty()
+            .split(SERVICE_NAME_SEPARATOR)
+            .filter { it.isNotBlank() && ComponentName.unflattenFromString(it) != self }
+        Settings.Secure.putString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            others.joinToString(SERVICE_NAME_SEPARATOR)
+        )
+        // Long enough for the system to see the service go and unbind it:
+        // set straight back, the two writes can reach it as one and nothing
+        // is rebound.
+        delay(SERVICE_RESTART_PAUSE_MS)
+        enableAccessibilityService(name)
     }
 
     val powerManager by lazy { getSystemService(PowerManager::class.java)!! }
@@ -598,6 +638,48 @@ class MainActivity : ComponentActivity() {
         }
 
         Log.i(TAG, "Manufacturer: ${Build.MANUFACTURER}")
+
+        // A service running without the screenshot capability: offer the
+        // restart that grants it (see [restartAccessibilityService]).
+        if (application.manager.screenshotCapable == false) {
+            val scope = rememberCoroutineScope()
+            var restarting by remember { mutableStateOf(false) }
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "The accessibility service is running without permission to capture " +
+                        "the screen, so the glass can't show what's behind it. Restarting the " +
+                        "service grants it.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Button(
+                    enabled = !restarting,
+                    onClick = {
+                        restarting = true
+                        scope.launch {
+                            try {
+                                restartAccessibilityService(
+                                    ComponentName(this@MainActivity, Service::class.java).flattenToString()
+                                )
+                                DiagnosticLog.log("Glass", "accessibility service restarted from the main screen")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Can't restart accessibility service", e)
+                                DiagnosticLog.log(
+                                    "Glass✗",
+                                    "couldn't restart the accessibility service: ${e.javaClass.name}: ${e.message}"
+                                )
+                            } finally {
+                                restarting = false
+                            }
+                        }
+                    }
+                ) {
+                    Text(text = "Restart accessibility service")
+                }
+            }
+        }
 
         if (!isIgnoringBatteryOptimization) {
             Button(onClick = { openBatterySettings() }) {

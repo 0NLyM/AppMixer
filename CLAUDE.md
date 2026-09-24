@@ -195,6 +195,13 @@ pane of glass draws it behind its tint, lined up with the screen through the
 whole root-to-node transform -- so it stays put on the screen while a panel
 travels or the disc turns over it. The arrival waits for the capture, briefly.
 
+The system reads a service's capabilities only when it binds it, and an app
+update does not rebind: a service first switched on by a version without
+`canTakeScreenshot` keeps running without it. The main screen then offers
+**Restart accessibility service** (`restartAccessibilityService` in
+`MainActivity.kt`), because some systems show no switch for the service in
+their own settings.
+
 Where there is no capture -- the settings preview, or a platform that
 refuses one (the reason goes to the diagnostic log) -- the glass frosts its
 own grain in the shader instead. Never put a real blur (`RenderEffect`) over

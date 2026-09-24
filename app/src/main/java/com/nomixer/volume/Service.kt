@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityButtonController.AccessibilityB
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -302,6 +303,13 @@ class Service : AccessibilityService() {
                     settle(null, keepPrevious = errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT)
                 }
             })
+        } catch (e: SecurityException) {
+            DiagnosticLog.log(
+                "Glass✗",
+                "takeScreenshot refused: ${e.message} -- the service was bound without canTakeScreenshot; " +
+                    "use \"Restart accessibility service\" on the main screen"
+            )
+            settle(null, keepPrevious = false)
         } catch (e: Throwable) {
             DiagnosticLog.log("Glass✗", "takeScreenshot threw ${e.javaClass.name}: ${e.message}")
             settle(null, keepPrevious = false)
@@ -687,6 +695,12 @@ class Service : AccessibilityService() {
 
         registerReceiver(broadcastReceiver, IntentFilter(ACTION_SHOW_VIEW), RECEIVER_NOT_EXPORTED)
 
+        // The platform reads a service's capabilities when it binds it, and an
+        // app update doesn't rebind: a service first switched on by a version
+        // that didn't declare canTakeScreenshot carries on without it. The
+        // main screen offers to restart it (see MainActivity).
+        manager.screenshotCapable =
+            serviceInfo.capabilities and AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT != 0
         Log.i(TAG, "onServiceConnected done ${serviceInfo.capabilities.toString(2)}")
     }
 
@@ -701,6 +715,9 @@ class Service : AccessibilityService() {
         super.onDestroy()
 
         Log.i(TAG, "onDestroy")
+        if (this::manager.isInitialized) {
+            manager.screenshotCapable = null
+        }
 
         Toast.makeText(this, "Accessibility service died!", Toast.LENGTH_SHORT).show()
 
