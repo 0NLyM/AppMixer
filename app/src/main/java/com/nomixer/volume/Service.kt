@@ -3,6 +3,8 @@ package com.nomixer.volume
 import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.ScreenshotResult
+import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -16,6 +18,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -42,11 +45,19 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
+import com.nomixer.volume.compose.GlassBackdrop
+import com.nomixer.volume.compose.buildGlassBackdrop
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
+import com.nomixer.volume.data.DiagnosticLog
+import com.nomixer.volume.data.GLASS_BACKDROP_BLUR_MAX_DP
+import com.nomixer.volume.data.PopupBackground
+import com.nomixer.volume.data.activeBackground
+import com.nomixer.volume.data.activeShowBackground
 import com.nomixer.volume.ui.theme.NoMixerTheme
 import kotlinx.coroutines.flow.first
 import java.util.Objects
+import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 @SuppressLint("AccessibilityPolicy")
@@ -63,6 +74,15 @@ class Service : AccessibilityService() {
          * the thing that decides how long the animation gets.
          */
         private const val EXIT_FALLBACK_TIMEOUT = 3000L
+
+        /**
+         * The longest the popup's arrival waits for the glass's capture of
+         * the screen behind it (see [requestGlassBackdrop]). A capture
+         * normally lands well inside this; one that doesn't is let go --
+         * the popup arrives on frosted grain, and the backdrop fades in if
+         * it turns up after all.
+         */
+        private const val GLASS_BACKDROP_WAIT_MS = 150L
 
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
@@ -190,6 +210,115 @@ class Service : AccessibilityService() {
      */
     private var atmosphereColorsState by mutableStateOf<Pair<Color, Color>?>(null)
 
+    /**
+     * The screen behind the popup, blurred, for the glass to be a pane over
+     * (see [requestGlassBackdrop]). Null with no glass on screen, or when the
+     * platform wouldn't hand over a capture -- the glass frosts its own grain
+     * then.
+     */
+    private var glassBackdrop by mutableStateOf<GlassBackdrop?>(null)
+
+    /** Whether a capture is on its way: the arrival waits for it, briefly. */
+    private var glassBackdropPending by mutableStateOf(false)
+
+    /** Which request a capture answers, so a late one can't land on a later popup. */
+    private var glassBackdropRequest = 0
+
+    /** Reading a capture back and blurring it is a few ms of work; never on the main thread. */
+    private val glassBackdropExecutor by lazy { Executors.newSingleThreadExecutor() }
+
+    private val glassBackdropGiveUp = Runnable { glassBackdropPending = false }
+
+    /**
+     * Captures the screen behind the popup -- through this accessibility
+     * service's own screenshot capability (`canTakeScreenshot`: no
+     * MediaProjection, no consent dialog) -- and blurs it for the glass.
+     *
+     * Called before the overlay's window is added, so the popup is never in
+     * its own backdrop; the arrival holds (up to [GLASS_BACKDROP_WAIT_MS])
+     * until it lands. One capture per appearance: nothing is sampled while
+     * the popup is up.
+     *
+     * Nothing here depends on the platform's cross-window blur, so battery
+     * saver can't take it away: the capture is a screenshot, and the blur is
+     * the app's own (see buildGlassBackdrop). A refusal breaks nothing --
+     * the glass frosts its own grain instead -- and is recorded in the
+     * diagnostic log with the platform's own reason.
+     */
+    private fun requestGlassBackdrop() {
+        val request = ++glassBackdropRequest
+        val preferences = manager.uiPreferences
+        if (!preferences.activeShowBackground() || preferences.activeBackground() != PopupBackground.Translucent) {
+            glassBackdrop = null
+            glassBackdropPending = false
+            return
+        }
+        glassBackdropPending = true
+        handler.removeCallbacks(glassBackdropGiveUp)
+        handler.postDelayed(glassBackdropGiveUp, GLASS_BACKDROP_WAIT_MS)
+
+        val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * resources.displayMetrics.density
+        val requestedAt = SystemClock.uptimeMillis()
+        fun settle(backdrop: GlassBackdrop?, keepPrevious: Boolean) {
+            handler.post {
+                if (request != glassBackdropRequest) {
+                    return@post
+                }
+                if (backdrop != null || !keepPrevious) {
+                    glassBackdrop = backdrop
+                }
+                glassBackdropPending = false
+                handler.removeCallbacks(glassBackdropGiveUp)
+            }
+        }
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, glassBackdropExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    val backdrop = try {
+                        buildGlassBackdrop(result.hardwareBuffer, result.colorSpace, blurPx)
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Can't turn the screen capture into a glass backdrop", e)
+                        null
+                    } finally {
+                        result.hardwareBuffer.close()
+                    }
+                    if (backdrop == null) {
+                        DiagnosticLog.log("Glass✗", "captured, but the capture was unreadable")
+                    } else {
+                        DiagnosticLog.log(
+                            "Glass✓",
+                            "backdrop ${backdrop.image.width}x${backdrop.image.height} " +
+                                "in ${SystemClock.uptimeMillis() - requestedAt} ms"
+                        )
+                    }
+                    settle(backdrop, keepPrevious = false)
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    DiagnosticLog.log("Glass✗", "takeScreenshot refused: ${screenshotErrorName(errorCode)}")
+                    // Asked again too soon after the last popup: that
+                    // popup's backdrop is a fraction of a second old and
+                    // still the screen behind this one.
+                    settle(null, keepPrevious = errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT)
+                }
+            })
+        } catch (e: Throwable) {
+            DiagnosticLog.log("Glass✗", "takeScreenshot threw ${e.javaClass.name}: ${e.message}")
+            settle(null, keepPrevious = false)
+        }
+    }
+
+    /** The platform's own name for a screenshot refusal, with its number. */
+    private fun screenshotErrorName(errorCode: Int): String = when (errorCode) {
+        ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR -> "internal error"
+        ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "no accessibility access (capability not granted)"
+        ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> "asked again too soon"
+        ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "invalid display"
+        ERROR_TAKE_SCREENSHOT_INVALID_WINDOW -> "invalid window"
+        ERROR_TAKE_SCREENSHOT_SECURE_WINDOW -> "secure window"
+        else -> "unknown"
+    } + " ($errorCode)"
+
     // Icon lookup and Palette extraction cost real work the first time a
     // given app is sampled (resource I/O, then quantizing the bitmap), but
     // an app's icon doesn't change between one volume press and the next, so
@@ -309,6 +438,8 @@ class Service : AccessibilityService() {
                         frame = windowFrame,
                         mixerWidthPx = mixerWidthPx,
                         atmosphereColors = atmosphereColorsState,
+                        glassBackdrop = glassBackdrop,
+                        glassBackdropPending = glassBackdropPending,
                         touchBounds = touchBounds,
                         onExpanded = this@Service.handler::startIdleTimer,
                         // Posted rather than called straight from the exit:
@@ -480,6 +611,9 @@ class Service : AccessibilityService() {
             // user was actually looking at that Atmosphere's grain is made
             // of, not this popup's own window once it's already up.
             atmosphereColorsState = sampleForegroundAppColors()
+            // The same, and for the same reason: the capture has to be of
+            // the screen without the popup on it.
+            requestGlassBackdrop()
             windowFrame = null
             touchBounds.setEmpty()
             val created = createView()

@@ -86,6 +86,16 @@ const val ATMOSPHERE_GRAIN_SIZE_DEFAULT = 0.55f
  */
 const val GLASS_BLUR_RADIUS_MAX_DP = 18f
 
+/**
+ * [UiPreferences.glassBlurStrength]'s own 0..1 range, scaled up to the blur
+ * radius of the screen captured behind the glass (see
+ * com.nomixer.volume.compose.buildGlassBackdrop). Wider than
+ * [GLASS_BLUR_RADIUS_MAX_DP]: this one blurs a real screen of text and
+ * images, which takes a good deal more before it reads as frosted rather
+ * than smudged.
+ */
+const val GLASS_BACKDROP_BLUR_MAX_DP = 40f
+
 /** Top of the disc tick corner-radius slider's range, as a percent. */
 const val DISC_TICK_CORNER_MAX = 50
 
@@ -338,9 +348,10 @@ data class UiPreferences(
     val expandedMixerCentered: Boolean = false,
     /**
      * How strongly the glass panel is frosted, 0 (crisp) to 1 (a heavy soft
-     * frost): the radius of a real [android.graphics.RenderEffect] blur run
-     * over the whole glass layer, tint and grain alike. See
-     * [GLASS_BLUR_RADIUS_MAX_DP] for the dp range it scales up to.
+     * frost): how blurred the screen captured behind it is (up to
+     * [GLASS_BACKDROP_BLUR_MAX_DP]) -- and, where there is no capture, how
+     * far its own grain spreads into a frosted veil (up to
+     * [GLASS_BLUR_RADIUS_MAX_DP]).
      */
     val glassBlurStrength: Float = 0.6f,
     /**

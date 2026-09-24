@@ -89,6 +89,9 @@ import androidx.compose.ui.graphics.Color
  * |                     |                       |                             | silenced stream, a silenced ringer,   |
  * |                     |                       |                             | a prohibition that is not in force    |
  * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |
+ * | Glass backdrop      | --                    | [Effects.default]           | alpha: the screen captured behind the |
+ * |                     |                       |                             | glass, only when it lands after the   |
+ * |                     |                       |                             | arrival -- otherwise it is simply there |
  * | Glass highlight     | a pane that is still, | [Ambient.enter], via        | light angle and brightness --         |
  * |                     | under a light settling | [LocalAmbientEnter]        | never the pane                        |
  * | Atmosphere field    | a field of particles  | [Ambient.enter], via        | shader rotation, centre offset,       |

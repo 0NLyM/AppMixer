@@ -41,7 +41,10 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.compose.AtmosphereBackground
+import com.nomixer.volume.compose.GlassBackdrop
+import com.nomixer.volume.compose.GlassBackdropSource
 import com.nomixer.volume.compose.GlassBackground
+import com.nomixer.volume.compose.LocalGlassBackdrop
 import com.nomixer.volume.compose.LocalRowCascade
 import com.nomixer.volume.compose.PanelShadow
 import com.nomixer.volume.compose.RowCascade
@@ -199,6 +202,9 @@ internal class OverlayStage {
 
     /** The light on the glass and the Atmosphere field settling, once per appearance. */
     val settling = Animatable(0f)
+
+    /** How much of the screen captured behind the glass shows through it. */
+    val backdropIn = Animatable(0f)
 
     /** The mixer's rows, one object at a time. */
     val cascade = RowCascade()
@@ -539,6 +545,10 @@ internal fun OverlayScene(
     /** The mixer's width, in px -- see Service's own `mixerWidthPx`. */
     mixerWidthPx: Int,
     atmosphereColors: Pair<Color, Color>?,
+    /** The screen behind the overlay, blurred, for the glass -- see Service's own `requestGlassBackdrop`. */
+    glassBackdrop: GlassBackdrop?,
+    /** Whether that capture is still on its way: the arrival waits for it. */
+    glassBackdropPending: Boolean,
     /** Written every layout pass: the panel's rectangle, the only part of the window that takes touches. */
     touchBounds: Rect,
     /** The mixer has been asked for. */
@@ -557,7 +567,10 @@ internal fun OverlayScene(
     val stillVisible by rememberUpdatedState(visible)
     val density = LocalDensity.current
     val densityScale = density.density
-    val ready = frame != null && stage.compactSize != IntSize.Zero
+    // Not before the screen behind the glass has been captured (or given
+    // up on): a pane that arrives and only then fills in with what is
+    // behind it is two arrivals.
+    val ready = frame != null && stage.compactSize != IntSize.Zero && !glassBackdropPending
 
     val showBackground = preferences.activeShowBackground()
     val isDisc = preferences.popupStyle == PopupStyle.Disc
@@ -629,6 +642,23 @@ internal fun OverlayScene(
         }
     }
     val panelShape = RoundedCornerShape(cornerDp.dp)
+
+    // A capture that is there as the popup arrives simply is: it is what is
+    // behind the glass, not something happening on it. One that turns up
+    // after the arrival has had to go without it comes in underneath.
+    LaunchedEffect(glassBackdrop) {
+        if (glassBackdrop == null) {
+            stage.backdropIn.snapTo(0f)
+        } else if (stage.appear.value <= 0f) {
+            stage.backdropIn.snapTo(1f)
+        } else {
+            // element:  the screen seen through the glass.
+            // model:    -- opacity is not an object.
+            // token:    MotionTokens.Effects.default.
+            // property: alpha, in.
+            stage.backdropIn.animateTo(1f, MotionTokens.Effects.default())
+        }
+    }
 
     // -- Arriving and leaving ----------------------------------------------
     LaunchedEffect(visible, ready) {
@@ -828,7 +858,34 @@ internal fun OverlayScene(
             }
         },
         LocalAmbientEnter provides remember(stage) { { stage.settling.value } },
-        LocalRowCascade provides stage.cascade
+        LocalRowCascade provides stage.cascade,
+        LocalGlassBackdrop provides remember(stage, glassBackdrop, frame) {
+            if (glassBackdrop == null || frame == null) {
+                null
+            } else {
+                GlassBackdropSource(
+                    backdrop = glassBackdrop,
+                    // The capture is of the whole display, and the window is
+                    // the whole screen: it lies exactly where the display does
+                    // in the window's own coordinates.
+                    bounds = RectF(
+                        frame.display.left.toFloat(),
+                        frame.display.top.toFloat(),
+                        frame.display.right.toFloat(),
+                        frame.display.bottom.toFloat()
+                    ),
+                    presence = { stage.backdropIn.value },
+                    // Everything that carries a pane of glass across the
+                    // screen: the arrival (the disc's slide and turn, a bar's
+                    // panel opening out of its edge) and the mixer's phases.
+                    motion = {
+                        stage.appear.value
+                        stage.along.value
+                        stage.across.value
+                    }
+                )
+            }
+        }
     ) {
         // The one panel, and the compact popup's content in it.
         val panelSlot: @Composable () -> Unit = {

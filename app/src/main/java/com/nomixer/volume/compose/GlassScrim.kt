@@ -37,9 +37,11 @@ import kotlin.math.sin
 /**
  * Glassmorphism for Glass mode's panel -- the single rendering path used
  * everywhere it paints a background (bar styles, the expanded mixer, the
- * disc's own ring track), never touching the platform's cross-window blur
- * and so never subject to it being switched off (battery saver, thermal
- * throttling, a device that just doesn't do it -- see NOTICE.md).
+ * disc's knob face), never touching the platform's cross-window blur and so
+ * never subject to it being switched off (battery saver, thermal
+ * throttling, a device that just doesn't do it -- see NOTICE.md). The blur
+ * of what is behind the pane is the app's own, done on a capture of the
+ * screen (see GlassBackdrop.kt).
  *
  * Everything here hangs off one idea: a single beam of light crossing the
  * panel at [GLASS_LIGHT_ANGLE_DEFAULT] (and as wide as
@@ -51,15 +53,21 @@ import kotlin.math.sin
  * light.
  *
  * Painted in order, behind the panel's own content:
+ * 0. The screen behind the overlay, blurred ([glassBackdrop]), lined up with
+ *    the screen however the pane is moving -- where there is a capture of
+ *    it. Without one there is nothing behind the pane but what the grain
+ *    frosts.
  * 1. An even sheet of the panel's own base color -- the same opacity
  *    everywhere, so nothing about the tint alone depends on what's behind
  *    it.
  * 2. The beam itself ([glassBeamBrush]), white light added across the face.
  * 3. AGSL grain ([glassNoiseBrush]) -- a lattice of evenly spaced grains
  *    at the opacity of the noise colour the user picked and nothing else.
- *    The glass's blur is worked out *on the grains*, in the shader: it
- *    spreads and softens each one until they run together into a frosted,
- *    mottled veil. It used to be a real blur over the whole layer, which
+ *    Over a backdrop the grains stay fine; without one the glass's blur is
+ *    worked out *on the grains*, in the shader: it spreads and softens each
+ *    one until they run together into a frosted, mottled veil -- the pane's
+ *    stand-in for a blurred screen. It used to be a real blur over the whole
+ *    layer, which
  *    averaged the grains down to nothing -- the more blur, the clearer the
  *    glass, exactly backwards -- and had nothing else to blur: the tint and
  *    the beam are already smooth.
@@ -384,8 +392,9 @@ fun glassNoiseBrush(color: Color, density: Float, blurPx: Float = 0f): Brush? {
 }
 
 /**
- * The glass panel's background alone -- beam-lit tint and grain, frosted
- * by [blurRadius] -- as a plain empty [Box] meant to sit *behind* a panel's
+ * The glass panel's background alone -- the blurred screen behind it (from
+ * [LocalGlassBackdrop], where there is one), beam-lit tint and grain -- as a
+ * plain empty [Box] meant to sit *behind* a panel's
  * real content in the same [Box] stack (see CollapsedVolumePopup.kt and
  * OverlayScene.kt's own call sites).
  *
@@ -399,7 +408,12 @@ fun GlassBackground(
     shape: Shape,
     baseColor: Color,
     modifier: Modifier = Modifier,
-    /** How frosted the glass is: how far its grains spread and soften -- see [glassNoiseBrush]. */
+    /**
+     * How frosted the glass is. Over a captured backdrop the backdrop itself
+     * was blurred this much when it was captured (see buildGlassBackdrop);
+     * without one, it is how far the grains spread and soften -- see
+     * [glassNoiseBrush].
+     */
     blurRadius: Dp = 0.dp,
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
     lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
@@ -408,9 +422,17 @@ fun GlassBackground(
     /** The grain's colour and, through its alpha, its opacity -- see [glassNoiseBrush]. */
     noiseColor: Color = GLASS_NOISE_COLOR_DEFAULT
 ) {
+    // The screen behind the overlay, where there is one (see
+    // LocalGlassBackdrop): then the glass is a pane over it, blurred, and the
+    // grain goes back to being fine grain. Without one -- the settings
+    // preview, or a capture the platform refused -- the grain frosts itself
+    // instead.
+    val backdrop = LocalGlassBackdrop.current
+    val grainBlur = if (backdrop != null) 0.dp else blurRadius
     Box(
         modifier
             .clip(shape)
+            .glassBackdrop(backdrop)
             .drawWithCache {
                 val beam = glassBeamBrush(lightAngle, lightWidth, lightStrength)
                 onDrawBehind {
@@ -421,7 +443,7 @@ fun GlassBackground(
                     // it -- that shared fate is exactly what made the whole
                     // panel invisible instead of just plainer than intended.
                     try {
-                        glassNoiseBrush(noiseColor, density, blurRadius.toPx())?.let { drawRect(it) }
+                        glassNoiseBrush(noiseColor, density, grainBlur.toPx())?.let { drawRect(it) }
                     } catch (e: Throwable) {
                         Log.w("GlassScrim", "Glass noise draw failed", e)
                     }

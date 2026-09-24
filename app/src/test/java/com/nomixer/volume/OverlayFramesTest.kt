@@ -35,8 +35,11 @@ import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.GLASS_NOISE_COLOR_DEFAULT
+import com.nomixer.volume.compose.GlassBackdrop
+import com.nomixer.volume.compose.glassBackdropFrom
 import com.nomixer.volume.compose.GlassBackground
 import com.nomixer.volume.compose.cascadeRow
+import com.nomixer.volume.data.GLASS_BACKDROP_BLUR_MAX_DP
 import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupStyle
@@ -103,6 +106,10 @@ class OverlayFramesTest {
     private fun film(name: String, preferences: UiPreferences) {
         val dir = File(out, name).apply { deleteRecursively(); mkdirs() }
         var visible by mutableStateOf(true)
+        // The overlay's own capture of the screen behind it, as the service
+        // takes it: the app alone, before anything of the popup is up.
+        var backdrop by mutableStateOf<GlassBackdrop?>(null)
+        var captured by mutableStateOf(false)
         var hidden = false
         var expand: (() -> Unit)? = null
         rule.mainClock.autoAdvance = false
@@ -114,12 +121,14 @@ class OverlayFramesTest {
                     val height = with(density) { maxHeight.roundToPx() }
                     val audio = LocalContext.current.getSystemService(AudioManager::class.java)
                     SomeApp()
-                    OverlayScene(
+                    if (captured) OverlayScene(
                         preferences = preferences,
                         visible = visible,
                         frame = WindowFrame(width, height, Rect(0, 0, width, height), emptyList(), false, false),
                         mixerWidthPx = with(density) { MIXER_FALLBACK_WIDTH_DP.dp.roundToPx() },
                         atmosphereColors = null,
+                        glassBackdrop = backdrop,
+                        glassBackdropPending = false,
                         touchBounds = Rect(),
                         onExpanded = {},
                         onHidden = { hidden = true },
@@ -138,6 +147,10 @@ class OverlayFramesTest {
                 }
             }
         }
+        rule.mainClock.advanceTimeBy(FRAME_STEP_MILLIS)
+        val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * rule.density.density
+        backdrop = glassBackdropFrom(snapshot(), blurPx)
+        captured = true
         var time = 0L
         fun shoot(phase: String, millis: Long, stop: () -> Boolean = { false }) {
             var elapsed = 0L

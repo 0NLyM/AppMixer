@@ -184,12 +184,22 @@ wide as the platform makes a window that wraps its content
 
 ### The glass
 
-The glass never captures what is behind it, and never asks the platform for
-cross-window blur (it is switched off under battery saver; see NOTICE.md).
-Its "blur" is worked out on its own grain, in the shader: the grains spread
-and soften until they run together into a frosted, mottled veil. Never put a
-real blur (`RenderEffect`) over the glass layer again -- it averages the
-grain down to nothing, so more blur made the glass *clearer*.
+The glass is a pane over the **real screen**, blurred by the app itself --
+never by the platform's cross-window blur (`FLAG_BLUR_BEHIND`,
+`setBackgroundBlurRadius`), which battery saver switches off (see
+NOTICE.md). Once per appearance, before the overlay's window is added, the
+service captures the screen through its own accessibility screenshot
+capability (`canTakeScreenshot`; `requestGlassBackdrop` in `Service.kt`),
+shrinks and box-blurs it off the main thread (`GlassBackdrop.kt`), and every
+pane of glass draws it behind its tint, lined up with the screen through the
+whole root-to-node transform -- so it stays put on the screen while a panel
+travels or the disc turns over it. The arrival waits for the capture, briefly.
+
+Where there is no capture -- the settings preview, or a platform that
+refuses one (the reason goes to the diagnostic log) -- the glass frosts its
+own grain in the shader instead. Never put a real blur (`RenderEffect`) over
+the glass layer: there is nothing under the pane inside our own window to
+blur, so it only averaged the grain down to nothing.
 
 ## Watching the motion
 

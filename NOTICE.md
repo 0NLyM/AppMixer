@@ -1485,6 +1485,25 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-24 — 1.0.74
+
+- **Real frosted glass.** Glass is now a pane over the actual screen behind
+  the popup, blurred: every time the popup appears, the accessibility
+  service takes a still of the screen just before the popup goes up, and
+  the app blurs it itself and draws it behind the glass, lined up with the
+  screen -- it stays in place while the panel opens, closes and moves, and
+  while the disc turns in. None of it uses the platform's own window blur,
+  so battery saver doesn't switch it off. The Blur slider sets how blurred
+  the screen behind is.
+- The screenshot capability (`canTakeScreenshot`) is back in the
+  accessibility service's declaration. Where the platform still refuses the
+  capture, the glass falls back to the frosted grain of 1.0.73, and the
+  diagnostic log now names the platform's reason correctly -- the old
+  capture's log read the platform's error codes off by one, so "no
+  accessibility access" and "asked again too soon" were reported as each
+  other's neighbours. If the log says the capability isn't granted, turning
+  the accessibility service off and on again grants it.
+
 ## 2026-09-24 — 1.0.73
 
 - **The bars come out of the screen edge the way the mixer goes into it.**
