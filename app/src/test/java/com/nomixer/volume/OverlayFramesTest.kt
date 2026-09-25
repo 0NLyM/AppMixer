@@ -96,6 +96,21 @@ class OverlayFramesTest {
     private fun atCaptureSize(screen: Bitmap): Bitmap =
         Bitmap.createScaledBitmap(screen, screen.width * 5 / 4, screen.height * 5 / 4, true)
 
+    /**
+     * A window's capture the way some devices hand it back: at the capture's
+     * own scale, with a transparent margin all the way round it.
+     */
+    private fun asWindowCapture(screen: Bitmap): Bitmap {
+        val scaled = atCaptureSize(screen)
+        return Bitmap.createBitmap(
+            scaled.width + 2 * WINDOW_MARGIN_PX,
+            scaled.height + 2 * WINDOW_MARGIN_PX,
+            Bitmap.Config.ARGB_8888
+        ).also {
+            android.graphics.Canvas(it).drawBitmap(scaled, WINDOW_MARGIN_PX.toFloat(), WINDOW_MARGIN_PX.toFloat(), null)
+        }
+    }
+
     private fun save(bitmap: Bitmap, file: File) {
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
@@ -161,9 +176,9 @@ class OverlayFramesTest {
         // Handed over at a different size from the screen's own, the way a
         // phone rendering below its panel's resolution captures: the glass
         // has to line up regardless.
-        backdrop = compositor.display(atCaptureSize(appAsItWas))
-        captured = true
         var time = 0L
+        backdrop = compositor.display(atCaptureSize(appAsItWas), capturedAt = time)
+        captured = true
         fun shoot(phase: String, millis: Long, stop: () -> Boolean = { false }) {
             var elapsed = 0L
             while (elapsed <= millis) {
@@ -176,14 +191,27 @@ class OverlayFramesTest {
         }
         shoot("1enter", 1100)
         rule.runOnUiThread { expand!!.invoke() }
-        shoot("2open", 700)
+        shoot("2open", 350)
         // The app behind scrolls steadily, and the service's looks at it land
-        // one every GLASS_REFRESH_MS or so.
+        // one every GLASS_REFRESH_MS or so, each ready a moment after it was
+        // taken; then the scroll stops, and the next look finds it still.
+        fun look(steps: Int) {
+            val screen = appScrolled(steps)
+            backdrop = compositor.window(
+                asWindowCapture(screen),
+                Rect(0, 0, screen.width, screen.height),
+                capturedAt = time - CAPTURE_LATENCY_MILLIS,
+                now = time
+            ) ?: backdrop
+        }
+        // A look at the app still standing, as the service's first ones are.
+        look(0)
+        shoot("2open", 320)
         repeat(4) { step ->
-            val look = appScrolled(step + 1)
-            backdrop = compositor.window(atCaptureSize(look), Rect(0, 0, look.width, look.height)) ?: backdrop
+            look(step + 1)
             shoot("2open", 320)
         }
+        look(4)
         shoot("2open", 400)
         visible = false
         shoot("3close", 3000) { hidden }
@@ -208,6 +236,12 @@ class OverlayFramesTest {
     private companion object {
         /** Two frames at 60 Hz. */
         const val FRAME_STEP_MILLIS = 32L
+
+        /** How long a look at the app behind takes to be ready. */
+        const val CAPTURE_LATENCY_MILLIS = 60L
+
+        /** The transparent margin round a window's capture, in capture px. */
+        const val WINDOW_MARGIN_PX = 48
     }
 }
 

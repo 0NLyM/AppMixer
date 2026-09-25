@@ -687,13 +687,37 @@ internal fun OverlayScene(
             // Out here, not in this effect: the next look restarts the effect,
             // and the glide has to carry its speed straight into the next
             // target rather than stop and start again with every look.
-            glideScope.launch {
-                // element:  the screen seen through the glass, scrolling.
-                // model:    the app's own content, gliding after its scroll.
-                // token:    MotionTokens.Spatial.follow.
-                // property: translation of the captured screen, never the
-                //           pane.
-                stage.backdropPosition.animateTo(incoming.glideTarget, MotionTokens.Spatial.follow())
+            // Aimed at where the content will be, and how fast it will be
+            // going, when the next look lands -- not at where this one saw it,
+            // which a scroll has long since left behind. Content standing
+            // still is simply settled on.
+            val age = incoming.age / 1000f
+            val horizon = incoming.interval / 1000f
+            if (incoming.velocity == Offset.Zero) {
+                glideScope.launch {
+                    // element:  the screen seen through the glass, scrolling.
+                    // model:    the app's own content, come to rest.
+                    // token:    MotionTokens.Spatial.followSettle.
+                    // property: translation of the captured screen, never the
+                    //           pane.
+                    stage.backdropPosition.animateTo(incoming.scroll, MotionTokens.Spatial.followSettle())
+                }
+            } else {
+                val aim = MotionTokens.Spatial.aimFollow(
+                    from = stage.backdropPosition.value,
+                    now = incoming.scroll + incoming.travelled(age),
+                    next = incoming.scroll + incoming.travelled(age + horizon),
+                    nextVelocity = incoming.speedAfter(age + horizon),
+                    seconds = horizon
+                )
+                glideScope.launch {
+                    // element:  the screen seen through the glass, scrolling.
+                    // model:    the app's own content, gliding after its scroll.
+                    // token:    MotionTokens.Spatial.follow.
+                    // property: translation of the captured screen, never the
+                    //           pane.
+                    stage.backdropPosition.animateTo(aim.target, MotionTokens.Spatial.follow(), aim.velocity)
+                }
             }
             // element:  the screen seen through the glass, a moment later.
             // model:    -- opacity is not an object.

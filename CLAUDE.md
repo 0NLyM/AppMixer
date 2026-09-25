@@ -197,20 +197,30 @@ in it. `GlassBackdropCompositor` (`GlassBackdrop.kt`) shrinks each capture
 off the main thread, lays the window onto the first capture, drops one that
 hasn't changed, and box-blurs the small result. Between two looks it also
 estimates how far the app scrolled (`estimateShift`, on the small
-luminance), and the glass slides the captured screen along that estimate
-on its own spring (`Spatial.follow`, aimed a little ahead of the last look
-so a steady scroll moves steadily instead of in bursts); what the scroll
-can't explain -- a video, a list changing in place -- eases from the last
-backdrop to the new one (`Effects.follow`). Every new popup starts from a
+luminance), how fast, and how fast that speed is dying away (a fling
+coasting); the glass slides the captured screen along it on its own spring
+(`Spatial.follow`), each look aimed through `Spatial.aimFollow` at where the
+content will be -- and how fast it will be going -- when the next look
+lands, so a scroll shows through as it happens instead of a look behind. A
+look that finds the content stopped is settled on instead
+(`Spatial.followSettle`), carrying the glide's own speed, so a glide that
+ran past the stop slows and eases back rather than turning in a frame; the
+compositor says so once even though the picture hasn't changed. What the
+scroll can't explain -- a video, a list changing in place -- eases from the
+last backdrop to the new one (`Effects.follow`). Every new popup starts from a
 fresh capture: the last one is dropped before asking, so the glass never
 flashes the screen as it was the time before. A capture needn't come
-back at the screen's own size: place windows against the screen's bounds
-(`GlassBackdropCompositor`'s `screenWidth`/`screenHeight`), never against the
-capture's pixels. Every pane of glass draws it behind its tint, lined up
-with the screen through the whole root-to-node transform, so it stays put
-on the screen while a panel travels or the disc turns over it -- through a
-slight lens (`GLASS_LENS_SCALE`, about 1.5% smaller about the pane's
-middle). The arrival waits for the first capture, briefly.
+back at the screen's own size, nor as just the window: place windows against
+the screen's bounds (`GlassBackdropCompositor`'s
+`screenWidth`/`screenHeight`), never against the capture's pixels, and cut
+away the transparent margin some devices hand a window back with
+(`windowContent`) -- stretched over the window's bounds, it shrank the app
+towards the middle of the screen, with the first capture showing round it
+(`GlassBackdropCompositorTest`). Every pane of glass draws it behind its
+tint, lined up with the screen through the whole root-to-node transform, so
+it stays put on the screen while a panel travels or the disc turns over it
+-- through the barest lens (`GLASS_LENS_SCALE`, under half a percent smaller
+about the pane's middle). The arrival waits for the first capture, briefly.
 
 The system reads a service's capabilities only when it binds it, and an app
 update does not rebind: a service first switched on by a version without

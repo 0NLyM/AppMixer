@@ -1485,6 +1485,25 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-25 — 1.0.81
+
+- **The screen behind lines up with the real one again.** On some phones a
+  capture of the app window comes back with a transparent margin all the
+  way round it. Stretched over the window, it shrank the app towards the
+  middle of the screen, and at the edges of a pane the screen as it first
+  was showed through beside it. The glass now works the margin out from the
+  capture's size and cuts it away. What each window capture looks like on
+  the phone goes to the diagnostic log once per popup.
+- **Scrolling shows through as it happens.** The glass used to slide the
+  screen behind to where the last look had seen it, and so ran a look or
+  more behind the app -- half a second on a steady scroll. It now works out
+  how fast the app is scrolling and how fast a fling is slowing down, and
+  aims each glide at where the content will be when the next look lands,
+  going as fast as it will be going then. When the scroll stops, the glass
+  slows, turns and settles back onto it instead of stopping dead or jumping.
+- **Barely a lens.** The screen behind now shows through 0.4% smaller about
+  the middle of each pane, down from 1.5%.
+
 ## 2026-09-25 — 1.0.80
 
 - **No more stale screen when the popup opens.** The glass used to show the

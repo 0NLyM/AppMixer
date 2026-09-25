@@ -10,6 +10,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.sqrt
 
 /**
  * The overlay's whole motion vocabulary. This file is the only place in the
@@ -97,9 +100,12 @@ import androidx.compose.ui.graphics.Color
  * |                     |                       | [Effects.follow]            | the last, while the popup is up: one  |
  * |                     |                       |                             | fade per look, nearly done by the next |
  * | Glass backdrop glide | the screen behind, scrolling | [Spatial.follow]     | translation of the captured screen    |
- * |                     |                       |                             | behind the glass, after the scroll    |
- * |                     |                       |                             | measured between two looks -- never   |
- * |                     |                       |                             | the pane                              |
+ * |                     |                       |                             | behind the glass, aimed where the     |
+ * |                     |                       |                             | scroll will be by the next look       |
+ * |                     |                       |                             | ([Spatial.aimFollow]) -- never the    |
+ * |                     |                       |                             | pane                                  |
+ * |                     |                       | [Spatial.followSettle]      | the same translation, coming to rest  |
+ * |                     |                       |                             | where a scroll has stopped            |
  * | Glass highlight     | a pane that is still, | [Ambient.enter], via        | light angle and brightness --         |
  * |                     | under a light settling | [LocalAmbientEnter]        | never the pane                        |
  * | Atmosphere field    | a field of particles  | [Ambient.enter], via        | shader rotation, centre offset,       |
@@ -297,23 +303,80 @@ object MotionTokens {
 
         /**
          * The screen behind the glass gliding after its own content as it
-         * scrolls: a target that moves a step every look at the screen (a
-         * third of a second apart) and a position that follows it.
-         * Critically damped -- content behind glass overshooting its own
-         * place would read as a wobble in the app, not the glass -- and soft
-         * enough that it is still moving when the next step lands; a
-         * retargeted spring keeps its speed, so a steady scroll behind
-         * becomes a steady glide rather than a start and a stop per look.
-         * How soft is the whole trade: stiffer arrives sooner but surges and
-         * stalls once per look (at 60 its speed swung by more than half);
-         * this soft, it keeps within a fifth of an even speed, and the lag
-         * it costs is made up by aiming a little ahead (see
-         * GlassBackdrop.glideTarget).
+         * scrolls, from one look at the screen to the next (a third of a
+         * second apart). Critically damped -- content behind glass
+         * overshooting its own place would read as a wobble in the app, not
+         * the glass -- and never simply aimed at where the content was:
+         * each look is aimed through [aimFollow], so the glide reaches where
+         * the content will be when the next look lands, going as fast as it
+         * will be going then: a steady scroll behind is a steady glide, with
+         * neither a lag nor a surge per look. Soft, so the spring bends
+         * little over the third of a second each aim has to hold: stiffer,
+         * it had to set off well ahead of the scroll's own speed to arrive
+         * in time.
          */
         fun follow(): FiniteAnimationSpec<Offset> =
             if (reducedMotion) snap() else spring(dampingRatio = 1f, stiffness = FOLLOW_STIFFNESS)
 
-        private const val FOLLOW_STIFFNESS = 15f
+        /**
+         * Where to aim [follow], and at what speed to set off, so that the
+         * glide from [from] passes through [next] [seconds] from now, going
+         * at [nextVelocity] -- where and how fast the content behind will be
+         * when the next look lands -- and carries on straight into that
+         * look's own glide. [now] is where the content is at this moment:
+         * under reduced motion the glass simply goes there. (Content that
+         * has stopped isn't aimed at all: see [followSettle].)
+         *
+         * The critically damped spring's own motion, solved backwards: from
+         * `x(t) = target + (A + B t) e^(-ωt)`, the two conditions at
+         * [seconds] fix the target and `B`, and the speed to set off at
+         * follows. Per axis.
+         */
+        fun aimFollow(from: Offset, now: Offset, next: Offset, nextVelocity: Offset, seconds: Float): FollowAim {
+            if (reducedMotion || seconds <= 0f) {
+                return FollowAim(now, Offset.Zero)
+            }
+            val x = aimFollowAxis(from.x, next.x, nextVelocity.x, seconds)
+            val y = aimFollowAxis(from.y, next.y, nextVelocity.y, seconds)
+            return FollowAim(Offset(x.first, y.first), Offset(x.second, y.second))
+        }
+
+        /** One axis of [aimFollow]: the target, and the speed to set off at. */
+        private fun aimFollowAxis(from: Float, next: Float, nextVelocity: Float, seconds: Float): Pair<Float, Float> {
+            val omega = sqrt(FOLLOW_STIFFNESS)
+            val e = exp(-omega * seconds)
+            // [1 - e, t e; ω e, (1 - ω t) e] · [target, B] = [next - from e, v + ω from e]
+            val a11 = 1f - e
+            val a12 = seconds * e
+            val a21 = omega * e
+            val a22 = (1f - omega * seconds) * e
+            val r1 = next - from * e
+            val r2 = nextVelocity + omega * from * e
+            val det = a11 * a22 - a12 * a21
+            if (abs(det) < 1e-9f) {
+                return next to nextVelocity
+            }
+            val target = (r1 * a22 - a12 * r2) / det
+            val b = (a11 * r2 - a21 * r1) / det
+            return target to (b - omega * (from - target))
+        }
+
+        private const val FOLLOW_STIFFNESS = 6f
+
+        /**
+         * The screen behind the glass coming to rest where its content has
+         * stopped. A glide aimed at where a scroll was going runs on past
+         * where it stops -- nothing says it has until the next look -- and
+         * this brings it back: sent to the stop with the speed it already
+         * has, so it slows, turns and eases in, never wrenched round in a
+         * frame. Critically damped, and a good deal stiffer than [follow]:
+         * at [follow]'s own softness the way back took longer than the scroll
+         * had.
+         */
+        fun followSettle(): FiniteAnimationSpec<Offset> =
+            if (reducedMotion) snap() else spring(dampingRatio = 1f, stiffness = FOLLOW_SETTLE_STIFFNESS)
+
+        private const val FOLLOW_SETTLE_STIFFNESS = 20f
 
         private const val CASCADE_DAMPING = 0.9f
         private const val CASCADE_STIFFNESS = 140f
@@ -584,3 +647,6 @@ val LocalArrivalFade = compositionLocalOf<() -> Float> { { 1f } }
  * anywhere outside the overlay (the settings screen's preview).
  */
 val LocalAmbientEnter = compositionLocalOf<() -> Float> { { 1f } }
+
+/** Where [MotionTokens.Spatial.follow] is aimed, and the speed it sets off at -- see [MotionTokens.Spatial.aimFollow]. */
+class FollowAim(val target: Offset, val velocity: Offset)

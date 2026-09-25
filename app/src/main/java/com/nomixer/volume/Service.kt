@@ -315,7 +315,7 @@ class Service : AccessibilityService() {
                 override fun onSuccess(result: ScreenshotResult) {
                     val compositor = GlassBackdropCompositor(blurPx, screen.width(), screen.height())
                     val backdrop = try {
-                        compositor.display(result.hardwareBuffer, result.colorSpace)
+                        compositor.display(result.hardwareBuffer, result.colorSpace, requestedAt)
                     } catch (e: Throwable) {
                         Log.w(TAG, "Can't turn the screen capture into a glass backdrop", e)
                         null
@@ -363,6 +363,9 @@ class Service : AccessibilityService() {
 
     /** When the last look at the app behind the popup was asked for. */
     private var glassRefreshStartedAt = 0L
+
+    /** The popup ([glassBackdropRequest]) the app behind was last looked at for. */
+    private var glassLookedAtFor = -1
 
     /**
      * Looks at the app behind the popup again [GLASS_REFRESH_MS] after the
@@ -413,12 +416,25 @@ class Service : AccessibilityService() {
             return
         }
         val bounds = Rect().also(window::getBoundsInScreen)
-        glassRefreshStartedAt = SystemClock.uptimeMillis()
+        val capturedAt = SystemClock.uptimeMillis()
+        glassRefreshStartedAt = capturedAt
+        val firstLook = glassLookedAtFor != request
+        glassLookedAtFor = request
         try {
             takeScreenshotOfWindow(window.id, glassBackdropExecutor, object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
+                    if (firstLook) {
+                        // What a window capture looks like on this device
+                        // next to where the window is: a capture with a
+                        // margin round it, or at another scale, shows here.
+                        DiagnosticLog.log(
+                            "Glass",
+                            "window capture ${result.hardwareBuffer.width}x${result.hardwareBuffer.height} " +
+                                "for bounds ${bounds.toShortString()}"
+                        )
+                    }
                     val updated = try {
-                        compositor.window(result.hardwareBuffer, result.colorSpace, bounds)
+                        compositor.window(result.hardwareBuffer, result.colorSpace, bounds, capturedAt)
                     } catch (e: Throwable) {
                         Log.w(TAG, "Can't lay the window capture onto the glass backdrop", e)
                         null
