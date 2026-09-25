@@ -87,14 +87,15 @@ class Service : AccessibilityService() {
         private const val GLASS_BACKDROP_WAIT_MS = 150L
 
         /**
-         * How long the glass waits between one look at the app behind it
-         * and the next, while the popup is up (see [refreshGlassBackdrop]).
-         * Over the platform's own floor between two window captures (a third
-         * of a second), and a blur doesn't need more: what shows through
-         * frosted glass is colour and shape, and those don't change faster
-         * than this reads.
+         * How often the glass looks at the app behind it while the popup is
+         * up (see [refreshGlassBackdrop]), from one look's start to the
+         * next's: just over the platform's own floor between two window
+         * captures, a third of a second. As often as it is allowed to --
+         * slower read as the glass stepping from one picture to the next --
+         * and each look is eased over the whole of the gap
+         * (MotionTokens.Effects.follow), so it drifts rather than steps.
          */
-        private const val GLASS_REFRESH_MS = 400L
+        private const val GLASS_REFRESH_MS = 340L
 
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
@@ -285,6 +286,9 @@ class Service : AccessibilityService() {
         handler.postDelayed(glassBackdropGiveUp, GLASS_BACKDROP_WAIT_MS)
 
         val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * resources.displayMetrics.density
+        // In the same coordinates windows report their bounds in -- see
+        // GlassBackdropCompositor on why that isn't the capture's own size.
+        val screen = Rect(windowManager.currentWindowMetrics.bounds)
         val requestedAt = SystemClock.uptimeMillis()
         fun settle(backdrop: GlassBackdrop?, keepPrevious: Boolean) {
             handler.post {
@@ -302,7 +306,7 @@ class Service : AccessibilityService() {
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, glassBackdropExecutor, object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
-                    val compositor = GlassBackdropCompositor(blurPx)
+                    val compositor = GlassBackdropCompositor(blurPx, screen.width(), screen.height())
                     val backdrop = try {
                         compositor.display(result.hardwareBuffer, result.colorSpace)
                     } catch (e: Throwable) {
@@ -345,13 +349,21 @@ class Service : AccessibilityService() {
         }
     }
 
-    /** Looks at the app behind the popup again in [GLASS_REFRESH_MS], if the popup is still up. */
+    /** When the last look at the app behind the popup was asked for. */
+    private var glassRefreshStartedAt = 0L
+
+    /**
+     * Looks at the app behind the popup again [GLASS_REFRESH_MS] after the
+     * last look started -- not after it finished, so the time a capture
+     * takes isn't added to every gap -- if the popup is still up.
+     */
     private fun scheduleGlassRefresh(request: Int) {
         handler.removeCallbacks(glassRefresh)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
             request == glassBackdropRequest && viewVisible && glassBackdrop != null
         ) {
-            handler.postDelayed(glassRefresh, GLASS_REFRESH_MS)
+            val since = SystemClock.uptimeMillis() - glassRefreshStartedAt
+            handler.postDelayed(glassRefresh, (GLASS_REFRESH_MS - since).coerceIn(0L, GLASS_REFRESH_MS))
         }
     }
 
@@ -364,7 +376,8 @@ class Service : AccessibilityService() {
      * moment later, as it would through frosted glass.
      *
      * Light on purpose: one capture every [GLASS_REFRESH_MS], each chained
-     * off the last rather than on a timer, so they can never pile up; every
+     * off the last one's result rather than on a timer, so they can never
+     * pile up; every
      * step past the capture's readback on an image a sixteenth of the
      * screen's size a side, off the main thread; and a capture that looks
      * exactly like the last one is dropped before it is blurred, so a still
@@ -388,6 +401,7 @@ class Service : AccessibilityService() {
             return
         }
         val bounds = Rect().also(window::getBoundsInScreen)
+        glassRefreshStartedAt = SystemClock.uptimeMillis()
         try {
             takeScreenshotOfWindow(window.id, glassBackdropExecutor, object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {

@@ -195,11 +195,16 @@ popup is up it captures just the app window behind it every
 `refreshGlassBackdrop`) -- never the display again, which would have the popup
 in it. `GlassBackdropCompositor` (`GlassBackdrop.kt`) shrinks each capture
 off the main thread, lays the window onto the first capture, drops one that
-hasn't changed, and box-blurs the small result; the glass cross-fades from
-the last backdrop to the new one (`Effects.default`). Every pane of glass
-draws it behind its tint, lined up with the screen through the whole
-root-to-node transform, so it stays put on the screen while a panel travels
-or the disc turns over it. The arrival waits for the first capture, briefly.
+hasn't changed, and box-blurs the small result; the glass eases from the
+last backdrop to the new one over the whole gap to the next look
+(`Effects.follow`), so it drifts rather than steps. A capture needn't come
+back at the screen's own size: place windows against the screen's bounds
+(`GlassBackdropCompositor`'s `screenWidth`/`screenHeight`), never against the
+capture's pixels. Every pane of glass draws it behind its tint, lined up
+with the screen through the whole root-to-node transform, so it stays put
+on the screen while a panel travels or the disc turns over it -- through a
+slight lens (`GLASS_LENS_SCALE`, a few percent smaller about the pane's
+middle). The arrival waits for the first capture, briefly.
 
 The system reads a service's capabilities only when it binds it, and an app
 update does not rebind: a service first switched on by a version without

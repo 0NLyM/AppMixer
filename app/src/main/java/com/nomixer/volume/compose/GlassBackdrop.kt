@@ -13,7 +13,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.asImageBitmap
@@ -22,8 +26,6 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import kotlin.math.roundToInt
 
 /**
@@ -100,7 +102,13 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?): Modifier {
             }
             val rootToLocal = Matrix()
             coordinates.transformFrom(coordinates.findRootCoordinates(), rootToLocal)
-            withTransform({ transform(rootToLocal) }) {
+            withTransform({
+                // The lens: the screen behind drawn a touch smaller about the
+                // pane's own middle, so the pane reads as a thick piece of
+                // glass rather than a hole cut in the popup.
+                scale(GLASS_LENS_SCALE, GLASS_LENS_SCALE, pivot = center)
+                transform(rootToLocal)
+            }) {
                 if (previous != null && blend < 1f) {
                     drawBackdrop(previous, source.bounds, presence)
                 }
@@ -109,20 +117,35 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?): Modifier {
         }
 }
 
+/**
+ * How much smaller the screen behind shows through the glass, about the
+ * middle of each pane: a thick pane's lens, kept slight. (1 would be a
+ * perfectly flat pane.)
+ */
+private const val GLASS_LENS_SCALE = 0.96f
+
 private fun DrawScope.drawBackdrop(backdrop: GlassBackdrop, bounds: Rect, alpha: Float) {
     val image = backdrop.image
-    drawImage(
-        image = image,
-        srcOffset = IntOffset.Zero,
-        srcSize = IntSize(image.width, image.height),
-        dstOffset = IntOffset(bounds.left.roundToInt(), bounds.top.roundToInt()),
-        dstSize = IntSize(bounds.width.roundToInt(), bounds.height.roundToInt()),
-        alpha = alpha,
-        // Bilinear: the image is a fraction of the screen's size, and the
-        // smoothing of drawing it back up is part of the blur rather than a
-        // cost of it.
-        filterQuality = FilterQuality.Low
-    )
+    if (image.width <= 0 || image.height <= 0) {
+        return
+    }
+    withTransform({
+        translate(bounds.left, bounds.top)
+        scale(bounds.width / image.width, bounds.height / image.height, pivot = Offset.Zero)
+    }) {
+        // As a clamped shader rather than a bitmap drawn to its bounds: the
+        // lens pulls the screen's own edge in a little from a pane that
+        // reaches the side of the display, and clamped, what shows there is
+        // the edge of the screen carried on -- not a strip of nothing.
+        // Filtered bilinearly: the image is a fraction of the screen's size,
+        // and the smoothing of drawing it back up is part of the blur.
+        drawRect(
+            brush = ShaderBrush(ImageShader(image, TileMode.Clamp, TileMode.Clamp)),
+            topLeft = Offset(-image.width.toFloat(), -image.height.toFloat()),
+            size = Size(image.width * 3f, image.height * 3f),
+            alpha = alpha
+        )
+    }
 }
 
 /** Where a node was last placed, kept out of snapshot state: only its draw reads it. */
@@ -150,7 +173,20 @@ private class PlacedCoordinates {
  *
  * Not thread-safe: one thread (the service's own capture executor) uses it.
  */
-class GlassBackdropCompositor(private val blurPx: Float) {
+class GlassBackdropCompositor(
+    private val blurPx: Float,
+    /**
+     * The screen's own size, in the coordinates windows report their bounds
+     * in. A capture needn't come back at that size -- a phone rendering below
+     * its panel's resolution hands back the panel's pixels -- so where a
+     * window lies in the base is worked out against this, never assumed to
+     * be the capture's own pixels. Laid down in the capture's pixels, every
+     * window after the first came out shrunk towards the corner of the
+     * screen: a lens nobody meant.
+     */
+    private val screenWidth: Int,
+    private val screenHeight: Int
+) {
     private var base: Bitmap? = null
     private var lastWindow: Bitmap? = null
 
@@ -198,15 +234,16 @@ class GlassBackdropCompositor(private val blurPx: Float) {
         }
         last?.recycle()
         lastWindow = small
-        val f = factor.toFloat()
+        val scaleX = base.width.toFloat() / screenWidth.coerceAtLeast(1)
+        val scaleY = base.height.toFloat() / screenHeight.coerceAtLeast(1)
         Canvas(base).drawBitmap(
             small,
             null,
             RectF(
-                boundsInScreen.left / f,
-                boundsInScreen.top / f,
-                boundsInScreen.right / f,
-                boundsInScreen.bottom / f
+                boundsInScreen.left * scaleX,
+                boundsInScreen.top * scaleY,
+                boundsInScreen.right * scaleX,
+                boundsInScreen.bottom * scaleY
             ),
             WINDOW_PAINT
         )
@@ -262,7 +299,8 @@ class GlassBackdropCompositor(private val blurPx: Float) {
 }
 
 /** A one-off backdrop from a capture already in memory, which it takes over. */
-fun glassBackdropFrom(full: Bitmap, blurPx: Float): GlassBackdrop? = GlassBackdropCompositor(blurPx).display(full)
+fun glassBackdropFrom(full: Bitmap, blurPx: Float): GlassBackdrop? =
+    GlassBackdropCompositor(blurPx, full.width, full.height).display(full)
 
 /** The most the capture is ever shrunk by, as a factor of its own size. */
 private const val MAX_SHRINK = 16

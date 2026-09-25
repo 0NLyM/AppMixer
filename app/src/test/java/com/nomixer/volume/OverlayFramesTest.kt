@@ -93,6 +93,9 @@ class OverlayFramesTest {
         return result!!
     }
 
+    private fun atCaptureSize(screen: Bitmap): Bitmap =
+        Bitmap.createScaledBitmap(screen, screen.width * 5 / 4, screen.height * 5 / 4, true)
+
     private fun save(bitmap: Bitmap, file: File) {
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
@@ -146,8 +149,8 @@ class OverlayFramesTest {
         }
         rule.mainClock.advanceTimeBy(FRAME_STEP_MILLIS)
         val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * rule.density.density
-        val compositor = GlassBackdropCompositor(blurPx)
         val appAsItWas = snapshot()
+        val compositor = GlassBackdropCompositor(blurPx, appAsItWas.width, appAsItWas.height)
         // What the service's capture of the app will look like once it has
         // scrolled: the same picture, moved down as far as the scroll moves it.
         val appScrolled = Bitmap.createBitmap(appAsItWas.width, appAsItWas.height, Bitmap.Config.ARGB_8888).also {
@@ -157,7 +160,10 @@ class OverlayFramesTest {
                 drawBitmap(appAsItWas, 0f, shift, null)
             }
         }
-        backdrop = compositor.display(appAsItWas)
+        // Handed over at a different size from the screen's own, the way a
+        // phone rendering below its panel's resolution captures: the glass
+        // has to line up regardless.
+        backdrop = compositor.display(atCaptureSize(appAsItWas))
         captured = true
         var time = 0L
         fun shoot(phase: String, millis: Long, stop: () -> Boolean = { false }) {
@@ -176,7 +182,7 @@ class OverlayFramesTest {
         // The app behind scrolls, and the service's next look at it lands.
         rule.runOnUiThread { scrolled = true }
         val live = compositor.window(
-            appScrolled,
+            atCaptureSize(appScrolled),
             Rect(0, 0, appScrolled.width, appScrolled.height)
         )
         backdrop = live ?: backdrop

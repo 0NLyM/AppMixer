@@ -92,8 +92,9 @@ import androidx.compose.ui.graphics.Color
  * | Glass backdrop      | --                    | [Effects.default]           | alpha: the screen captured behind the |
  * |                     |                       |                             | glass, only when it lands after the   |
  * |                     |                       |                             | arrival -- otherwise it is simply     |
- * |                     |                       |                             | there -- and a fresher capture of it  |
- * |                     |                       |                             | over the last, while the popup is up  |
+ * |                     |                       |                             | there. A fresher capture of it over   |
+ * |                     |                       | [Effects.follow]            | the last, while the popup is up: one  |
+ * |                     |                       |                             | fade per look, nearly done by the next |
  * | Glass highlight     | a pane that is still, | [Ambient.enter], via        | light angle and brightness --         |
  * |                     | under a light settling | [LocalAmbientEnter]        | never the pane                        |
  * | Atmosphere field    | a field of particles  | [Ambient.enter], via        | shader rotation, centre offset,       |
@@ -380,6 +381,17 @@ object MotionTokens {
 
         /** Everything else that fades or tints. */
         fun <T> default(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 900f)
+
+        /**
+         * A fade that follows something arriving at a steady beat rather than
+         * once: the glass taking over from one look at the screen behind it
+         * to the next (see Service's `GLASS_REFRESH_MS`). Slow enough to be
+         * nearly there -- nine tenths of the way -- just as the next look
+         * lands, so the glass is always easing towards the latest picture
+         * rather than cutting to it and waiting: a steady drift in place of
+         * a step every third of a second.
+         */
+        fun <T> follow(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 130f)
 
         /** Colour roles crossfading when the user picks a new one. */
         val color: FiniteAnimationSpec<Color> = default()

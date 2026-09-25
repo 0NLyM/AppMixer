@@ -1485,6 +1485,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-25 — 1.0.79
+
+- **The glass lines up with the screen again once it starts following it.**
+  A capture can come back at a different size from the screen's own (a
+  phone rendering below its panel's resolution hands back the panel's
+  pixels), and every look at the app after the first was laid down as if it
+  hadn't: shrunk towards the corner of the screen, which read as a strong
+  lens. Windows are now placed against the screen's own size.
+- **A slight lens, on purpose.** The screen behind shows through a few
+  percent smaller about the middle of each pane, as through a thick piece of
+  glass; where a pane reaches the side of the display, the screen's edge is
+  carried on rather than leaving a gap.
+- **Smoother following.** The glass now looks at the app behind as often as
+  the platform allows (about three times a second, timed from one look's
+  start to the next rather than from its end), and eases over to each look
+  across nearly the whole gap to the next, so what shows through drifts
+  instead of stepping.
+
 ## 2026-09-25 — 1.0.78
 
 - **The glass follows the screen behind it.** It used to show the screen

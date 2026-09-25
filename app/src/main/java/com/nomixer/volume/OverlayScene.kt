@@ -666,14 +666,21 @@ internal fun OverlayScene(
                 stage.backdropIn.animateTo(1f, MotionTokens.Effects.default())
             }
         } else {
-            stage.previousBackdrop = outgoing
+            // A look that lands while the last one is still coming in: if the
+            // last one is mostly there already it becomes what the fresh one
+            // comes in over; if it has barely started, the fresh one simply
+            // takes its place and carries on from where it had got to --
+            // never a jump back to the picture before both.
+            if (stage.previousBackdrop == null || stage.backdropBlend.value >= 0.5f) {
+                stage.previousBackdrop = outgoing
+                stage.backdropBlend.snapTo(0f)
+            }
             stage.backdrop = incoming
-            stage.backdropBlend.snapTo(0f)
             // element:  the screen seen through the glass, a moment later.
             // model:    -- opacity is not an object.
-            // token:    MotionTokens.Effects.default.
+            // token:    MotionTokens.Effects.follow.
             // property: alpha of the fresher capture over the last one.
-            stage.backdropBlend.animateTo(1f, MotionTokens.Effects.default())
+            stage.backdropBlend.animateTo(1f, MotionTokens.Effects.follow())
             stage.previousBackdrop = null
         }
     }
