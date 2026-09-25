@@ -34,6 +34,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.GlassBackdrop
 import com.nomixer.volume.compose.GlassBackdropCompositor
+import com.nomixer.volume.compose.GlassShrinker
 import com.nomixer.volume.compose.cascadeRow
 import com.nomixer.volume.data.GLASS_BACKDROP_BLUR_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
@@ -162,7 +163,8 @@ class OverlayFramesTest {
         rule.mainClock.advanceTimeBy(FRAME_STEP_MILLIS)
         val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * rule.density.density
         val appAsItWas = snapshot()
-        val compositor = GlassBackdropCompositor(blurPx, appAsItWas.width, appAsItWas.height)
+        val shrinker = GlassShrinker()
+        val compositor = GlassBackdropCompositor(blurPx, appAsItWas.width, appAsItWas.height, shrinker)
         // What the service's looks at the app behind will be while it
         // scrolls: the same picture, moved up a step further each time.
         val scrollStep = with(rule.density) { SCROLL_STEP.toPx() }
@@ -215,6 +217,7 @@ class OverlayFramesTest {
         shoot("2open", 400)
         visible = false
         shoot("3close", 3000) { hidden }
+        shrinker.release()
     }
 
     @Test fun verticalBar() = film("vbar", UiPreferences(popupStyle = PopupStyle.VerticalBar))

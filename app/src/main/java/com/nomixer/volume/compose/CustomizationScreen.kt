@@ -81,6 +81,8 @@ import com.nomixer.volume.data.ATMOSPHERE_GRAIN_MAX
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_MIN
 import com.nomixer.volume.data.GLASS_BLUR_MAX
 import com.nomixer.volume.data.GLASS_BLUR_MIN
+import com.nomixer.volume.data.GLASS_LENS_ZOOM_MAX
+import com.nomixer.volume.data.GLASS_LENS_ZOOM_MIN
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MAX
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MIN
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MAX
@@ -1156,6 +1158,31 @@ fun CustomizationScreen(
                                         onUpdate { it.copy(glassBlurStrength = value) }
                                     }
                                 )
+                                ToggleSetting(
+                                    label = stringResource(R.string.glass_lens),
+                                    checked = preferences.glassLensEnabled,
+                                    onCheckedChange = { checked ->
+                                        onUpdate { it.copy(glassLensEnabled = checked) }
+                                    }
+                                )
+                                if (preferences.glassLensEnabled) {
+                                    SliderSetting(
+                                        label = stringResource(R.string.glass_lens_zoom),
+                                        valueLabel = "%+.1f%%".format(preferences.glassLensZoom * 100),
+                                        value = preferences.glassLensZoom,
+                                        valueRange = GLASS_LENS_ZOOM_MIN..GLASS_LENS_ZOOM_MAX,
+                                        // Tenths of a percent: 21 stops, 19 between the ends.
+                                        steps = 19,
+                                        onValueChange = { value ->
+                                            onUpdate { it.copy(glassLensZoom = value) }
+                                        }
+                                    )
+                                }
+                                Text(
+                                    text = stringResource(R.string.glass_lens_description),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 SliderSetting(
                                     label = stringResource(R.string.glass_light_angle),
                                     valueLabel = "${preferences.glassLightAngle.roundToInt()}°",
@@ -1580,6 +1607,8 @@ fun CustomizationScreen(
                             popupBackgroundOpacity = defaults.popupBackgroundOpacity,
                             discPopupBackgroundOpacity = defaults.discPopupBackgroundOpacity,
                             glassBlurStrength = defaults.glassBlurStrength,
+                            glassLensEnabled = defaults.glassLensEnabled,
+                            glassLensZoom = defaults.glassLensZoom,
                             glassLightAngle = defaults.glassLightAngle,
                             glassLightWidth = defaults.glassLightWidth,
                             atmosphereGrainIntensity = defaults.atmosphereGrainIntensity,

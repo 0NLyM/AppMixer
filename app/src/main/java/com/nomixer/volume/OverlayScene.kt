@@ -553,6 +553,13 @@ internal fun OverlayScene(
     glassBackdrop: GlassBackdrop?,
     /** Whether that capture is still on its way: the arrival waits for it. */
     glassBackdropPending: Boolean,
+    /**
+     * The system's own blur behind the glass, at this radius in px, in place
+     * of the capture -- or 0 where it is off (battery saver) and the glass
+     * is the app's own blur of [glassBackdrop]. See Service's own
+     * `systemBlurAvailable`.
+     */
+    systemBlurRadiusPx: Int = 0,
     /** Written every layout pass: the panel's rectangle, the only part of the window that takes touches. */
     touchBounds: Rect,
     /** The mixer has been asked for. */
@@ -927,7 +934,7 @@ internal fun OverlayScene(
         },
         LocalAmbientEnter provides remember(stage) { { stage.settling.value } },
         LocalRowCascade provides stage.cascade,
-        LocalGlassBackdrop provides remember(stage, frame) {
+        LocalGlassBackdrop provides remember(stage, frame, systemBlurRadiusPx, preferences.glassLensEnabled, preferences.glassLensZoom) {
             if (frame == null) {
                 null
             } else {
@@ -946,6 +953,8 @@ internal fun OverlayScene(
                         frame.display.bottom.toFloat()
                     ),
                     presence = { stage.backdropIn.value },
+                    lensScale = if (preferences.glassLensEnabled) 1f + preferences.glassLensZoom else 1f,
+                    systemBlurRadius = systemBlurRadiusPx,
                     // Everything that carries a pane of glass across the
                     // screen: the arrival (the disc's slide and turn, a bar's
                     // panel opening out of its edge) and the mixer's phases.

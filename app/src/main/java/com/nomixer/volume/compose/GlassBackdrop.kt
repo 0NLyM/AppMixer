@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.hardware.HardwareBuffer
 import android.os.SystemClock
+import com.nomixer.volume.data.DiagnosticLog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -117,6 +119,17 @@ class GlassBackdropSource(
     /** How much of it shows at all, 0 to 1. */
     val presence: () -> Float,
     /**
+     * How big the screen behind shows through each pane, about its middle:
+     * 1 is a flat pane, below 1 a thick one pulling it in, above 1 a
+     * magnifier (see UiPreferences.glassLensZoom).
+     */
+    val lensScale: Float,
+    /**
+     * The system's own blur behind the glass instead of the capture, at this
+     * radius in px -- or 0 for the app's own. See [systemGlassBlur].
+     */
+    val systemBlurRadius: Int,
+    /**
      * Read and ignored, so the glass redraws whenever anything that moves a
      * pane over the screen (a panel travelling, the disc turning) moves --
      * the backdrop has to stay put on the screen while the glass it is seen
@@ -135,11 +148,15 @@ val LocalGlassBackdrop = staticCompositionLocalOf<GlassBackdropSource?> { null }
  * on screen, wherever and however the pane itself is placed.
  */
 @Composable
-internal fun Modifier.glassBackdrop(source: GlassBackdropSource?): Modifier {
+internal fun Modifier.glassBackdrop(source: GlassBackdropSource?, shape: Shape): Modifier {
     if (source == null) {
         return this
     }
+    if (source.systemBlurRadius > 0) {
+        return systemGlassBlur(source.systemBlurRadius, shape)
+    }
     val placed = remember { PlacedCoordinates() }
+    val lens = source.lensScale
     return this
         .onPlaced { placed.coordinates = it }
         .drawBehind {
@@ -156,10 +173,12 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?): Modifier {
             val rootToLocal = Matrix()
             coordinates.transformFrom(coordinates.findRootCoordinates(), rootToLocal)
             withTransform({
-                // The lens: the screen behind drawn a touch smaller about the
-                // pane's own middle, so the pane reads as a thick piece of
-                // glass rather than a hole cut in the popup.
-                scale(GLASS_LENS_SCALE, GLASS_LENS_SCALE, pivot = center)
+                // The lens: the screen behind drawn a touch smaller (or
+                // larger) about the pane's own middle, so the pane reads as
+                // a thick piece of glass rather than a hole cut in the popup.
+                if (lens != 1f) {
+                    scale(lens, lens, pivot = center)
+                }
                 transform(rootToLocal)
             }) {
                 if (previous != null && blend < 1f) {
@@ -169,14 +188,6 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?): Modifier {
             }
         }
 }
-
-/**
- * How much smaller the screen behind shows through the glass, about the
- * middle of each pane: a thick pane's lens, kept to a hint -- under half a
- * percent, a few pixels at the edge of a pane. (1 would be a perfectly flat
- * pane.)
- */
-private const val GLASS_LENS_SCALE = 0.996f
 
 private fun DrawScope.drawBackdrop(backdrop: GlassBackdrop, bounds: Rect, alpha: Float, shift: Offset) {
     val image = backdrop.image
@@ -218,12 +229,13 @@ private class PlacedCoordinates {
  * where that window is, and blurs the result: the part of the screen that
  * actually changes, kept current, over a base that doesn't.
  *
- * Everything past the first readback happens on images a sixteenth of the
- * screen's size a side or less. Shrinking is by halving -- each halving
- * averages every pixel it drops, where one big jump would only sample a few
- * -- until the blur left to do is a few pixels of the small image; then three
- * box blurs, which is as good as a Gaussian to the eye. Drawn back up with
- * bilinear filtering, the small image *is* the blur.
+ * A capture is never read back whole: it is shrunk on the GPU first (see
+ * [GlassShrinker]), and everything after that happens on images a sixteenth
+ * of the screen's size a side or less. Shrinking is by halving -- each
+ * halving averages every pixel it drops, where one big jump would only
+ * sample a few -- until the blur left to do is a few pixels of the small
+ * image; then three box blurs, which is as good as a Gaussian to the eye.
+ * Drawn back up with bilinear filtering, the small image *is* the blur.
  *
  * Not thread-safe: one thread (the service's own capture executor) uses it.
  */
@@ -239,7 +251,13 @@ class GlassBackdropCompositor(
      * screen: a lens nobody meant.
      */
     private val screenWidth: Int,
-    private val screenHeight: Int
+    private val screenHeight: Int,
+    /**
+     * Does the shrinking on the GPU where it can (see [GlassShrinker]);
+     * without one, or where the GPU won't, the capture is read back whole
+     * and halved on the CPU.
+     */
+    private val shrinker: GlassShrinker? = null
 ) {
     private var base: Bitmap? = null
     private var lastWindow: Bitmap? = null
@@ -265,7 +283,7 @@ class GlassBackdropCompositor(
      * appears. Takes [full] over (and recycles it).
      */
     fun display(full: Bitmap, capturedAt: Long = SystemClock.uptimeMillis()): GlassBackdrop? {
-        val small = shrink(full, null) ?: return null
+        val small = shrinkCapture(full, null) ?: return null
         base = small
         lastWindow = null
         // The first look at the app window is measured against the whole
@@ -312,7 +330,7 @@ class GlassBackdropCompositor(
         now: Long = SystemClock.uptimeMillis()
     ): GlassBackdrop? {
         val base = base ?: return null
-        val small = shrink(full, windowContent(full.width, full.height, boundsInScreen)) ?: return null
+        val small = shrinkCapture(full, windowContent(full.width, full.height, boundsInScreen)) ?: return null
         val gap = (capturedAt - lastCapturedAt).coerceIn(1L, MAX_GAP_MS)
         lastCapturedAt = capturedAt
         val age = (now - capturedAt).coerceIn(0L, MAX_GAP_MS)
@@ -399,17 +417,63 @@ class GlassBackdropCompositor(
         return android.graphics.Rect(inset, inset, width - inset, height - inset)
     }
 
+    /** Whether [shrinker] has refused once: from then on the CPU does it. */
+    private var shrinkerFailed = false
+
+    /** Whether the last capture was shrunk on the GPU -- for the tests. */
+    internal var shrunkOnGpu = false
+        private set
+
     /**
-     * [full] -- or just its [crop] -- halved down by [factor], writable;
-     * [full] itself is recycled.
+     * A capture (a hardware bitmap, straight off the platform, or one in
+     * memory) -- or just its [crop] -- halved down by [factor], writable;
+     * the capture itself is recycled. On the GPU where it will; otherwise
+     * read back whole and halved here.
      */
-    private fun shrink(full: Bitmap, crop: android.graphics.Rect?): Bitmap? {
+    private fun shrinkCapture(capture: Bitmap, crop: android.graphics.Rect?): Bitmap? {
+        if (capture.width <= 0 || capture.height <= 0) {
+            capture.recycle()
+            return null
+        }
+        val gpu = shrinker.takeUnless { shrinkerFailed }
+        if (gpu != null) {
+            val halve = factor >= 2
+            val half = try {
+                gpu.shrink(capture, crop, halve)
+            } catch (e: Throwable) {
+                DiagnosticLog.log("Glass", "GPU shrink failed, shrinking on the CPU: ${e.javaClass.simpleName}: ${e.message}")
+                null
+            }
+            if (half != null) {
+                capture.recycle()
+                shrunkOnGpu = true
+                return shrink(half, null, halvedAlready = if (halve) 2 else 1)
+            }
+            shrinkerFailed = true
+        }
+        shrunkOnGpu = false
+        val software = if (capture.config == Bitmap.Config.HARDWARE) {
+            // A hardware bitmap can't be drawn into anything but a hardware
+            // canvas: the one full-size copy the GPU path exists to avoid.
+            capture.copy(Bitmap.Config.ARGB_8888, false).also { capture.recycle() } ?: return null
+        } else {
+            capture
+        }
+        return shrink(software, crop)
+    }
+
+    /**
+     * [full] -- or just its [crop] -- halved down by [factor] on the CPU,
+     * writable; [full] itself is recycled. [halvedAlready] is how far down
+     * [full] already is (see [GlassShrinker]).
+     */
+    private fun shrink(full: Bitmap, crop: android.graphics.Rect?, halvedAlready: Int = 1): Bitmap? {
         if (full.width <= 0 || full.height <= 0) {
             full.recycle()
             return null
         }
         var scaled = full
-        var f = 1
+        var f = halvedAlready
         if (crop != null) {
             // The margin goes on the way down: the first halving draws only
             // the window itself.
@@ -478,15 +542,9 @@ class GlassBackdropCompositor(
         return drift
     }
 
-    private fun readBack(buffer: HardwareBuffer, colorSpace: ColorSpace?): Bitmap? {
-        val hardware = Bitmap.wrapHardwareBuffer(buffer, colorSpace) ?: return null
-        // A hardware bitmap can't be drawn into anything but a hardware
-        // canvas, so the one full-size copy is unavoidable -- and dropped
-        // straight after the first halving.
-        val full = hardware.copy(Bitmap.Config.ARGB_8888, false)
-        hardware.recycle()
-        return full
-    }
+    /** The platform's capture as a hardware bitmap: no copy of its pixels. */
+    private fun readBack(buffer: HardwareBuffer, colorSpace: ColorSpace?): Bitmap? =
+        Bitmap.wrapHardwareBuffer(buffer, colorSpace)
 
     private companion object {
         val WINDOW_PAINT = Paint(Paint.FILTER_BITMAP_FLAG)

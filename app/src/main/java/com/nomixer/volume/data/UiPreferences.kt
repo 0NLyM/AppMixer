@@ -23,6 +23,15 @@ const val GLASS_BLUR_MIN = 0f
 const val GLASS_BLUR_MAX = 1f
 
 /**
+ * Range of the glass lens's zoom slider (see [UiPreferences.glassLensZoom]):
+ * from a percent smaller to a percent larger, and where it starts -- a hint
+ * smaller, as a thick pane of glass shows what is behind it.
+ */
+const val GLASS_LENS_ZOOM_MIN = -0.01f
+const val GLASS_LENS_ZOOM_MAX = 0.01f
+const val GLASS_LENS_ZOOM_DEFAULT = -0.004f
+
+/**
  * Range of the glass light beam's own sliders -- a full turn for the
  * rotation, and anything from a tight streak to a wash right across the
  * panel for the width. See [UiPreferences.glassLightAngle]/[UiPreferences.glassLightWidth].
@@ -342,6 +351,19 @@ data class UiPreferences(
      * [GLASS_BACKDROP_BLUR_MAX_DP].
      */
     val glassBlurStrength: Float = 0.6f,
+    /**
+     * Whether the screen behind the glass shows through a lens at all --
+     * zoomed by [glassLensZoom] about the middle of each pane. Only the
+     * app's own blur has a lens: the system's blur (see Service's
+     * `systemBlurAvailable`) is the screen itself, and can't be zoomed.
+     */
+    val glassLensEnabled: Boolean = true,
+    /**
+     * How far the lens zooms the screen behind, as a fraction: negative
+     * shows it smaller (a thick pane pulling it in), positive larger (a
+     * magnifier). See [GLASS_LENS_ZOOM_MIN]/`_MAX`.
+     */
+    val glassLensZoom: Float = GLASS_LENS_ZOOM_DEFAULT,
     /**
      * Which way the single beam of light that lights the glass runs, in
      * degrees -- one shared value for every style, not a per-style setting,

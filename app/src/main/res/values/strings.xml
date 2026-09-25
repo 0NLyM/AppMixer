@@ -65,6 +65,9 @@
     <string name="button_corner">Button corner radius</string>
     <string name="popup_opacity">Background opacity</string>
     <string name="glass_blur_strength">Blur</string>
+    <string name="glass_lens">Lens</string>
+    <string name="glass_lens_zoom">Lens zoom</string>
+    <string name="glass_lens_description">Only for the app\'s own blur, used under battery saver: the system\'s blur shows the screen as it is. Below zero the screen behind shows through smaller, above zero larger.</string>
     <string name="glass_light_angle">Light rotation</string>
     <string name="glass_light_width">Light width</string>
     <string name="glass_light_description">One beam of light crossing the glass: white light is added where it lands and the rim catches it at the same two points, so both read as the same light.</string>

@@ -16,6 +16,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import android.view.Display
@@ -49,6 +50,7 @@ import com.nomixer.volume.compose.AppVolumeList
 import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.GlassBackdrop
 import com.nomixer.volume.compose.GlassBackdropCompositor
+import com.nomixer.volume.compose.GlassShrinker
 import com.nomixer.volume.compose.SystemVolumePanel
 import com.nomixer.volume.compose.VolumeChangeObserver
 import com.nomixer.volume.data.DiagnosticLog
@@ -61,6 +63,7 @@ import kotlinx.coroutines.flow.first
 import java.util.Objects
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
+import java.util.function.Consumer
 
 @SuppressLint("AccessibilityPolicy")
 class Service : AccessibilityService() {
@@ -97,6 +100,14 @@ class Service : AccessibilityService() {
          */
         private const val GLASS_REFRESH_MS = 340L
 
+        /**
+         * Where the system's blur is used at all once the platform says it
+         * is on. Not on realme's builds: the exclusion comes from upstream
+         * VolumeManager, which applied it to the same background-blur
+         * drawable, and is kept as it was.
+         */
+        private val SYSTEM_BLUR_SUPPORTED = Build.MANUFACTURER != "realme"
+
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
         private const val AUTO_REPEAT_INITIAL_DELAY = 500L
@@ -108,6 +119,8 @@ class Service : AccessibilityService() {
          */
         private const val SHIZUKU_WARNING_COOLDOWN_MS = 10_000L
     }
+
+    private val powerManager: PowerManager by lazy { getSystemService(PowerManager::class.java) }
 
     private val windowManager: WindowManager by lazy {
         Objects.requireNonNull(
@@ -233,6 +246,31 @@ class Service : AccessibilityService() {
      */
     private var glassBackdrop by mutableStateOf<GlassBackdrop?>(null)
 
+    /**
+     * Whether the platform's cross-window blur is on: the system blurring
+     * what is behind the overlay's window itself, live, which the glass uses
+     * in place of a capture (see SystemGlassBlur.kt). Battery saver switches
+     * it off -- the platform's own rule, with no way round it -- and the
+     * glass falls back on the app's own blur of a capture. Kept current by
+     * [systemBlurListener].
+     */
+    private var systemBlurAvailable = false
+
+    private val systemBlurListener = Consumer<Boolean> { enabled ->
+        systemBlurAvailable = enabled && SYSTEM_BLUR_SUPPORTED
+        DiagnosticLog.log("Glass", "system blur ${if (systemBlurAvailable) "on" else "off"}")
+        // Switched off under a popup that was using it (battery saver
+        // coming on): the glass is its tint alone until the next popup,
+        // which captures the screen instead. A capture now would have the
+        // popup itself in it.
+        if (!systemBlurAvailable && glassSystemBlurPx > 0) {
+            glassSystemBlurPx = 0
+        }
+    }
+
+    /** The system blur radius, in px, the current popup's glass uses -- 0 when it is the app's own blur. */
+    private var glassSystemBlurPx by mutableStateOf(0)
+
     /** Whether a capture is on its way: the arrival waits for it, briefly. */
     private var glassBackdropPending by mutableStateOf(false)
 
@@ -241,6 +279,13 @@ class Service : AccessibilityService() {
 
     /** Reading a capture back and blurring it is a few ms of work; never on the main thread. */
     private val glassBackdropExecutor by lazy { Executors.newSingleThreadExecutor() }
+
+    /**
+     * Shrinks every capture on the GPU before anything reads it (see
+     * GlassShrinker): one for the service's whole life, since its surfaces
+     * are the screen's size. Only [glassBackdropExecutor] touches it.
+     */
+    private val glassShrinker by lazy { GlassShrinker() }
 
     private val glassBackdropGiveUp = Runnable { glassBackdropPending = false }
 
@@ -276,9 +321,21 @@ class Service : AccessibilityService() {
     private fun requestGlassBackdrop() {
         val request = ++glassBackdropRequest
         val preferences = manager.uiPreferences
+        glassSystemBlurPx = 0
         if (!preferences.activeShowBackground() || preferences.activeBackground() != PopupBackground.Translucent) {
             glassBackdrop = null
+            glassCompositor = null
             glassBackdropPending = false
+            return
+        }
+        val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * resources.displayMetrics.density
+        // The system's own blur when it is there: live, and nothing to
+        // capture, read back or blur -- so nothing to do here at all.
+        if (systemBlurAvailable && !powerManager.isPowerSaveMode) {
+            glassBackdrop = null
+            glassCompositor = null
+            glassBackdropPending = false
+            glassSystemBlurPx = blurPx.roundToInt().coerceAtLeast(1)
             return
         }
         // The last popup's backdrop goes now, not when this one's lands: the
@@ -294,7 +351,6 @@ class Service : AccessibilityService() {
         handler.removeCallbacks(glassBackdropGiveUp)
         handler.postDelayed(glassBackdropGiveUp, GLASS_BACKDROP_WAIT_MS)
 
-        val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * resources.displayMetrics.density
         // In the same coordinates windows report their bounds in -- see
         // GlassBackdropCompositor on why that isn't the capture's own size.
         val screen = Rect(windowManager.currentWindowMetrics.bounds)
@@ -313,7 +369,7 @@ class Service : AccessibilityService() {
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, glassBackdropExecutor, object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
-                    val compositor = GlassBackdropCompositor(blurPx, screen.width(), screen.height())
+                    val compositor = GlassBackdropCompositor(blurPx, screen.width(), screen.height(), glassShrinker)
                     val backdrop = try {
                         compositor.display(result.hardwareBuffer, result.colorSpace, requestedAt)
                     } catch (e: Throwable) {
@@ -603,6 +659,7 @@ class Service : AccessibilityService() {
                         atmosphereColors = atmosphereColorsState,
                         glassBackdrop = glassBackdrop,
                         glassBackdropPending = glassBackdropPending,
+                        systemBlurRadiusPx = glassSystemBlurPx,
                         touchBounds = touchBounds,
                         onExpanded = this@Service.handler::startIdleTimer,
                         // Posted rather than called straight from the exit:
@@ -848,6 +905,10 @@ class Service : AccessibilityService() {
 
         registerReceiver(broadcastReceiver, IntentFilter(ACTION_SHOW_VIEW), RECEIVER_NOT_EXPORTED)
 
+        // Called straight back with the current state, and again on every
+        // change -- battery saver switching on or off among them.
+        windowManager.addCrossWindowBlurEnabledListener(mainExecutor, systemBlurListener)
+
         // The platform reads a service's capabilities when it binds it, and an
         // app update doesn't rebind: a service first switched on by a version
         // that didn't declare canTakeScreenshot carries on without it. The
@@ -879,6 +940,9 @@ class Service : AccessibilityService() {
         }
 
         unregisterReceiver(broadcastReceiver)
+        windowManager.removeCrossWindowBlurEnabledListener(systemBlurListener)
+        glassBackdropExecutor.execute { glassShrinker.release() }
+        glassBackdropExecutor.shutdown()
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {

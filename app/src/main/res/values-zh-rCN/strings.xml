@@ -64,6 +64,9 @@
     <string name="button_corner">按钮圆角半径</string>
     <string name="popup_opacity">背景不透明度</string>
     <string name="glass_blur_strength">模糊程度</string>
+    <string name="glass_lens">透镜</string>
+    <string name="glass_lens_zoom">透镜缩放</string>
+    <string name="glass_lens_description">仅用于省电模式下应用自身的模糊：系统模糊显示的是屏幕本身。小于零时背后的屏幕显得更小，大于零时更大。</string>
     <string name="glass_light_angle">光线角度</string>
     <string name="glass_light_width">光线宽度</string>
     <string name="glass_light_description">一束光穿过玻璃：光线落处会叠加白色高光，边缘也在同样的两处被照亮，因而看起来是同一束光。</string>

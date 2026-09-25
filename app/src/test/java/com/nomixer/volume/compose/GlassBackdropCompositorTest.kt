@@ -48,8 +48,13 @@ class GlassBackdropCompositorTest {
         return (0 until image.width).first { Color.red(image.getPixel(it, y)) > 160 }
     }
 
-    private fun assertLinedUp(scale: Float, margin: Int) {
-        val compositor = GlassBackdropCompositor(blurPx = 0f, screenWidth = SCREEN_W, screenHeight = SCREEN_H)
+    private fun assertLinedUp(scale: Float, margin: Int, shrinker: GlassShrinker? = null) {
+        val compositor = GlassBackdropCompositor(
+            blurPx = 0f,
+            screenWidth = SCREEN_W,
+            screenHeight = SCREEN_H,
+            shrinker = shrinker
+        )
         val first = required(compositor.display(screen(), capturedAt = 0L))
         val look = compositor.window(captured(screen(), scale, margin), Rect(0, 0, SCREEN_W, SCREEN_H), 340L, 400L)
         assertNotNull("a first look at the window is always drawn", look)
@@ -72,6 +77,39 @@ class GlassBackdropCompositorTest {
     @Test fun aWindowCapturedWithAMarginRoundItLinesUp() = assertLinedUp(scale = 1f, margin = 24)
 
     @Test fun aWindowCapturedAtAnotherScaleWithAMarginLinesUp() = assertLinedUp(scale = 1.25f, margin = 30)
+
+    @Test fun aWindowCapturedWithAMarginLinesUpShrunkOnTheGpu() {
+        val shrinker = GlassShrinker()
+        try {
+            assertLinedUp(scale = 1.25f, margin = 30, shrinker = shrinker)
+        } finally {
+            shrinker.release()
+        }
+    }
+
+    /** A heavy blur, first halved on the GPU, comes out as it does halved on the CPU all the way. */
+    @Test fun theGpuShrinksAsTheCpuDoes() {
+        val shrinker = GlassShrinker()
+        try {
+            val onGpu = GlassBackdropCompositor(48f, SCREEN_W, SCREEN_H, shrinker)
+            val onCpu = GlassBackdropCompositor(48f, SCREEN_W, SCREEN_H)
+            val gpu = required(onGpu.display(screen(), capturedAt = 0L)).image.asAndroidBitmap()
+            assertTrue("shrunk on the GPU", onGpu.shrunkOnGpu)
+            val cpu = required(onCpu.display(screen(), capturedAt = 0L)).image.asAndroidBitmap()
+            assertEquals(cpu.width, gpu.width)
+            assertEquals(cpu.height, gpu.height)
+            var difference = 0L
+            for (y in 0 until cpu.height) {
+                for (x in 0 until cpu.width) {
+                    difference += abs(Color.red(cpu.getPixel(x, y)) - Color.red(gpu.getPixel(x, y)))
+                }
+            }
+            val mean = difference.toFloat() / (cpu.width * cpu.height)
+            assertTrue("mean difference $mean", mean < 6f)
+        } finally {
+            shrinker.release()
+        }
+    }
 
     @Test fun aScrollStoppingIsToldOnce() {
         val compositor = GlassBackdropCompositor(blurPx = 0f, screenWidth = SCREEN_W, screenHeight = SCREEN_H)

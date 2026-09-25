@@ -278,7 +278,7 @@ fun GlassBackground(
     Box(
         modifier
             .clip(shape)
-            .glassBackdrop(backdrop)
+            .glassBackdrop(backdrop, shape)
             .drawWithCache {
                 val beam = glassBeamBrush(lightAngle, lightWidth, lightStrength)
                 onDrawBehind {

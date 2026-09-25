@@ -184,10 +184,24 @@ wide as the platform makes a window that wraps its content
 
 ### The glass
 
-The glass is a pane over the **real screen**, blurred by the app itself --
-never by the platform's cross-window blur (`FLAG_BLUR_BEHIND`,
-`setBackgroundBlurRadius`), which battery saver switches off (see
-NOTICE.md). Before the overlay's window is added, the service captures the
+The glass is a pane over the **real screen**, blurred one of two ways.
+
+While the platform's cross-window blur is on, it is the **system's own
+blur**: each pane draws the window's background-blur drawable
+(`ViewRootImpl.createBackgroundBlurDrawable`, through reflection;
+`SystemGlassBlur.kt`), within its own rounded rectangle. The renderer
+reports where that drawable's node lands every frame, the whole transform
+from the window down included, so the blurred region travels with the panel
+in the same frame -- no second window, and the one window still never moves.
+Nothing is captured then. Never `FLAG_BLUR_BEHIND` (it blurs the whole
+screen) or a window's own background blur (the window is the whole screen).
+
+Battery saver switches the cross-window blur off -- the platform's rule, with
+no way round it -- and then the glass is **the app's own blur** of a capture
+(the service decides per popup: `systemBlurAvailable`, kept current by a
+cross-window-blur listener, and `PowerManager.isPowerSaveMode`; switched off
+under a popup already up, that popup's glass is its tint until the next
+one). Before the overlay's window is added, the service captures the
 whole screen through its own accessibility screenshot capability
 (`canTakeScreenshot`; `requestGlassBackdrop` in `Service.kt`); while the
 popup is up it captures just the app window behind it every
@@ -195,7 +209,11 @@ popup is up it captures just the app window behind it every
 `refreshGlassBackdrop`) -- never the display again, which would have the popup
 in it. `GlassBackdropCompositor` (`GlassBackdrop.kt`) shrinks each capture
 off the main thread, lays the window onto the first capture, drops one that
-hasn't changed, and box-blurs the small result. Between two looks it also
+hasn't changed, and box-blurs the small result. A capture is never read
+back whole: its first halving is drawn on the GPU straight into a buffer the
+capture thread reads (`GlassShrinker`) -- copying a hardware bitmap into a
+software one happens on the app's one render thread, and at full size it
+stalled the overlay's own frames three times a second. Between two looks it also
 estimates how far the app scrolled (`estimateShift`, on the small
 luminance), how fast, and how fast that speed is dying away (a fling
 coasting); the glass slides the captured screen along it on its own spring
@@ -219,8 +237,9 @@ towards the middle of the screen, with the first capture showing round it
 (`GlassBackdropCompositorTest`). Every pane of glass draws it behind its
 tint, lined up with the screen through the whole root-to-node transform, so
 it stays put on the screen while a panel travels or the disc turns over it
--- through the barest lens (`GLASS_LENS_SCALE`, under half a percent smaller
-about the pane's middle). The arrival waits for the first capture, briefly.
+-- through a lens the user sets (`glassLensEnabled`, `glassLensZoom`: from a
+percent smaller to a percent larger about the pane's middle; the system's
+blur has none). The arrival waits for the first capture, briefly.
 
 The system reads a service's capabilities only when it binds it, and an app
 update does not rebind: a service first switched on by a version without

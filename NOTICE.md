@@ -1485,6 +1485,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-25 — 1.0.82
+
+- **The system's own blur, when battery saver is off.** With the platform's
+  cross-window blur on, the glass is now the system blurring the real
+  screen behind each pane, live, within the pane's own rounded shape -- it
+  moves with the panel frame by frame, and the app captures nothing at all.
+  Under battery saver, which switches that blur off, the glass falls back
+  on the app's own blur of a capture, as before (never on a plain tint).
+- **A smoother, lighter simulated glass.** Each look at the app behind used
+  to copy the whole screen capture out of the GPU on the app's render
+  thread -- the thread that draws the overlay -- which cost the glass a
+  frame or so three times a second. The first halving now happens on the
+  GPU, straight into memory the capture thread reads itself: a quarter of
+  the pixels, and nothing in the overlay's way.
+- **Lens settings.** A switch turns the lens off, and a slider sets its
+  zoom from -1% (the screen behind smaller) to +1% (larger), in tenths of a
+  percent. Only the app's own blur has a lens.
+
 ## 2026-09-25 — 1.0.81
 
 - **The screen behind lines up with the real one again.** On some phones a
