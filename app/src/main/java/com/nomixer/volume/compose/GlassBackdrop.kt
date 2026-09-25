@@ -43,7 +43,32 @@ import kotlin.math.roundToInt
  * bilinear image draw a frame, however the panel is moving.
  */
 @Immutable
-class GlassBackdrop(val image: ImageBitmap)
+class GlassBackdrop(
+    val image: ImageBitmap,
+    /**
+     * How far the content of the screen had scrolled when this was captured,
+     * in screen px, counted from the first capture of this appearance (see
+     * [GlassBackdropCompositor.window]). Two captures of a scrolling list
+     * are the same picture moved: drawn this far back from where the glass
+     * says the content is now, one lines up with the other, and the glass
+     * can slide from one to the next instead of cutting.
+     */
+    val scroll: Offset = Offset.Zero,
+    /** How far the content scrolled between the look before this one and this one, in screen px. */
+    val drift: Offset = Offset.Zero
+) {
+    /**
+     * Where the glass should glide to for this capture: where its content
+     * was, and a little further along the way it was going -- where it will
+     * most likely be by the next look. Aimed only at where it *was*, the
+     * glass would always be a whole look behind a steady scroll; aimed at
+     * the whole next step, it would run on past where a scroll stops.
+     */
+    val glideTarget: Offset get() = scroll + drift * GLASS_GLIDE_LEAD
+}
+
+/** How much of the last measured step the glass runs ahead by -- see [GlassBackdrop.glideTarget]. */
+private const val GLASS_GLIDE_LEAD = 0.75f
 
 /**
  * The backdrop the glass on screen should show, and where it lies.
@@ -60,6 +85,13 @@ class GlassBackdropSource(
     val previous: () -> GlassBackdrop?,
     /** How far [current] has taken over from [previous], 0 to 1. */
     val blend: () -> Float,
+    /**
+     * Where the glass has the screen's content scrolled to right now, in
+     * the same terms as [GlassBackdrop.scroll]: each capture is drawn moved
+     * by how far this still is from where that capture was taken, so the
+     * content behind glides from one capture's place to the next.
+     */
+    val position: () -> Offset,
     /** Where the captured screen lies, in the overlay's own root coordinates. */
     val bounds: Rect,
     /** How much of it shows at all, 0 to 1. */
@@ -95,6 +127,7 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?): Modifier {
             val current = source.current() ?: return@drawBehind
             val previous = source.previous()
             val blend = if (previous == null) 1f else source.blend().coerceIn(0f, 1f)
+            val position = source.position()
             val presence = source.presence().coerceIn(0f, 1f)
             val coordinates = placed.coordinates
             if (presence <= 0f || coordinates == null || !coordinates.isAttached) {
@@ -110,9 +143,9 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?): Modifier {
                 transform(rootToLocal)
             }) {
                 if (previous != null && blend < 1f) {
-                    drawBackdrop(previous, source.bounds, presence)
+                    drawBackdrop(previous, source.bounds, presence, previous.scroll - position)
                 }
-                drawBackdrop(current, source.bounds, presence * blend)
+                drawBackdrop(current, source.bounds, presence * blend, current.scroll - position)
             }
         }
 }
@@ -122,15 +155,15 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?): Modifier {
  * middle of each pane: a thick pane's lens, kept slight. (1 would be a
  * perfectly flat pane.)
  */
-private const val GLASS_LENS_SCALE = 0.96f
+private const val GLASS_LENS_SCALE = 0.985f
 
-private fun DrawScope.drawBackdrop(backdrop: GlassBackdrop, bounds: Rect, alpha: Float) {
+private fun DrawScope.drawBackdrop(backdrop: GlassBackdrop, bounds: Rect, alpha: Float, shift: Offset) {
     val image = backdrop.image
     if (image.width <= 0 || image.height <= 0) {
         return
     }
     withTransform({
-        translate(bounds.left, bounds.top)
+        translate(bounds.left + shift.x, bounds.top + shift.y)
         scale(bounds.width / image.width, bounds.height / image.height, pivot = Offset.Zero)
     }) {
         // As a clamped shader rather than a bitmap drawn to its bounds: the
@@ -189,6 +222,10 @@ class GlassBackdropCompositor(
 ) {
     private var base: Bitmap? = null
     private var lastWindow: Bitmap? = null
+    private var lastLuma: FloatArray? = null
+    private var scrollX = 0f
+    private var scrollY = 0f
+    private var drift = Offset.Zero
 
     /** How much every capture is shrunk by: a power of two, up to [MAX_SHRINK]. */
     private val factor: Int = run {
@@ -204,6 +241,12 @@ class GlassBackdropCompositor(
         val small = shrink(full) ?: return null
         base = small
         lastWindow = null
+        // The first look at the app window is measured against the whole
+        // screen as it appeared -- the same picture, where the app fills it.
+        lastLuma = luminance(small)
+        scrollX = 0f
+        scrollY = 0f
+        drift = Offset.Zero
         return blurredCopy(small)
     }
 
@@ -234,6 +277,7 @@ class GlassBackdropCompositor(
         }
         last?.recycle()
         lastWindow = small
+        trackScroll(small, boundsInScreen)
         val scaleX = base.width.toFloat() / screenWidth.coerceAtLeast(1)
         val scaleY = base.height.toFloat() / screenHeight.coerceAtLeast(1)
         Canvas(base).drawBitmap(
@@ -280,7 +324,32 @@ class GlassBackdropCompositor(
         if (radius > 0) {
             boxBlur(copy, radius)
         }
-        return GlassBackdrop(copy.asImageBitmap())
+        return GlassBackdrop(copy.asImageBitmap(), Offset(scrollX, scrollY), drift)
+    }
+
+    /**
+     * How far the window's content moved since its last capture, added to
+     * the running [GlassBackdrop.scroll]. Found on the small, unblurred
+     * copies -- a few thousand pixels -- by trying every shift along each
+     * axis and keeping the one under which the two pictures differ least,
+     * refined to a fraction of a pixel. Only a shift that explains the
+     * change much better than no shift at all counts: a video playing or a
+     * page replaced is not a scroll, and simply fades.
+     */
+    private fun trackScroll(small: Bitmap, boundsInScreen: android.graphics.Rect) {
+        val width = small.width
+        val height = small.height
+        val luma = luminance(small)
+        val last = lastLuma
+        lastLuma = luma
+        drift = Offset.Zero
+        if (last == null || last.size != luma.size) {
+            return
+        }
+        val shift = estimateShift(last, luma, width, height) ?: return
+        drift = Offset(shift.x * boundsInScreen.width() / width, shift.y * boundsInScreen.height() / height)
+        scrollX += drift.x
+        scrollY += drift.y
     }
 
     private fun readBack(buffer: HardwareBuffer, colorSpace: ColorSpace?): Bitmap? {
@@ -301,6 +370,71 @@ class GlassBackdropCompositor(
 /** A one-off backdrop from a capture already in memory, which it takes over. */
 fun glassBackdropFrom(full: Bitmap, blurPx: Float): GlassBackdrop? =
     GlassBackdropCompositor(blurPx, full.width, full.height).display(full)
+
+private fun luminance(bitmap: Bitmap): FloatArray {
+    val pixels = IntArray(bitmap.width * bitmap.height)
+    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    return FloatArray(pixels.size) { i ->
+        val p = pixels[i]
+        0.299f * ((p shr 16) and 0xFF) + 0.587f * ((p shr 8) and 0xFF) + 0.114f * (p and 0xFF)
+    }
+}
+
+/**
+ * The shift `d` under which `now(p) ≈ before(p + d)`, along one axis or the
+ * other, in pixels of these images -- or null if no shift explains the
+ * change clearly better than none (see [SCROLL_CONFIDENCE]).
+ */
+private fun estimateShift(before: FloatArray, now: FloatArray, width: Int, height: Int): Offset? {
+    fun cost(dx: Int, dy: Int): Float {
+        var sum = 0f
+        var count = 0
+        for (y in maxOf(0, -dy) until minOf(height, height - dy)) {
+            val row = y * width
+            val shifted = (y + dy) * width
+            for (x in maxOf(0, -dx) until minOf(width, width - dx)) {
+                sum += kotlin.math.abs(now[row + x] - before[shifted + x + dx])
+                count++
+            }
+        }
+        return if (count == 0) Float.MAX_VALUE else sum / count
+    }
+
+    val still = cost(0, 0)
+    if (still < SCROLL_NOISE) {
+        return null
+    }
+    val vertical = FloatArray(2 * (height / 2) + 1) { cost(0, it - height / 2) }
+    val horizontal = FloatArray(2 * (width / 2) + 1) { cost(it - width / 2, 0) }
+    val bestY = vertical.indices.minBy { vertical[it] }
+    val bestX = horizontal.indices.minBy { horizontal[it] }
+    val alongY = vertical[bestY] <= horizontal[bestX]
+    val costs = if (alongY) vertical else horizontal
+    val best = if (alongY) bestY else bestX
+    if (costs[best] > still * SCROLL_CONFIDENCE) {
+        return null
+    }
+    // A parabola through the best shift and its two neighbours: the small
+    // images' pixels are a dozen screen pixels apart, far coarser than a
+    // scroll the eye can follow.
+    var refined = (best - costs.size / 2).toFloat()
+    if (best > 0 && best < costs.size - 1) {
+        val a = costs[best - 1]
+        val b = costs[best]
+        val c = costs[best + 1]
+        val curve = a - 2 * b + c
+        if (curve > 0f) {
+            refined += (0.5f * (a - c) / curve).coerceIn(-0.5f, 0.5f)
+        }
+    }
+    return if (alongY) Offset(0f, refined) else Offset(refined, 0f)
+}
+
+/** Below this mean difference two captures are the same picture: nothing moved. */
+private const val SCROLL_NOISE = 1.5f
+
+/** How much better than no shift at all a shift has to explain the change to count as a scroll. */
+private const val SCROLL_CONFIDENCE = 0.6f
 
 /** The most the capture is ever shrunk by, as a factor of its own size. */
 private const val MAX_SHRINK = 16

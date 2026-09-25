@@ -195,15 +195,21 @@ popup is up it captures just the app window behind it every
 `refreshGlassBackdrop`) -- never the display again, which would have the popup
 in it. `GlassBackdropCompositor` (`GlassBackdrop.kt`) shrinks each capture
 off the main thread, lays the window onto the first capture, drops one that
-hasn't changed, and box-blurs the small result; the glass eases from the
-last backdrop to the new one over the whole gap to the next look
-(`Effects.follow`), so it drifts rather than steps. A capture needn't come
+hasn't changed, and box-blurs the small result. Between two looks it also
+estimates how far the app scrolled (`estimateShift`, on the small
+luminance), and the glass slides the captured screen along that estimate
+on its own spring (`Spatial.follow`, aimed a little ahead of the last look
+so a steady scroll moves steadily instead of in bursts); what the scroll
+can't explain -- a video, a list changing in place -- eases from the last
+backdrop to the new one (`Effects.follow`). Every new popup starts from a
+fresh capture: the last one is dropped before asking, so the glass never
+flashes the screen as it was the time before. A capture needn't come
 back at the screen's own size: place windows against the screen's bounds
 (`GlassBackdropCompositor`'s `screenWidth`/`screenHeight`), never against the
 capture's pixels. Every pane of glass draws it behind its tint, lined up
 with the screen through the whole root-to-node transform, so it stays put
 on the screen while a panel travels or the disc turns over it -- through a
-slight lens (`GLASS_LENS_SCALE`, a few percent smaller about the pane's
+slight lens (`GLASS_LENS_SCALE`, about 1.5% smaller about the pane's
 middle). The arrival waits for the first capture, briefly.
 
 The system reads a service's capabilities only when it binds it, and an app

@@ -1485,6 +1485,22 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-25 — 1.0.80
+
+- **No more stale screen when the popup opens.** The glass used to show the
+  screen as it was the last time the popup was up, for the moment it took
+  the new capture to come back. Each popup now drops the old capture before
+  asking for a new one, and arrives on the fresh one.
+- **Scrolling shows through smoothly.** The platform still lets the service
+  look at the app behind only about three times a second, so easing from one
+  look to the next still moved in bursts. Now the glass works out how far
+  the app scrolled between two looks and slides what it shows along that
+  distance on a soft spring, a little ahead of the last look, so a steady
+  scroll moves steadily through the glass. Anything that changes without
+  scrolling -- a video, a list updating in place -- still eases in.
+- **A lighter lens.** The screen behind now shows through about 1.5%
+  smaller about the middle of each pane, down from 4%.
+
 ## 2026-09-25 — 1.0.79
 
 - **The glass lines up with the screen again once it starts following it.**

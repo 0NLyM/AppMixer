@@ -3,6 +3,7 @@ package com.nomixer.volume
 import android.graphics.Rect
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -19,11 +20,13 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect as RectF
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -209,6 +212,9 @@ internal class OverlayStage {
 
     /** How far [backdrop] has taken over from [previousBackdrop]. */
     val backdropBlend = Animatable(1f)
+
+    /** Where the glass has the screen's content scrolled to -- see GlassBackdropSource.position. */
+    val backdropPosition = Animatable(Offset.Zero, Offset.VectorConverter)
 
     /** The mixer's rows, one object at a time. */
     val cascade = RowCascade()
@@ -647,6 +653,7 @@ internal fun OverlayScene(
     // fresher capture of the screen behind -- the glass following it while
     // the popup is up -- takes over from the last one rather than cutting to
     // it: through frosted glass, the screen changing is a change of light.
+    val glideScope = rememberCoroutineScope()
     LaunchedEffect(glassBackdrop) {
         val incoming = glassBackdrop
         val outgoing = stage.backdrop
@@ -655,6 +662,7 @@ internal fun OverlayScene(
             stage.previousBackdrop = null
             stage.backdropIn.snapTo(0f)
         } else if (outgoing == null) {
+            stage.backdropPosition.snapTo(incoming.scroll)
             stage.backdrop = incoming
             if (stage.appear.value <= 0f) {
                 stage.backdropIn.snapTo(1f)
@@ -676,6 +684,17 @@ internal fun OverlayScene(
                 stage.backdropBlend.snapTo(0f)
             }
             stage.backdrop = incoming
+            // Out here, not in this effect: the next look restarts the effect,
+            // and the glide has to carry its speed straight into the next
+            // target rather than stop and start again with every look.
+            glideScope.launch {
+                // element:  the screen seen through the glass, scrolling.
+                // model:    the app's own content, gliding after its scroll.
+                // token:    MotionTokens.Spatial.follow.
+                // property: translation of the captured screen, never the
+                //           pane.
+                stage.backdropPosition.animateTo(incoming.glideTarget, MotionTokens.Spatial.follow())
+            }
             // element:  the screen seen through the glass, a moment later.
             // model:    -- opacity is not an object.
             // token:    MotionTokens.Effects.follow.
@@ -892,6 +911,7 @@ internal fun OverlayScene(
                     current = { stage.backdrop },
                     previous = { stage.previousBackdrop },
                     blend = { stage.backdropBlend.value },
+                    position = { stage.backdropPosition.value },
                     // The capture is of the whole display, and the window is
                     // the whole screen: it lies exactly where the display does
                     // in the window's own coordinates.

@@ -281,6 +281,15 @@ class Service : AccessibilityService() {
             glassBackdropPending = false
             return
         }
+        // The last popup's backdrop goes now, not when this one's lands: the
+        // new popup would otherwise open over a picture of the screen as it
+        // was last time, and only then ease over to what is there now. Kept
+        // aside for the one case it is still the right picture -- asked
+        // again a fraction of a second after the last popup (see onFailure).
+        val lastBackdrop = glassBackdrop
+        val lastCompositor = glassCompositor
+        glassBackdrop = null
+        glassCompositor = null
         glassBackdropPending = true
         handler.removeCallbacks(glassBackdropGiveUp)
         handler.postDelayed(glassBackdropGiveUp, GLASS_BACKDROP_WAIT_MS)
@@ -290,14 +299,12 @@ class Service : AccessibilityService() {
         // GlassBackdropCompositor on why that isn't the capture's own size.
         val screen = Rect(windowManager.currentWindowMetrics.bounds)
         val requestedAt = SystemClock.uptimeMillis()
-        fun settle(backdrop: GlassBackdrop?, keepPrevious: Boolean) {
+        fun settle(backdrop: GlassBackdrop?) {
             handler.post {
                 if (request != glassBackdropRequest) {
                     return@post
                 }
-                if (backdrop != null || !keepPrevious) {
-                    glassBackdrop = backdrop
-                }
+                glassBackdrop = backdrop
                 glassBackdropPending = false
                 handler.removeCallbacks(glassBackdropGiveUp)
                 scheduleGlassRefresh(request)
@@ -325,7 +332,7 @@ class Service : AccessibilityService() {
                                 "in ${SystemClock.uptimeMillis() - requestedAt} ms"
                         )
                     }
-                    settle(backdrop, keepPrevious = false)
+                    settle(backdrop)
                 }
 
                 override fun onFailure(errorCode: Int) {
@@ -333,7 +340,12 @@ class Service : AccessibilityService() {
                     // Asked again too soon after the last popup: that
                     // popup's backdrop is a fraction of a second old and
                     // still the screen behind this one.
-                    settle(null, keepPrevious = errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT)
+                    if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT && lastBackdrop != null) {
+                        glassCompositor = lastCompositor
+                        settle(lastBackdrop)
+                    } else {
+                        settle(null)
+                    }
                 }
             })
         } catch (e: SecurityException) {
@@ -342,10 +354,10 @@ class Service : AccessibilityService() {
                 "takeScreenshot refused: ${e.message} -- the service was bound without canTakeScreenshot; " +
                     "use \"Restart accessibility service\" on the main screen"
             )
-            settle(null, keepPrevious = false)
+            settle(null)
         } catch (e: Throwable) {
             DiagnosticLog.log("Glass✗", "takeScreenshot threw ${e.javaClass.name}: ${e.message}")
-            settle(null, keepPrevious = false)
+            settle(null)
         }
     }
 

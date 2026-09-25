@@ -8,6 +8,7 @@ import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -95,6 +96,10 @@ import androidx.compose.ui.graphics.Color
  * |                     |                       |                             | there. A fresher capture of it over   |
  * |                     |                       | [Effects.follow]            | the last, while the popup is up: one  |
  * |                     |                       |                             | fade per look, nearly done by the next |
+ * | Glass backdrop glide | the screen behind, scrolling | [Spatial.follow]     | translation of the captured screen    |
+ * |                     |                       |                             | behind the glass, after the scroll    |
+ * |                     |                       |                             | measured between two looks -- never   |
+ * |                     |                       |                             | the pane                              |
  * | Glass highlight     | a pane that is still, | [Ambient.enter], via        | light angle and brightness --         |
  * |                     | under a light settling | [LocalAmbientEnter]        | never the pane                        |
  * | Atmosphere field    | a field of particles  | [Ambient.enter], via        | shader rotation, centre offset,       |
@@ -289,6 +294,26 @@ object MotionTokens {
             }
 
         private const val LEAVE_STIFFNESS = 420f
+
+        /**
+         * The screen behind the glass gliding after its own content as it
+         * scrolls: a target that moves a step every look at the screen (a
+         * third of a second apart) and a position that follows it.
+         * Critically damped -- content behind glass overshooting its own
+         * place would read as a wobble in the app, not the glass -- and soft
+         * enough that it is still moving when the next step lands; a
+         * retargeted spring keeps its speed, so a steady scroll behind
+         * becomes a steady glide rather than a start and a stop per look.
+         * How soft is the whole trade: stiffer arrives sooner but surges and
+         * stalls once per look (at 60 its speed swung by more than half);
+         * this soft, it keeps within a fifth of an even speed, and the lag
+         * it costs is made up by aiming a little ahead (see
+         * GlassBackdrop.glideTarget).
+         */
+        fun follow(): FiniteAnimationSpec<Offset> =
+            if (reducedMotion) snap() else spring(dampingRatio = 1f, stiffness = FOLLOW_STIFFNESS)
+
+        private const val FOLLOW_STIFFNESS = 15f
 
         private const val CASCADE_DAMPING = 0.9f
         private const val CASCADE_STIFFNESS = 140f

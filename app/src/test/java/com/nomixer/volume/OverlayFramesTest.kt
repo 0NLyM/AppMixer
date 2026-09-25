@@ -107,9 +107,6 @@ class OverlayFramesTest {
         // takes it: the app alone, before anything of the popup is up.
         var backdrop by mutableStateOf<GlassBackdrop?>(null)
         var captured by mutableStateOf(false)
-        // The app behind, scrolled on halfway through the opening, to film
-        // the glass following it.
-        var scrolled by mutableStateOf(false)
         var hidden = false
         var expand: (() -> Unit)? = null
         rule.mainClock.autoAdvance = false
@@ -120,7 +117,7 @@ class OverlayFramesTest {
                     val width = with(density) { maxWidth.roundToPx() }
                     val height = with(density) { maxHeight.roundToPx() }
                     val audio = LocalContext.current.getSystemService(AudioManager::class.java)
-                    SomeApp(scrolled)
+                    SomeApp()
                     if (captured) OverlayScene(
                         preferences = preferences,
                         visible = visible,
@@ -151,15 +148,16 @@ class OverlayFramesTest {
         val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * rule.density.density
         val appAsItWas = snapshot()
         val compositor = GlassBackdropCompositor(blurPx, appAsItWas.width, appAsItWas.height)
-        // What the service's capture of the app will look like once it has
-        // scrolled: the same picture, moved down as far as the scroll moves it.
-        val appScrolled = Bitmap.createBitmap(appAsItWas.width, appAsItWas.height, Bitmap.Config.ARGB_8888).also {
-            val shift = with(rule.density) { (SCROLL_TOP - UNSCROLLED_TOP).toPx() }
-            android.graphics.Canvas(it).apply {
-                drawBitmap(appAsItWas, 0f, 0f, null)
-                drawBitmap(appAsItWas, 0f, shift, null)
+        // What the service's looks at the app behind will be while it
+        // scrolls: the same picture, moved up a step further each time.
+        val scrollStep = with(rule.density) { SCROLL_STEP.toPx() }
+        fun appScrolled(steps: Int): Bitmap =
+            Bitmap.createBitmap(appAsItWas.width, appAsItWas.height, Bitmap.Config.ARGB_8888).also {
+                android.graphics.Canvas(it).apply {
+                    drawColor(android.graphics.Color.rgb(46, 125, 91))
+                    drawBitmap(appAsItWas, 0f, -scrollStep * steps, null)
+                }
             }
-        }
         // Handed over at a different size from the screen's own, the way a
         // phone rendering below its panel's resolution captures: the glass
         // has to line up regardless.
@@ -179,14 +177,14 @@ class OverlayFramesTest {
         shoot("1enter", 1100)
         rule.runOnUiThread { expand!!.invoke() }
         shoot("2open", 700)
-        // The app behind scrolls, and the service's next look at it lands.
-        rule.runOnUiThread { scrolled = true }
-        val live = compositor.window(
-            atCaptureSize(appScrolled),
-            Rect(0, 0, appScrolled.width, appScrolled.height)
-        )
-        backdrop = live ?: backdrop
-        shoot("2open", 800)
+        // The app behind scrolls steadily, and the service's looks at it land
+        // one every GLASS_REFRESH_MS or so.
+        repeat(4) { step ->
+            val look = appScrolled(step + 1)
+            backdrop = compositor.window(atCaptureSize(look), Rect(0, 0, look.width, look.height)) ?: backdrop
+            shoot("2open", 320)
+        }
+        shoot("2open", 400)
         visible = false
         shoot("3close", 3000) { hidden }
     }
@@ -213,18 +211,18 @@ class OverlayFramesTest {
     }
 }
 
-private val UNSCROLLED_TOP = 24.dp
-private val SCROLL_TOP = 180.dp
+/** How far the app behind scrolls between two of the service's looks at it. */
+private val SCROLL_STEP = 60.dp
 
 /** Something busy to sit the overlay on: colour, text and blocks for the glass to be seen against. */
 @Composable
-private fun SomeApp(scrolled: Boolean = false) {
+private fun SomeApp() {
     Box(
         Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0xFF1B3A5C), Color(0xFFE08A3C), Color(0xFF2E7D5B))))
     ) {
-        Column(Modifier.padding(start = 24.dp, end = 24.dp, top = if (scrolled) SCROLL_TOP else UNSCROLLED_TOP)) {
+        Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp)) {
             repeat(14) { i ->
                 Text(
                     "Line $i  The quick brown fox jumps over the lazy dog",
