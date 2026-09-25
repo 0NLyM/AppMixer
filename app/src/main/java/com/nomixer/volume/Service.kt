@@ -712,7 +712,11 @@ class Service : AccessibilityService() {
             manager.screenshotCapable = null
         }
 
-        Toast.makeText(this, "Accessibility service died!", Toast.LENGTH_SHORT).show()
+        if (this::manager.isInitialized && manager.serviceRestartRequested) {
+            manager.serviceRestartRequested = false
+        } else {
+            Toast.makeText(this, "Accessibility service died!", Toast.LENGTH_SHORT).show()
+        }
 
         unregisterReceiver(broadcastReceiver)
     }

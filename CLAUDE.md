@@ -203,7 +203,10 @@ update does not rebind: a service first switched on by a version without
 "Use NoMixer" switch for it. Keep that switch: do not request the
 accessibility button (`flagRequestAccessibilityButton`) -- since Android 12
 a service that does gets only a shortcut on its settings page, and can
-never be switched off and on by hand.
+never be switched off and on by hand. And keep
+`res/xml/accessibility_service_config.xml` the service's only declaration:
+a leftover copy under `res/xml-v31` once replaced it on every Android 12+
+device, and nothing changed in the real one ever reached a phone.
 
 Where there is no capture -- the settings preview, or a platform that
 refuses one (the reason goes to the diagnostic log) -- the glass frosts its

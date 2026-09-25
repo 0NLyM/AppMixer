@@ -48,6 +48,14 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
      */
     var screenshotCapable by mutableStateOf<Boolean?>(null)
 
+    /**
+     * Set while MainActivity restarts the service on purpose, so the
+     * service's own "died" warning -- meant for a service the system took
+     * down -- stays quiet for a stop that was asked for.
+     */
+    @Volatile
+    var serviceRestartRequested = false
+
     // Wrapping is a local, purely reflective change to the binder proxy --
     // it doesn't touch Shizuku itself, only whether a later privileged call
     // *would* route through it -- so it isn't expected to fail here. It's

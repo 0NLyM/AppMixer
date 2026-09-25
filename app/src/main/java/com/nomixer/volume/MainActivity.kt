@@ -249,6 +249,7 @@ class MainActivity : ComponentActivity() {
      */
     private suspend fun restartAccessibilityService(name: String) {
         val self = ComponentName.unflattenFromString(name)
+        application.manager.serviceRestartRequested = true
         val others = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
             .orEmpty()
             .split(SERVICE_NAME_SEPARATOR)

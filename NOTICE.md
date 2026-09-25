@@ -1485,6 +1485,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-25 — 1.0.77
+
+- **Found why none of the service's declaration ever reached Android 12+.**
+  A second copy of the accessibility service's declaration, under
+  `res/xml-v31` and left over from the fork, replaced the real one on every
+  device running Android 12 or later. So on those devices the service
+  never declared the screen capture the glass needs (1.0.36 onward, and
+  1.0.74 again), never declared window content -- so reading which app is in
+  the foreground, for the Atmosphere colors and for jumping to the right
+  slider, silently came back empty -- and kept asking for the accessibility
+  button even after 1.0.76 stopped, which is what kept the "Use NoMixer"
+  switch off its settings page. The copy is gone; there is one declaration,
+  and it carries what the old copy had that the real one lacked
+  (`isAccessibilityTool`).
+- Restarting the service from the main screen no longer shows the
+  "Accessibility service died!" warning, which is meant for a service the
+  system took down, not one that was asked to restart.
+
 ## 2026-09-25 — 1.0.76
 
 - **NoMixer has its own on/off switch in the system's accessibility

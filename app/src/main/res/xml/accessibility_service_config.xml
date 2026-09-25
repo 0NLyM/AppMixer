@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    The one declaration of the service. Keep it the only one: a copy under
+    res/xml-v31 (left over from the fork) used to replace this file on every
+    Android 12+ device, so nothing changed here ever reached one: not the
+    screenshot capability the glass needs, not window content, not dropping
+    the accessibility button (which is what hides the service's own on/off
+    switch in the system's settings).
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackVisual"
@@ -6,6 +14,7 @@
     android:canRequestFilterKeyEvents="true"
     android:canRetrieveWindowContent="true"
     android:canTakeScreenshot="true"
+    android:isAccessibilityTool="true"
     android:settingsActivity=".MainActivity"
     android:description="@string/accessibility_service_description"
     android:notificationTimeout="100" />
