@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -82,7 +81,6 @@ import com.nomixer.volume.data.ATMOSPHERE_GRAIN_MAX
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_MIN
 import com.nomixer.volume.data.GLASS_BLUR_MAX
 import com.nomixer.volume.data.GLASS_BLUR_MIN
-import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MAX
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MIN
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_MAX
@@ -511,10 +509,8 @@ private fun PreviewPanelBackground(preferences: UiPreferences, shape: Shape, mod
             panelGlass -> GlassBackground(
                 shape = shape,
                 baseColor = panelColor,
-                blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                 lightAngle = preferences.glassLightAngle,
                 lightWidth = preferences.glassLightWidth,
-                noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                 modifier = Modifier.matchParentSize()
             )
 
@@ -830,8 +826,6 @@ private fun CollapsedPopupPreviewContent(
                     grainSize = preferences.atmosphereGrainSize,
                     lightAngle = preferences.glassLightAngle,
                     lightWidth = preferences.glassLightWidth,
-                    blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                    noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                     icon = if (showIcon) {
                         {
                             Icon(
@@ -1184,20 +1178,6 @@ fun CustomizationScreen(
                                     text = stringResource(R.string.glass_light_description),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                // The noise/sheen layer's own dedicated color
-                                // and transparency -- independent of the
-                                // panel's own tint (set above, via the
-                                // Background color) and of the blur, which
-                                // frosts this layer along with everything
-                                // else rather than controlling how strong it
-                                // is on its own.
-                                ColorSettingRow(
-                                    label = stringResource(R.string.glass_noise_color),
-                                    color = glassNoiseColorOf(preferences.glassNoiseColor),
-                                    isCustom = preferences.glassNoiseColor != null,
-                                    onColorChange = { color -> onUpdate { it.copy(glassNoiseColor = color.toArgb()) } },
-                                    onReset = { onUpdate { it.copy(glassNoiseColor = null) } }
                                 )
                             }
 
@@ -1604,7 +1584,6 @@ fun CustomizationScreen(
                             glassLightWidth = defaults.glassLightWidth,
                             atmosphereGrainIntensity = defaults.atmosphereGrainIntensity,
                             atmosphereGrainSize = defaults.atmosphereGrainSize,
-                            glassNoiseColor = defaults.glassNoiseColor,
                             expandedMixerCentered = defaults.expandedMixerCentered,
                             popupShowValue = defaults.popupShowValue,
                             discPopupShowValue = defaults.discPopupShowValue,

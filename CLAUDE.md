@@ -187,13 +187,19 @@ wide as the platform makes a window that wraps its content
 The glass is a pane over the **real screen**, blurred by the app itself --
 never by the platform's cross-window blur (`FLAG_BLUR_BEHIND`,
 `setBackgroundBlurRadius`), which battery saver switches off (see
-NOTICE.md). Once per appearance, before the overlay's window is added, the
-service captures the screen through its own accessibility screenshot
-capability (`canTakeScreenshot`; `requestGlassBackdrop` in `Service.kt`),
-shrinks and box-blurs it off the main thread (`GlassBackdrop.kt`), and every
-pane of glass draws it behind its tint, lined up with the screen through the
-whole root-to-node transform -- so it stays put on the screen while a panel
-travels or the disc turns over it. The arrival waits for the capture, briefly.
+NOTICE.md). Before the overlay's window is added, the service captures the
+whole screen through its own accessibility screenshot capability
+(`canTakeScreenshot`; `requestGlassBackdrop` in `Service.kt`); while the
+popup is up it captures just the app window behind it every
+`GLASS_REFRESH_MS` (`takeScreenshotOfWindow`, Android 14+;
+`refreshGlassBackdrop`) -- never the display again, which would have the popup
+in it. `GlassBackdropCompositor` (`GlassBackdrop.kt`) shrinks each capture
+off the main thread, lays the window onto the first capture, drops one that
+hasn't changed, and box-blurs the small result; the glass cross-fades from
+the last backdrop to the new one (`Effects.default`). Every pane of glass
+draws it behind its tint, lined up with the screen through the whole
+root-to-node transform, so it stays put on the screen while a panel travels
+or the disc turns over it. The arrival waits for the first capture, briefly.
 
 The system reads a service's capabilities only when it binds it, and an app
 update does not rebind: a service first switched on by a version without
@@ -209,16 +215,16 @@ a leftover copy under `res/xml-v31` once replaced it on every Android 12+
 device, and nothing changed in the real one ever reached a phone.
 
 Where there is no capture -- the settings preview, or a platform that
-refuses one (the reason goes to the diagnostic log) -- the glass frosts its
-own grain in the shader instead. Never put a real blur (`RenderEffect`) over
-the glass layer: there is nothing under the pane inside our own window to
-blur, so it only averaged the grain down to nothing.
+refuses one (the reason goes to the diagnostic log) -- the glass is its tint
+and its light alone. There is no grain: it stood in for a blurred screen
+before there was one. Never put a real blur (`RenderEffect`) over the glass
+layer: there is nothing under the pane inside our own window to blur.
 
 ## Watching the motion
 
 `OverlayFramesTest` films the overlay -- every frame of each popup style
-arriving, opening into the mixer and closing, plus the glass at three blurs
--- through Robolectric's native graphics on a paused clock, as PNGs. It is
+arriving, opening into the mixer and closing, over a captured backdrop that
+changes halfway through the opening -- through Robolectric's native graphics on a paused clock, as PNGs. It is
 skipped unless `FRAMES_OUT` is set:
 
 ```sh

@@ -36,7 +36,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -50,9 +49,7 @@ import com.nomixer.volume.compose.PanelShadow
 import com.nomixer.volume.compose.RowCascade
 import com.nomixer.volume.compose.compactPanelCornerRadius
 import com.nomixer.volume.compose.glassEdgeLightBrush
-import com.nomixer.volume.compose.glassNoiseColorOf
 import com.nomixer.volume.compose.rememberGlassBeam
-import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.PopupBackground
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
@@ -206,6 +203,13 @@ internal class OverlayStage {
     /** How much of the screen captured behind the glass shows through it. */
     val backdropIn = Animatable(0f)
 
+    /** The glass's backdrop on screen, and the one it is taking over from while it does. */
+    var backdrop by mutableStateOf<GlassBackdrop?>(null)
+    var previousBackdrop by mutableStateOf<GlassBackdrop?>(null)
+
+    /** How far [backdrop] has taken over from [previousBackdrop]. */
+    val backdropBlend = Animatable(1f)
+
     /** The mixer's rows, one object at a time. */
     val cascade = RowCascade()
 
@@ -355,7 +359,7 @@ internal class OverlayStage {
  *
  * Nothing in here scales: the rectangle is *laid out* at each size on the
  * way rather than drawn at one size and stretched, so the shadow keeps its
- * width, the rim keeps its hairline and the glass keeps its grain the whole
+ * width, the rim keeps its hairline and the glass stays lined up with the screen the whole
  * way from the compact popup to the mixer.
  */
 @Composable
@@ -385,8 +389,6 @@ private fun SharedPanel(
                 baseColor = panelColor,
                 lightAngle = preferences.glassLightAngle,
                 lightWidth = preferences.glassLightWidth,
-                blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                 modifier = Modifier.matchParentSize()
             )
             panelAtmosphere -> AtmosphereBackground(
@@ -420,7 +422,7 @@ private fun SharedPanel(
 }
 
 /**
- * The mixer's glass face: the tint, the beam across it and the grain, under
+ * The mixer's glass face: the screen behind, the tint and the beam across it, under
  * the panel's own content.
  *
  * It takes the light itself rather than being handed it, and so does the
@@ -443,19 +445,15 @@ private fun MixerGlassFace(
     baseColor: Color,
     lightAngle: Float,
     lightWidth: Float,
-    blurRadius: Dp,
-    noiseColor: Color,
     modifier: Modifier = Modifier
 ) {
     val beam = rememberGlassBeam(lightAngle = lightAngle)
     GlassBackground(
         shape = shape,
         baseColor = baseColor,
-        blurRadius = blurRadius,
         lightAngle = beam.angle,
         lightWidth = lightWidth,
         lightStrength = beam.strength,
-        noiseColor = noiseColor,
         modifier = modifier
     )
 }
@@ -645,18 +643,38 @@ internal fun OverlayScene(
 
     // A capture that is there as the popup arrives simply is: it is what is
     // behind the glass, not something happening on it. One that turns up
-    // after the arrival has had to go without it comes in underneath.
+    // after the arrival has had to go without it comes in underneath. And a
+    // fresher capture of the screen behind -- the glass following it while
+    // the popup is up -- takes over from the last one rather than cutting to
+    // it: through frosted glass, the screen changing is a change of light.
     LaunchedEffect(glassBackdrop) {
-        if (glassBackdrop == null) {
+        val incoming = glassBackdrop
+        val outgoing = stage.backdrop
+        if (incoming == null) {
+            stage.backdrop = null
+            stage.previousBackdrop = null
             stage.backdropIn.snapTo(0f)
-        } else if (stage.appear.value <= 0f) {
-            stage.backdropIn.snapTo(1f)
+        } else if (outgoing == null) {
+            stage.backdrop = incoming
+            if (stage.appear.value <= 0f) {
+                stage.backdropIn.snapTo(1f)
+            } else {
+                // element:  the screen seen through the glass.
+                // model:    -- opacity is not an object.
+                // token:    MotionTokens.Effects.default.
+                // property: alpha, in.
+                stage.backdropIn.animateTo(1f, MotionTokens.Effects.default())
+            }
         } else {
-            // element:  the screen seen through the glass.
+            stage.previousBackdrop = outgoing
+            stage.backdrop = incoming
+            stage.backdropBlend.snapTo(0f)
+            // element:  the screen seen through the glass, a moment later.
             // model:    -- opacity is not an object.
             // token:    MotionTokens.Effects.default.
-            // property: alpha, in.
-            stage.backdropIn.animateTo(1f, MotionTokens.Effects.default())
+            // property: alpha of the fresher capture over the last one.
+            stage.backdropBlend.animateTo(1f, MotionTokens.Effects.default())
+            stage.previousBackdrop = null
         }
     }
 
@@ -859,12 +877,14 @@ internal fun OverlayScene(
         },
         LocalAmbientEnter provides remember(stage) { { stage.settling.value } },
         LocalRowCascade provides stage.cascade,
-        LocalGlassBackdrop provides remember(stage, glassBackdrop, frame) {
-            if (glassBackdrop == null || frame == null) {
+        LocalGlassBackdrop provides remember(stage, frame) {
+            if (frame == null) {
                 null
             } else {
                 GlassBackdropSource(
-                    backdrop = glassBackdrop,
+                    current = { stage.backdrop },
+                    previous = { stage.previousBackdrop },
+                    blend = { stage.backdropBlend.value },
                     // The capture is of the whole display, and the window is
                     // the whole screen: it lies exactly where the display does
                     // in the window's own coordinates.

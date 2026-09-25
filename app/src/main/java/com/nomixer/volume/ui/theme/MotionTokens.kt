@@ -91,7 +91,9 @@ import androidx.compose.ui.graphics.Color
  * | Brand dot           | punctuation           | [Spatial.knock]             | uniform scale, never from 0           |
  * | Glass backdrop      | --                    | [Effects.default]           | alpha: the screen captured behind the |
  * |                     |                       |                             | glass, only when it lands after the   |
- * |                     |                       |                             | arrival -- otherwise it is simply there |
+ * |                     |                       |                             | arrival -- otherwise it is simply     |
+ * |                     |                       |                             | there -- and a fresher capture of it  |
+ * |                     |                       |                             | over the last, while the popup is up  |
  * | Glass highlight     | a pane that is still, | [Ambient.enter], via        | light angle and brightness --         |
  * |                     | under a light settling | [LocalAmbientEnter]        | never the pane                        |
  * | Atmosphere field    | a field of particles  | [Ambient.enter], via        | shader rotation, centre offset,       |

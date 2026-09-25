@@ -1485,6 +1485,24 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-25 — 1.0.78
+
+- **The glass follows the screen behind it.** It used to show the screen
+  as it was the instant the popup appeared. Now, while the popup is up, the
+  service looks at the app window behind it a couple of times a second --
+  that window alone, never the whole display, so the popup is never in its
+  own glass -- and the glass eases over to each fresher look: a scrolling
+  list or a playing video shows through a moment later, as it would through
+  frosted glass. Kept light: each look is shrunk and blurred at a sixteenth
+  of the screen's size, off the main thread, one at a time; a look that
+  shows nothing new is dropped before it is blurred; and it only happens
+  while the popup is on screen. Needs Android 14 (window captures don't
+  exist before it); earlier versions keep the still from when the popup
+  appeared.
+- **No more grain on the glass.** It stood in for a blurred screen before
+  there was one to blur; over the real thing it was only texture in the
+  way. The noise color setting is gone with it.
+
 ## 2026-09-25 — 1.0.77
 
 - **Found why none of the service's declaration ever reached Android 12+.**

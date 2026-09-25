@@ -78,21 +78,11 @@ const val ATMOSPHERE_GRAIN_SIZE_MAX = 1f
 const val ATMOSPHERE_GRAIN_SIZE_DEFAULT = 0.55f
 
 /**
- * [UiPreferences.glassBlurStrength]'s own 0..1 range, scaled up to an
- * actual blur radius in dp for the glass panels' real (RenderEffect) blur
- * -- a light touch at the low end (the grain alone already reads as frost
- * once it's blurred at all) up to a proper soft frost at the top, without
- * ever going so far it smears the panel's edges into its surroundings.
- */
-const val GLASS_BLUR_RADIUS_MAX_DP = 18f
-
-/**
  * [UiPreferences.glassBlurStrength]'s own 0..1 range, scaled up to the blur
  * radius of the screen captured behind the glass (see
- * com.nomixer.volume.compose.buildGlassBackdrop). Wider than
- * [GLASS_BLUR_RADIUS_MAX_DP]: this one blurs a real screen of text and
- * images, which takes a good deal more before it reads as frosted rather
- * than smudged.
+ * com.nomixer.volume.compose.buildGlassBackdrop). Wide on purpose: a real
+ * screen of text and images takes a good deal of blur before it reads as
+ * frosted rather than smudged.
  */
 const val GLASS_BACKDROP_BLUR_MAX_DP = 40f
 
@@ -348,10 +338,8 @@ data class UiPreferences(
     val expandedMixerCentered: Boolean = false,
     /**
      * How strongly the glass panel is frosted, 0 (crisp) to 1 (a heavy soft
-     * frost): how blurred the screen captured behind it is (up to
-     * [GLASS_BACKDROP_BLUR_MAX_DP]) -- and, where there is no capture, how
-     * far its own grain spreads into a frosted veil (up to
-     * [GLASS_BLUR_RADIUS_MAX_DP]).
+     * frost): how blurred the screen captured behind it is, up to
+     * [GLASS_BACKDROP_BLUR_MAX_DP].
      */
     val glassBlurStrength: Float = 0.6f,
     /**
@@ -386,15 +374,6 @@ data class UiPreferences(
      * [glassLightAngle]. See [ATMOSPHERE_GRAIN_SIZE_MIN]/`_MAX`.
      */
     val atmosphereGrainSize: Float = ATMOSPHERE_GRAIN_SIZE_DEFAULT,
-    /**
-     * The glass noise layer's own color, alpha included: its opacity is
-     * this color's own, set with the color picker, and nothing else -- not
-     * the panel's tint, not a separate slider. `null` keeps the default
-     * (see `GLASS_NOISE_COLOR_DEFAULT`). Independent of every other color role here:
-     * this tints only the frosted grain sheen, never the tint underneath it
-     * (see [glassAlpha] and [activeBackgroundColor]).
-     */
-    val glassNoiseColor: Int? = null,
     /**
      * How the disc's tick ring shows the current level: `false` (default)
      * grows a landmark tick (with two shorter neighbours) at a fixed slot

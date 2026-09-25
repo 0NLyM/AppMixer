@@ -170,13 +170,11 @@ fun VolumeDisc(
      * the same name, and [GlassBackground]'s for why this needs a graphics
      * layer of its own rather than being just another Canvas draw call.
      */
-    blurRadius: Dp = 0.dp,
     /**
      * Dedicated color and transparency for the glass noise layer, ignored
      * unless [trackBackingGlass] -- see [GlassRingBackground]'s own
      * parameters of the same names.
      */
-    noiseColor: Color = GLASS_NOISE_COLOR_DEFAULT,
     /**
      * The small glyph above the reading. A composable slot rather than an
      * [androidx.compose.ui.graphics.vector.ImageVector], so the dial can be
@@ -296,11 +294,9 @@ fun VolumeDisc(
             GlassBackground(
                 shape = CircleShape,
                 baseColor = trackBackingColor,
-                blurRadius = blurRadius,
                 lightAngle = lightAngle,
                 lightWidth = lightWidth,
                 lightStrength = lightStrength,
-                noiseColor = noiseColor,
                 modifier = Modifier.size(knobDiameter)
             )
         }

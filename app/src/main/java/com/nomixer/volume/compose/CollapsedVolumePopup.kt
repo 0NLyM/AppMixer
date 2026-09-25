@@ -47,7 +47,6 @@ import androidx.compose.ui.unit.sp
 import com.nomixer.volume.R
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
-import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.POPUP_OFFSET_X_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupCenterContent
@@ -512,11 +511,9 @@ fun CollapsedVolumePopup(
             GlassBackground(
                 shape = panelShape,
                 baseColor = panelColor,
-                blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
                 lightAngle = beam.angle,
                 lightWidth = preferences.glassLightWidth,
                 lightStrength = beam.strength,
-                noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                 modifier = Modifier.matchParentSize()
             )
         }
@@ -745,8 +742,6 @@ fun CollapsedVolumePopup(
                         lightAngle = beam.angle,
                         lightWidth = preferences.glassLightWidth,
                         lightStrength = beam.strength,
-                        blurRadius = (preferences.glassBlurStrength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                        noiseColor = glassNoiseColorOf(preferences.glassNoiseColor),
                         icon = if (showIcon) {
                             {
                                 VolumeGlyph(

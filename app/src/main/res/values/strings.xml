@@ -68,7 +68,6 @@
     <string name="glass_light_angle">Light rotation</string>
     <string name="glass_light_width">Light width</string>
     <string name="glass_light_description">One beam of light crossing the glass: white light is added where it lands and the rim catches it at the same two points, so both read as the same light.</string>
-    <string name="glass_noise_color">Noise color</string>
     <string name="atmosphere_grain_intensity">Grain intensity</string>
     <string name="atmosphere_grain_size">Grain size</string>
     <string name="atmosphere_description">A field of colored grain, seeded from whatever app is underneath, that turns for a moment and settles into one fixed pattern behind the sliders. Always fully opaque, unlike Glass.</string>

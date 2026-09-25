@@ -1,7 +1,5 @@
 package com.nomixer.volume.compose
 
-import android.graphics.RuntimeShader
-import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -10,23 +8,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.LinearGradientShader
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.dp
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_DEFAULT
 import com.nomixer.volume.data.GLASS_LIGHT_WIDTH_DEFAULT
 import com.nomixer.volume.ui.theme.LocalAmbientEnter
@@ -34,7 +22,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
-/**
+/*
  * Glassmorphism for Glass mode's panel -- the single rendering path used
  * everywhere it paints a background (bar styles, the expanded mixer, the
  * disc's knob face), never touching the platform's cross-window blur and so
@@ -55,68 +43,18 @@ import kotlin.math.sin
  * Painted in order, behind the panel's own content:
  * 0. The screen behind the overlay, blurred ([glassBackdrop]), lined up with
  *    the screen however the pane is moving -- where there is a capture of
- *    it. Without one there is nothing behind the pane but what the grain
- *    frosts.
+ *    it (the overlay only; the settings preview has nothing behind it).
  * 1. An even sheet of the panel's own base color -- the same opacity
  *    everywhere, so nothing about the tint alone depends on what's behind
  *    it.
  * 2. The beam itself ([glassBeamBrush]), white light added across the face.
- * 3. AGSL grain ([glassNoiseBrush]) -- a lattice of evenly spaced grains
- *    at the opacity of the noise colour the user picked and nothing else.
- *    Over a backdrop the grains stay fine; without one the glass's blur is
- *    worked out *on the grains*, in the shader: it spreads and softens each
- *    one until they run together into a frosted, mottled veil -- the pane's
- *    stand-in for a blurred screen. It used to be a real blur over the whole
- *    layer, which
- *    averaged the grains down to nothing -- the more blur, the clearer the
- *    glass, exactly backwards -- and had nothing else to blur: the tint and
- *    the beam are already smooth.
- * 4. The same beam again along the shape's own edge ([glassEdgeLightBrush]),
+ * 3. The same beam again along the shape's own edge ([glassEdgeLightBrush]),
  *    brightest exactly where the face's lit band reaches the rim.
+ *
+ * There is no grain any more. It stood in for a blurred screen while there
+ * was no capture of one to blur; over the real thing it was only texture in
+ * the way.
  */
-private const val NOISE_SHADER_SRC = """
-    uniform float4 noiseColor;
-    uniform float pitch;
-    uniform float radius;
-    uniform float softness;
-
-    float hash(float2 p) {
-        return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
-    }
-
-    half4 main(float2 fragCoord) {
-        // A regular lattice: one grain at the middle of every cell, every
-        // grain the same distance from its neighbours. Each grain is a
-        // disc [radius] across with an edge [softness] wide -- the blur is
-        // worked out here, on the grains themselves, rather than by
-        // blurring the layer they are drawn in, which averaged them down to
-        // a faint even wash and left the glass looking clear. Blurred here,
-        // a grain spreads *and keeps its strength*: at a low blur they are
-        // soft dots with clear glass between them, and as the blur rises
-        // they run together into a milky, gently mottled veil that hides
-        // what is behind it the way frosted glass does -- without ever
-        // looking at what is behind it.
-        float2 cell = floor(fragCoord / pitch);
-        float clear = 1.0;
-        for (int y = -1; y <= 1; y++) {
-            for (int x = -1; x <= 1; x++) {
-                float2 c = cell + float2(float(x), float(y));
-                float dist = length(fragCoord - (c + 0.5) * pitch);
-                float coverage = 1.0 - smoothstep(radius - softness, radius + softness, dist);
-                // Each grain a little stronger or weaker than the next, so
-                // the veil it melts into is mottled rather than flat.
-                float strength = 0.55 + 0.45 * hash(c);
-                clear *= 1.0 - coverage * strength;
-            }
-        }
-
-        // The grains' own opacity is the colour's own alpha, and nothing
-        // else: not the panel's tint, not a second slider.
-        float a = (1.0 - clear) * noiseColor.a;
-        return half4(noiseColor.rgb * a, a);
-    }
-"""
-
 /**
  * A gradient laid along the light beam's own axis rather than the panel's
  * diagonal, so [glassBeamBrush] and [glassEdgeLightBrush] can be turned
@@ -313,87 +251,8 @@ fun glassEdgeLightBrush(
 )
 
 /**
- * The grain's colour when the user hasn't picked one: white, at a strength
- * that shows as texture rather than as a haze over the tint.
- */
-val GLASS_NOISE_COLOR_DEFAULT = Color.White.copy(alpha = 0.32f)
-
-/** The noise colour to paint with: the user's own, alpha included, or [GLASS_NOISE_COLOR_DEFAULT]. */
-fun glassNoiseColorOf(argb: Int?): Color = argb?.let { Color(it) } ?: GLASS_NOISE_COLOR_DEFAULT
-
-/** Distance between two grains, and how big each is with no blur at all, in dp. */
-private const val NOISE_PITCH_DP = 7f
-private const val NOISE_RADIUS_DP = 1.5f
-
-/**
- * How much of the glass's blur radius goes into spreading each grain, and
- * how much into softening its edge. Both capped against the lattice's own
- * pitch: past that the grains have already run into one veil, and a grain
- * reaching further than a cell and a half would need the shader to look
- * further than its nine nearest grains.
- */
-private const val NOISE_SPREAD_PER_BLUR = 0.3f
-private const val NOISE_SOFTEN_PER_BLUR = 0.35f
-private const val NOISE_RADIUS_MAX_PITCHES = 0.9f
-private const val NOISE_SOFTNESS_MAX_PITCHES = 0.6f
-
-/** The sharpest a grain's edge ever is, in px: a pixel of antialiasing. */
-private const val NOISE_EDGE_MIN_PX = 0.6f
-
-// Compiling AGSL is far too expensive to redo on every frame of a volume
-// drag, so the last one is kept and handed back until something asks for a
-// different colour, density or blur. Single-window app, only ever touched
-// from the UI thread.
-private var noiseBrushKey: Triple<Color, Float, Float>? = null
-private var noiseBrush: Brush? = null
-private var noiseBrushBroken = false
-
-/**
- * The AGSL grain layer -- draw it right on top of the tint and
- * [glassBeamBrush]. [color] is the grain's own colour *and* opacity, from
- * the colour picker; [density] is the display's, so the lattice is the same
- * physical size on every screen; [blurPx] is the glass's blur, which melts
- * the grains into a frosted veil (see the shader). Null if [RuntimeShader]
- * can't be built on this device -- a caller must treat that as "skip the
- * grain", never let it take the base tint down with it.
- */
-fun glassNoiseBrush(color: Color, density: Float, blurPx: Float = 0f): Brush? {
-    if (noiseBrushBroken || color.alpha <= 0f) {
-        return null
-    }
-    val key = Triple(color, density, blurPx)
-    val cached = noiseBrush
-    if (cached != null && noiseBrushKey == key) {
-        return cached
-    }
-
-    return try {
-        val brush = ShaderBrush(
-            RuntimeShader(NOISE_SHADER_SRC).apply {
-                setFloatUniform("noiseColor", color.red, color.green, color.blue, color.alpha)
-                val pitch = NOISE_PITCH_DP * density
-                val radius = (NOISE_RADIUS_DP * density + NOISE_SPREAD_PER_BLUR * blurPx)
-                    .coerceAtMost(NOISE_RADIUS_MAX_PITCHES * pitch)
-                val softness = (NOISE_SOFTEN_PER_BLUR * blurPx)
-                    .coerceIn(NOISE_EDGE_MIN_PX, NOISE_SOFTNESS_MAX_PITCHES * pitch)
-                setFloatUniform("pitch", pitch)
-                setFloatUniform("radius", radius)
-                setFloatUniform("softness", softness)
-            }
-        )
-        noiseBrushKey = key
-        noiseBrush = brush
-        brush
-    } catch (e: Throwable) {
-        Log.w("GlassScrim", "Glass noise shader unavailable on this device, dropping the grain layer", e)
-        noiseBrushBroken = true
-        null
-    }
-}
-
-/**
  * The glass panel's background alone -- the blurred screen behind it (from
- * [LocalGlassBackdrop], where there is one), beam-lit tint and grain -- as a
+ * [LocalGlassBackdrop], where there is one) and the beam-lit tint -- as a
  * plain empty [Box] meant to sit *behind* a panel's
  * real content in the same [Box] stack (see CollapsedVolumePopup.kt and
  * OverlayScene.kt's own call sites).
@@ -408,27 +267,14 @@ fun GlassBackground(
     shape: Shape,
     baseColor: Color,
     modifier: Modifier = Modifier,
-    /**
-     * How frosted the glass is. Over a captured backdrop the backdrop itself
-     * was blurred this much when it was captured (see buildGlassBackdrop);
-     * without one, it is how far the grains spread and soften -- see
-     * [glassNoiseBrush].
-     */
-    blurRadius: Dp = 0.dp,
     lightAngle: Float = GLASS_LIGHT_ANGLE_DEFAULT,
     lightWidth: Float = GLASS_LIGHT_WIDTH_DEFAULT,
     /** The beam's brightness for this frame -- see [rememberGlassBeam]. */
-    lightStrength: Float = 1f,
-    /** The grain's colour and, through its alpha, its opacity -- see [glassNoiseBrush]. */
-    noiseColor: Color = GLASS_NOISE_COLOR_DEFAULT
+    lightStrength: Float = 1f
 ) {
     // The screen behind the overlay, where there is one (see
-    // LocalGlassBackdrop): then the glass is a pane over it, blurred, and the
-    // grain goes back to being fine grain. Without one -- the settings
-    // preview, or a capture the platform refused -- the grain frosts itself
-    // instead.
+    // LocalGlassBackdrop); the tint alone where there isn't.
     val backdrop = LocalGlassBackdrop.current
-    val grainBlur = if (backdrop != null) 0.dp else blurRadius
     Box(
         modifier
             .clip(shape)
@@ -438,15 +284,6 @@ fun GlassBackground(
                 onDrawBehind {
                     drawRect(baseColor)
                     drawRect(beam)
-                    // Wrapped on its own: a broken noise shader (see
-                    // glassNoiseBrush) must never take the tint down with
-                    // it -- that shared fate is exactly what made the whole
-                    // panel invisible instead of just plainer than intended.
-                    try {
-                        glassNoiseBrush(noiseColor, density, grainBlur.toPx())?.let { drawRect(it) }
-                    } catch (e: Throwable) {
-                        Log.w("GlassScrim", "Glass noise draw failed", e)
-                    }
                 }
             }
     )

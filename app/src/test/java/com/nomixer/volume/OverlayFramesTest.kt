@@ -10,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,17 +32,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.nomixer.volume.compose.CollapsedVolumePopup
-import com.nomixer.volume.compose.GLASS_NOISE_COLOR_DEFAULT
 import com.nomixer.volume.compose.GlassBackdrop
-import com.nomixer.volume.compose.glassBackdropFrom
-import com.nomixer.volume.compose.GlassBackground
+import com.nomixer.volume.compose.GlassBackdropCompositor
 import com.nomixer.volume.compose.cascadeRow
 import com.nomixer.volume.data.GLASS_BACKDROP_BLUR_MAX_DP
-import com.nomixer.volume.data.GLASS_BLUR_RADIUS_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupStyle
 import com.nomixer.volume.data.UiPreferences
-import com.nomixer.volume.data.paintedPanelAlpha
 import com.nomixer.volume.ui.theme.NoMixerTheme
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -110,6 +104,9 @@ class OverlayFramesTest {
         // takes it: the app alone, before anything of the popup is up.
         var backdrop by mutableStateOf<GlassBackdrop?>(null)
         var captured by mutableStateOf(false)
+        // The app behind, scrolled on halfway through the opening, to film
+        // the glass following it.
+        var scrolled by mutableStateOf(false)
         var hidden = false
         var expand: (() -> Unit)? = null
         rule.mainClock.autoAdvance = false
@@ -120,7 +117,7 @@ class OverlayFramesTest {
                     val width = with(density) { maxWidth.roundToPx() }
                     val height = with(density) { maxHeight.roundToPx() }
                     val audio = LocalContext.current.getSystemService(AudioManager::class.java)
-                    SomeApp()
+                    SomeApp(scrolled)
                     if (captured) OverlayScene(
                         preferences = preferences,
                         visible = visible,
@@ -149,7 +146,18 @@ class OverlayFramesTest {
         }
         rule.mainClock.advanceTimeBy(FRAME_STEP_MILLIS)
         val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * rule.density.density
-        backdrop = glassBackdropFrom(snapshot(), blurPx)
+        val compositor = GlassBackdropCompositor(blurPx)
+        val appAsItWas = snapshot()
+        // What the service's capture of the app will look like once it has
+        // scrolled: the same picture, moved down as far as the scroll moves it.
+        val appScrolled = Bitmap.createBitmap(appAsItWas.width, appAsItWas.height, Bitmap.Config.ARGB_8888).also {
+            val shift = with(rule.density) { (SCROLL_TOP - UNSCROLLED_TOP).toPx() }
+            android.graphics.Canvas(it).apply {
+                drawBitmap(appAsItWas, 0f, 0f, null)
+                drawBitmap(appAsItWas, 0f, shift, null)
+            }
+        }
+        backdrop = compositor.display(appAsItWas)
         captured = true
         var time = 0L
         fun shoot(phase: String, millis: Long, stop: () -> Boolean = { false }) {
@@ -164,7 +172,15 @@ class OverlayFramesTest {
         }
         shoot("1enter", 1100)
         rule.runOnUiThread { expand!!.invoke() }
-        shoot("2open", 1500)
+        shoot("2open", 700)
+        // The app behind scrolls, and the service's next look at it lands.
+        rule.runOnUiThread { scrolled = true }
+        val live = compositor.window(
+            appScrolled,
+            Rect(0, 0, appScrolled.width, appScrolled.height)
+        )
+        backdrop = live ?: backdrop
+        shoot("2open", 800)
         visible = false
         shoot("3close", 3000) { hidden }
     }
@@ -185,51 +201,24 @@ class OverlayFramesTest {
         UiPreferences(verticalBarAnchor = PopupAnchor.Center, expandedMixerCentered = true)
     )
 
-    /** The glass at no blur, at the default and at the most, side by side. */
-    @Test fun glass() {
-        val preferences = UiPreferences()
-        val dir = File(out, "glass").apply { deleteRecursively(); mkdirs() }
-        rule.mainClock.autoAdvance = false
-        rule.setContent {
-            NoMixerTheme(preferences = preferences, applyColorOverrides = true) {
-                Box(Modifier.fillMaxSize()) {
-                    SomeApp()
-                    Row(Modifier.padding(top = 120.dp, start = 12.dp)) {
-                        listOf(0f, preferences.glassBlurStrength, 1f).forEach { strength ->
-                            Box(Modifier.padding(end = 10.dp).size(width = 116.dp, height = 420.dp)) {
-                                GlassBackground(
-                                    shape = RoundedCornerShape(28.dp),
-                                    baseColor = MaterialTheme.colorScheme.background
-                                        .copy(alpha = preferences.paintedPanelAlpha()),
-                                    blurRadius = (strength * GLASS_BLUR_RADIUS_MAX_DP).dp,
-                                    noiseColor = GLASS_NOISE_COLOR_DEFAULT,
-                                    modifier = Modifier.matchParentSize()
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        rule.mainClock.advanceTimeBy(2000)
-        save(snapshot(), File(dir, "glass.png"))
-    }
-
     private companion object {
         /** Two frames at 60 Hz. */
         const val FRAME_STEP_MILLIS = 32L
     }
 }
 
+private val UNSCROLLED_TOP = 24.dp
+private val SCROLL_TOP = 180.dp
+
 /** Something busy to sit the overlay on: colour, text and blocks for the glass to be seen against. */
 @Composable
-private fun SomeApp() {
+private fun SomeApp(scrolled: Boolean = false) {
     Box(
         Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0xFF1B3A5C), Color(0xFFE08A3C), Color(0xFF2E7D5B))))
     ) {
-        Column(Modifier.padding(24.dp)) {
+        Column(Modifier.padding(start = 24.dp, end = 24.dp, top = if (scrolled) SCROLL_TOP else UNSCROLLED_TOP)) {
             repeat(14) { i ->
                 Text(
                     "Line $i  The quick brown fox jumps over the lazy dog",
