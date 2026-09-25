@@ -1485,6 +1485,18 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-25 — 1.0.76
+
+- **NoMixer has its own on/off switch in the system's accessibility
+  settings again.** The service asked for the accessibility button, and
+  since Android 12 a service that does gets only a "shortcut" switch on its
+  settings page, never a "Use" switch of its own -- so it could only be
+  turned on by the app itself and never switched off and on by hand, which
+  is what re-reading its declaration (and with it the glass's screenshot
+  capability) takes. It no longer asks for the button: the page now shows
+  "Use NoMixer" like any other service. The volume keys open the popup as
+  before; only the on-screen accessibility button no longer does.
+
 ## 2026-09-25 — 1.0.75
 
 - **Restart the accessibility service from the app.** 1.0.74's glass needs

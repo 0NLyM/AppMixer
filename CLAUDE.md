@@ -199,8 +199,11 @@ The system reads a service's capabilities only when it binds it, and an app
 update does not rebind: a service first switched on by a version without
 `canTakeScreenshot` keeps running without it. The main screen then offers
 **Restart accessibility service** (`restartAccessibilityService` in
-`MainActivity.kt`), because some systems show no switch for the service in
-their own settings.
+`MainActivity.kt`), and the system's own accessibility settings have a
+"Use NoMixer" switch for it. Keep that switch: do not request the
+accessibility button (`flagRequestAccessibilityButton`) -- since Android 12
+a service that does gets only a shortcut on its settings page, and can
+never be switched off and on by hand.
 
 Where there is no capture -- the settings preview, or a platform that
 refuses one (the reason goes to the diagnostic log) -- the glass frosts its

@@ -1,7 +1,5 @@
 package com.nomixer.volume
 
-import android.accessibilityservice.AccessibilityButtonController
-import android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
@@ -682,16 +680,11 @@ class Service : AccessibilityService() {
         val application = super.getApplication() as MyApplication
         manager = application.manager
 
-        accessibilityButtonController.registerAccessibilityButtonCallback(object :
-            AccessibilityButtonCallback() {
-            override fun onClicked(controller: AccessibilityButtonController?) {
-                if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
-                    showView()
-                } else {
-                    warnShizukuDisconnected()
-                }
-            }
-        })
+        // No accessibility-button callback: the service doesn't request the
+        // button (see accessibility_service_config.xml). A service that does
+        // gets no on/off switch of its own in the system's accessibility
+        // settings -- only a shortcut -- so it could never be switched off
+        // and on by hand, which is exactly what rebinding it takes.
 
         registerReceiver(broadcastReceiver, IntentFilter(ACTION_SHOW_VIEW), RECEIVER_NOT_EXPORTED)
 
