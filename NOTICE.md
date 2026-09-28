@@ -1485,6 +1485,19 @@ downside). No code changes were needed, only the `KEYSTORE_FILE` /
   threshold. Silent when the device has no vibrator, and respects the
   user's own haptics setting.
 
+## 2026-09-28 — 1.0.83
+
+- **The glass keeps its blur with an app in picture-in-picture.** A
+  picture-in-picture window stops the system's blur being drawn without the
+  platform saying so, and the glass was left as its tint. With one on screen
+  the glass now uses the app's own blur, and when the system's blur goes
+  away under a popup that is already up (picture-in-picture starting,
+  battery saver coming on) it switches over there and then, from captures of
+  the app behind. The picture-in-picture window, the status bar and the
+  keyboard are no longer painted over by the app underneath them.
+- **No more lens.** The glass shows the screen behind at its own scale; the
+  lens switch and zoom slider are gone.
+
 ## 2026-09-25 — 1.0.82
 
 - **The system's own blur, when battery saver is off.** With the platform's

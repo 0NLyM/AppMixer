@@ -119,12 +119,6 @@ class GlassBackdropSource(
     /** How much of it shows at all, 0 to 1. */
     val presence: () -> Float,
     /**
-     * How big the screen behind shows through each pane, about its middle:
-     * 1 is a flat pane, below 1 a thick one pulling it in, above 1 a
-     * magnifier (see UiPreferences.glassLensZoom).
-     */
-    val lensScale: Float,
-    /**
      * The system's own blur behind the glass instead of the capture, at this
      * radius in px -- or 0 for the app's own. See [systemGlassBlur].
      */
@@ -156,7 +150,6 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?, shape: Shape):
         return systemGlassBlur(source.systemBlurRadius, shape)
     }
     val placed = remember { PlacedCoordinates() }
-    val lens = source.lensScale
     return this
         .onPlaced { placed.coordinates = it }
         .drawBehind {
@@ -172,15 +165,7 @@ internal fun Modifier.glassBackdrop(source: GlassBackdropSource?, shape: Shape):
             }
             val rootToLocal = Matrix()
             coordinates.transformFrom(coordinates.findRootCoordinates(), rootToLocal)
-            withTransform({
-                // The lens: the screen behind drawn a touch smaller (or
-                // larger) about the pane's own middle, so the pane reads as
-                // a thick piece of glass rather than a hole cut in the popup.
-                if (lens != 1f) {
-                    scale(lens, lens, pivot = center)
-                }
-                transform(rootToLocal)
-            }) {
+            withTransform({ transform(rootToLocal) }) {
                 if (previous != null && blend < 1f) {
                     drawBackdrop(previous, source.bounds, presence, previous.scroll - position)
                 }
@@ -198,10 +183,10 @@ private fun DrawScope.drawBackdrop(backdrop: GlassBackdrop, bounds: Rect, alpha:
         translate(bounds.left + shift.x, bounds.top + shift.y)
         scale(bounds.width / image.width, bounds.height / image.height, pivot = Offset.Zero)
     }) {
-        // As a clamped shader rather than a bitmap drawn to its bounds: the
-        // lens pulls the screen's own edge in a little from a pane that
-        // reaches the side of the display, and clamped, what shows there is
-        // the edge of the screen carried on -- not a strip of nothing.
+        // As a clamped shader rather than a bitmap drawn to its bounds: a
+        // capture glided along a scroll leaves its own edge short of the
+        // screen's, and clamped, what shows there is the edge of the screen
+        // carried on -- not a strip of nothing.
         // Filtered bilinearly: the image is a fraction of the screen's size,
         // and the smoothing of drawing it back up is part of the blur.
         drawRect(

@@ -222,10 +222,6 @@ class OverlayFramesTest {
 
     @Test fun verticalBar() = film("vbar", UiPreferences(popupStyle = PopupStyle.VerticalBar))
 
-    @Test fun lensPlus() = film("lens-plus", UiPreferences(popupStyle = PopupStyle.VerticalBar, glassLensZoom = 0.01f))
-
-    @Test fun lensMinus() = film("lens-minus", UiPreferences(popupStyle = PopupStyle.VerticalBar, glassLensZoom = -0.01f))
-
     @Test fun horizontalBar() = film("hbar", UiPreferences(popupStyle = PopupStyle.HorizontalBar))
 
     @Test fun horizontalBarTop() = film(

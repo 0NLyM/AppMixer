@@ -934,7 +934,7 @@ internal fun OverlayScene(
         },
         LocalAmbientEnter provides remember(stage) { { stage.settling.value } },
         LocalRowCascade provides stage.cascade,
-        LocalGlassBackdrop provides remember(stage, frame, systemBlurRadiusPx, preferences.glassLensEnabled, preferences.glassLensZoom) {
+        LocalGlassBackdrop provides remember(stage, frame, systemBlurRadiusPx) {
             if (frame == null) {
                 null
             } else {
@@ -953,7 +953,6 @@ internal fun OverlayScene(
                         frame.display.bottom.toFloat()
                     ),
                     presence = { stage.backdropIn.value },
-                    lensScale = if (preferences.glassLensEnabled) 1f + preferences.glassLensZoom else 1f,
                     systemBlurRadius = systemBlurRadiusPx,
                     // Everything that carries a pane of glass across the
                     // screen: the arrival (the disc's slide and turn, a bar's

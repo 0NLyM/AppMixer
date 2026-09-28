@@ -243,9 +243,8 @@ towards the middle of the screen, with the first capture showing round it
 (`GlassBackdropCompositorTest`). Every pane of glass draws it behind its
 tint, lined up with the screen through the whole root-to-node transform, so
 it stays put on the screen while a panel travels or the disc turns over it
--- through a lens the user sets (`glassLensEnabled`, `glassLensZoom`: from a
-percent smaller to a percent larger about the pane's middle; the system's
-blur has none). The arrival waits for the first capture, briefly.
+-- flat, at the screen's own scale: no lens, which was tried and taken out.
+The arrival waits for the first capture, briefly.
 
 The system reads a service's capabilities only when it binds it, and an app
 update does not rebind: a service first switched on by a version without
