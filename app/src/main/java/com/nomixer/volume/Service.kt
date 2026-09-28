@@ -260,11 +260,51 @@ class Service : AccessibilityService() {
         systemBlurAvailable = enabled && SYSTEM_BLUR_SUPPORTED
         DiagnosticLog.log("Glass", "system blur ${if (systemBlurAvailable) "on" else "off"}")
         // Switched off under a popup that was using it (battery saver
-        // coming on): the glass is its tint alone until the next popup,
-        // which captures the screen instead. A capture now would have the
-        // popup itself in it.
+        // coming on, a video going into picture-in-picture): the glass goes
+        // over to the app's own blur there and then.
         if (!systemBlurAvailable && glassSystemBlurPx > 0) {
-            glassSystemBlurPx = 0
+            fallBackToWindowCaptures("system blur switched off")
+        }
+    }
+
+    /**
+     * Whether an app is in picture-in-picture on screen. The system's blur
+     * goes with it -- a picture-in-picture video takes the screen's
+     * composition over, and the blur behind the overlay simply stops being
+     * drawn, without the platform saying so -- so the glass is the app's own
+     * blur while there is one.
+     */
+    private fun pictureInPictureOnScreen(): Boolean =
+        runCatching { windows.any { it.isInPictureInPictureMode } }.getOrDefault(false)
+
+    /**
+     * Takes the glass of a popup that is already up over from the system's
+     * blur to the app's own, from captures of the app window behind it: the
+     * screen can't be captured whole any more, with the popup on it. Android
+     * 14 and later; before that the glass is its tint alone until the next
+     * popup.
+     */
+    private fun fallBackToWindowCaptures(reason: String) {
+        glassSystemBlurPx = 0
+        DiagnosticLog.log("Glass", "$reason: the app's own blur from here")
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || !viewVisible) {
+            return
+        }
+        val request = glassBackdropRequest
+        val blurPx = manager.uiPreferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP *
+            resources.displayMetrics.density
+        val screen = Rect(windowManager.currentWindowMetrics.bounds)
+        val startedAt = SystemClock.uptimeMillis()
+        glassBackdropExecutor.execute {
+            val compositor = GlassBackdropCompositor(blurPx, screen.width(), screen.height(), glassShrinker)
+            compositor.blank(startedAt)
+            handler.post {
+                if (request == glassBackdropRequest && viewVisible) {
+                    glassCompositor = compositor
+                    glassRefreshStartedAt = 0L
+                    scheduleGlassRefresh(request)
+                }
+            }
         }
     }
 
@@ -331,7 +371,11 @@ class Service : AccessibilityService() {
         val blurPx = preferences.glassBlurStrength * GLASS_BACKDROP_BLUR_MAX_DP * resources.displayMetrics.density
         // The system's own blur when it is there: live, and nothing to
         // capture, read back or blur -- so nothing to do here at all.
-        if (systemBlurAvailable && !powerManager.isPowerSaveMode) {
+        val pictureInPicture = systemBlurAvailable && pictureInPictureOnScreen()
+        if (pictureInPicture) {
+            DiagnosticLog.log("Glass", "an app is in picture-in-picture: the app's own blur")
+        }
+        if (systemBlurAvailable && !powerManager.isPowerSaveMode && !pictureInPicture) {
             glassBackdrop = null
             glassCompositor = null
             glassBackdropPending = false
@@ -431,7 +475,7 @@ class Service : AccessibilityService() {
     private fun scheduleGlassRefresh(request: Int) {
         handler.removeCallbacks(glassRefresh)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-            request == glassBackdropRequest && viewVisible && glassBackdrop != null
+            request == glassBackdropRequest && viewVisible && glassCompositor != null
         ) {
             val since = SystemClock.uptimeMillis() - glassRefreshStartedAt
             handler.postDelayed(glassRefresh, (GLASS_REFRESH_MS - since).coerceIn(0L, GLASS_REFRESH_MS))
@@ -462,16 +506,28 @@ class Service : AccessibilityService() {
     private fun refreshGlassBackdrop() {
         val request = glassBackdropRequest
         val compositor = glassCompositor
-        if (!viewVisible || glassBackdrop == null || compositor == null) {
+        if (!viewVisible || compositor == null) {
             return
         }
-        val appWindows = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        // The app the popup is over: not one in picture-in-picture, which
+        // sits over it in a corner. Everything above the app's window (the
+        // listing is top first) -- that small window, the status bar, a
+        // keyboard -- keeps what the first capture had there instead of being
+        // painted over by the app's content underneath it. Never the overlay's
+        // own window, which is above everything and is not on the glass.
+        val onScreen = windows
+        val appWindows = onScreen.filter {
+            it.type == AccessibilityWindowInfo.TYPE_APPLICATION && !it.isInPictureInPictureMode
+        }
         val window = appWindows.firstOrNull { it.isActive } ?: appWindows.firstOrNull()
         if (window == null) {
             scheduleGlassRefresh(request)
             return
         }
         val bounds = Rect().also(window::getBoundsInScreen)
+        val covered = onScreen.takeWhile { it.id != window.id }
+            .filter { it.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY }
+            .map { Rect().also(it::getBoundsInScreen) }
         val capturedAt = SystemClock.uptimeMillis()
         glassRefreshStartedAt = capturedAt
         val firstLook = glassLookedAtFor != request
@@ -490,7 +546,7 @@ class Service : AccessibilityService() {
                         )
                     }
                     val updated = try {
-                        compositor.window(result.hardwareBuffer, result.colorSpace, bounds, capturedAt)
+                        compositor.window(result.hardwareBuffer, result.colorSpace, bounds, capturedAt, covered)
                     } catch (e: Throwable) {
                         Log.w(TAG, "Can't lay the window capture onto the glass backdrop", e)
                         null
@@ -919,6 +975,14 @@ class Service : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // An app going into picture-in-picture under a popup whose glass is
+        // the system's blur: that blur stops being drawn (see
+        // pictureInPictureOnScreen), so the glass goes over to the app's own.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED && glassSystemBlurPx > 0 &&
+            pictureInPictureOnScreen()
+        ) {
+            fallBackToWindowCaptures("an app went into picture-in-picture")
+        }
     }
 
     override fun onInterrupt() {

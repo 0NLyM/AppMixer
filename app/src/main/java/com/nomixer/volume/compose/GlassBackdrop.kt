@@ -301,21 +301,44 @@ class GlassBackdropCompositor(
         readBack(buffer, colorSpace)?.let { display(it, capturedAt) }
 
     /**
+     * Nothing as the base, at [capturedAt]: for a popup already up, whose
+     * screen can't be captured whole any more with the popup on it. The
+     * window looks laid onto it are all the glass shows; round them it is
+     * its tint.
+     */
+    fun blank(capturedAt: Long = SystemClock.uptimeMillis()) {
+        base = Bitmap.createBitmap(
+            (screenWidth / factor).coerceAtLeast(1),
+            (screenHeight / factor).coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        lastWindow = null
+        lastLuma = null
+        lastResult = null
+        scrollX = 0f
+        scrollY = 0f
+        lastCapturedAt = capturedAt
+        lastAverage = Offset.Zero
+    }
+
+    /**
      * One window's capture, taken at [capturedAt] and lying at
-     * [boundsInScreen]: laid onto the base and blurred. Null when there is
-     * no base yet, or when the window looks exactly as it did last time and
-     * the glass has nothing to redraw and nowhere to move.
+     * [boundsInScreen]: laid onto the base -- except where [covered], by
+     * windows above it -- and blurred. Null when there is no base yet, or
+     * when the window looks exactly as it did last time and the glass has
+     * nothing to redraw and nowhere to move.
      */
     fun window(
         buffer: HardwareBuffer,
         colorSpace: ColorSpace?,
         boundsInScreen: android.graphics.Rect,
-        capturedAt: Long
+        capturedAt: Long,
+        covered: List<android.graphics.Rect> = emptyList()
     ): GlassBackdrop? {
         if (base == null) {
             return null
         }
-        return readBack(buffer, colorSpace)?.let { window(it, boundsInScreen, capturedAt) }
+        return readBack(buffer, colorSpace)?.let { window(it, boundsInScreen, capturedAt, covered = covered) }
     }
 
     /**
@@ -327,7 +350,8 @@ class GlassBackdropCompositor(
         full: Bitmap,
         boundsInScreen: android.graphics.Rect,
         capturedAt: Long,
-        now: Long = SystemClock.uptimeMillis()
+        now: Long = SystemClock.uptimeMillis(),
+        covered: List<android.graphics.Rect> = emptyList()
     ): GlassBackdrop? {
         val base = base ?: return null
         val small = shrinkCapture(full, windowContent(full.width, full.height, boundsInScreen)) ?: return null
@@ -349,17 +373,25 @@ class GlassBackdropCompositor(
         val drift = trackScroll(small, boundsInScreen)
         val scaleX = base.width.toFloat() / screenWidth.coerceAtLeast(1)
         val scaleY = base.height.toFloat() / screenHeight.coerceAtLeast(1)
-        Canvas(base).drawBitmap(
-            small,
-            null,
-            RectF(
-                boundsInScreen.left * scaleX,
-                boundsInScreen.top * scaleY,
-                boundsInScreen.right * scaleX,
-                boundsInScreen.bottom * scaleY
-            ),
-            WINDOW_PAINT
-        )
+        Canvas(base).apply {
+            // A window above this one -- an app in picture-in-picture, the
+            // status bar -- is not in its capture: what the app has under it
+            // must not be laid over what the first capture had there.
+            for (above in covered) {
+                clipOutRect(above.left * scaleX, above.top * scaleY, above.right * scaleX, above.bottom * scaleY)
+            }
+            drawBitmap(
+                small,
+                null,
+                RectF(
+                    boundsInScreen.left * scaleX,
+                    boundsInScreen.top * scaleY,
+                    boundsInScreen.right * scaleX,
+                    boundsInScreen.bottom * scaleY
+                ),
+                WINDOW_PAINT
+            )
+        }
         // How fast the content was going, and how fast it is slowing. The
         // drift is the average over the gap; a scroll that is dying away
         // (a fling coasting) was going slower by the end of it, and will be

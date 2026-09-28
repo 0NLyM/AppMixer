@@ -200,8 +200,14 @@ Battery saver switches the cross-window blur off -- the platform's rule, with
 no way round it -- and then the glass is **the app's own blur** of a capture
 (the service decides per popup: `systemBlurAvailable`, kept current by a
 cross-window-blur listener, and `PowerManager.isPowerSaveMode`; switched off
-under a popup already up, that popup's glass is its tint until the next
-one). Before the overlay's window is added, the service captures the
+under a popup already up, the glass goes over to the app's own blur from
+captures of the app window alone, `fallBackToWindowCaptures`). An app in
+picture-in-picture takes the system's blur away too, without the platform
+saying so: with one on screen (`pictureInPictureOnScreen`, checked per popup
+and on every windows-changed event) the glass is the app's own blur. Window
+captures are laid on clipped round every window above the app's (the
+picture-in-picture window, the status bar, a keyboard), which keep what the
+first capture had. Before the overlay's window is added, the service captures the
 whole screen through its own accessibility screenshot capability
 (`canTakeScreenshot`; `requestGlassBackdrop` in `Service.kt`); while the
 popup is up it captures just the app window behind it every
