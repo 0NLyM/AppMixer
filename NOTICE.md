@@ -2320,3 +2320,21 @@ rather than a layer on top of an earlier attempt.
 
 Further functional changes (new features, deeper customization options) will
 be appended to this file as they land.
+
+## 2026-10-03 — 1.0.84
+
+- **The compact popup shows the call's volume during a call.** While a call
+  is up, the volume keys already moved the call's stream, but the compact
+  popup kept showing media. It now follows the audio mode: the call's level
+  and steps, with the handset glyph.
+- **Per-app volumes stay where they are put.** Every save was read back as a
+  change and swapped in for the live preferences, so a volume dragged a
+  little further than the last write to land snapped back to an older value,
+  and changes made in between were never saved. The saved state is now read
+  once, writes go out in order and as the latest state, and starting twice
+  (Shizuku announcing itself twice) or changing a slider's visibility before
+  the load no longer discards what was saved.
+- **The bar's slider and its panel come and go as one.** The slider used to
+  fade and slide in after the panel had opened, and out before it shut. It
+  is now printed on the panel: it rides the panel's leading edge on the
+  panel's own spring and shows only where the panel is, in and out.

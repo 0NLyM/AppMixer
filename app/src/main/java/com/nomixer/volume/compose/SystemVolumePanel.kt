@@ -39,7 +39,7 @@ object SystemSliderIds {
     const val Notification = "notification"
 }
 
-private fun isCallMode(mode: Int): Boolean {
+internal fun isCallMode(mode: Int): Boolean {
     return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
 }
 

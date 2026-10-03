@@ -134,11 +134,13 @@ in composition). Prefer the draw phase.
 anything that phases its own motion off the arrival rather than starting a
 second animation. For the disc that is the single spring that slides it out
 of its edge (turning slightly as it comes) and takes it away at the end. A
-bar arrives in two steps, the mixer's close run backwards: its **panel**
-opens out of the screen edge -- a laid-out rectangle growing from nothing at
-the edge to its own size -- and only then does its **content** come out onto
-it; `LocalArrival` is that content's arrival. On the way out the content goes
-first and the panel shuts into the edge after it.
+bar arrives as one movement: its **panel** opens out of the screen edge -- a
+laid-out rectangle growing from nothing at the edge to its own size -- and
+its content (the slider, the ringer button) is printed on that panel rather
+than a second object: it rides the panel's leading edge and shows only where
+the panel is (clipped to it), on the panel's own spring, with no fade of its
+own. `LocalArrival` is that same spring. On the way out the panel shuts into
+the edge and takes its content in with it.
 
 The mixer opening is not an arrival -- the panel is already on screen,
 changing shape. The compact popup's content goes at once, where it is (a

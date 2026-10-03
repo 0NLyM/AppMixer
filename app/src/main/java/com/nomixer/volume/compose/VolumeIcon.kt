@@ -11,6 +11,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothAudio
+import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -84,12 +85,18 @@ fun VolumeGlyph(
     volume: Int,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    tint: Color = LocalContentColor.current
+    tint: Color = LocalContentColor.current,
+    /** The level is a call's: the handset in place of the speaker. */
+    inCall: Boolean = false
 ) {
     val bluetoothActive = rememberBluetoothAudioActive(audioManager)
 
     AnimatedVolumeIcon(
-        icon = if (bluetoothActive) Icons.Default.BluetoothAudio else Icons.Default.VolumeUp,
+        icon = when {
+            bluetoothActive -> Icons.Default.BluetoothAudio
+            inCall -> Icons.Default.PhoneInTalk
+            else -> Icons.Default.VolumeUp
+        },
         contentDescription = contentDescription,
         modifier = modifier.muteBar(rememberMuteBarExtent(barred = volume <= 0), tint),
         tint = tint

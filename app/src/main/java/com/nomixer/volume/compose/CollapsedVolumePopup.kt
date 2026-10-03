@@ -28,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.nomixer.volume.R
 import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_PANEL_MARGIN_DP
@@ -232,9 +234,9 @@ internal fun Modifier.expandOnSwipe(
 }
 
 /**
- * The compact popup shown when a volume key is pressed: media volume only,
- * in whichever shape the user picked, with a ringer-mode switch. Swiping it
- * inward opens the full per-app mixer.
+ * The compact popup shown when a volume key is pressed: media volume only --
+ * the call's own while a call is up -- in whichever shape the user picked,
+ * with a ringer-mode switch. Swiping it inward opens the full per-app mixer.
  */
 @Composable
 fun CollapsedVolumePopup(
@@ -258,8 +260,21 @@ fun CollapsedVolumePopup(
     drawPanel: Boolean = true
 ) {
     val context = LocalContext.current
-    var volume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
-    var maxVolume by remember { mutableFloatStateOf(0f) }
+    val executor = remember(context) { ContextCompat.getMainExecutor(context) }
+
+    // While a call is up, the keys (and so this popup) are about the call's
+    // own volume, not media's: the stream the platform would adjust, and the
+    // one a person on the phone wants to see.
+    var inCall by remember { mutableStateOf(isCallMode(audioManager.mode)) }
+    DisposableEffect(audioManager) {
+        val listener = AudioManager.OnModeChangedListener { mode -> inCall = isCallMode(mode) }
+        audioManager.addOnModeChangedListener(executor, listener)
+        onDispose { audioManager.removeOnModeChangedListener(listener) }
+    }
+    val streamType = if (inCall) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_MUSIC
+
+    var volume by remember { mutableIntStateOf(audioManager.getStreamVolume(streamType)) }
+    var maxVolume by remember { mutableFloatStateOf(audioManager.getStreamMaxVolume(streamType).toFloat()) }
 
     DisposableEffect(context) {
         VolumeChangeObserver.startObserving(context)
@@ -268,14 +283,11 @@ fun CollapsedVolumePopup(
         }
     }
 
-    LaunchedEffect(Unit) {
-        maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat()
-    }
-
     val volumeChangedCount = VolumeChangeObserver.volumeChangedCount
 
-    LaunchedEffect(volumeChangedCount) {
-        volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+    LaunchedEffect(streamType, volumeChangedCount) {
+        maxVolume = audioManager.getStreamMaxVolume(streamType).toFloat()
+        volume = audioManager.getStreamVolume(streamType)
     }
 
     fun setVolume(target: Int) {
@@ -286,7 +298,7 @@ fun CollapsedVolumePopup(
 
         volume = coerced
         try {
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, coerced, 0)
+            audioManager.setStreamVolume(streamType, coerced, 0)
         } catch (e: SecurityException) {
             // Some platform versions gate any stream volume change behind
             // Do Not Disturb access while the ringer is in a restrictive
@@ -295,7 +307,7 @@ fun CollapsedVolumePopup(
             // correct the optimistic write above on its own, so read the
             // real value back directly.
             Log.w(TAG, "Stream volume change to $coerced refused", e)
-            volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            volume = audioManager.getStreamVolume(streamType)
         }
         onInteract()
     }
@@ -303,6 +315,7 @@ fun CollapsedVolumePopup(
     // Just the current level: the compact popup is a glance, so the maximum
     // (and the stream's name) are left to the full mixer.
     val valueText = volume.toString()
+    val streamName = stringResource(if (inCall) R.string.stream_call else R.string.stream_media)
     // One beam for the panel's face and its rim alike, carrying the flare
     // and the sweep that cross the glass as the popup arrives -- see
     // [rememberGlassBeam] for why both halves have to be handed the same
@@ -562,7 +575,7 @@ fun CollapsedVolumePopup(
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
-                    // Media's own volume steps, so the compact bar ticks
+                    // The stream's own volume steps, so the compact bar ticks
                     // against exactly the detents the disc and the mixer's
                     // own media row do.
                     notches = maxVolume.toInt(),
@@ -580,7 +593,8 @@ fun CollapsedVolumePopup(
                             VolumeGlyph(
                                 audioManager = audioManager,
                                 volume = volume,
-                                contentDescription = stringResource(R.string.stream_media),
+                                inCall = inCall,
+                                contentDescription = streamName,
                                 modifier = Modifier
                                     .align(
                                         if (preferences.centeredContent == PopupCenterContent.Icon) {
@@ -638,7 +652,7 @@ fun CollapsedVolumePopup(
                         .then(expandSwipeModifier),
                     value = volume.toFloat(),
                     valueRange = 0f..maxVolume,
-                    // Media's own volume steps, so the compact bar ticks
+                    // The stream's own volume steps, so the compact bar ticks
                     // against exactly the detents the disc and the mixer's
                     // own media row do.
                     notches = maxVolume.toInt(),
@@ -672,7 +686,8 @@ fun CollapsedVolumePopup(
                             VolumeGlyph(
                                 audioManager = audioManager,
                                 volume = volume,
-                                contentDescription = stringResource(R.string.stream_media),
+                                inCall = inCall,
+                                contentDescription = streamName,
                                 modifier = Modifier
                                     .align(
                                         if (preferences.centeredContent == PopupCenterContent.Icon) {
@@ -747,6 +762,7 @@ fun CollapsedVolumePopup(
                                 VolumeGlyph(
                                     audioManager = audioManager,
                                     volume = volume,
+                                    inCall = inCall,
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize()
                                 )

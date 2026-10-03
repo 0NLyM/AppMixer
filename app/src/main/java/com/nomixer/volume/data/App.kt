@@ -133,14 +133,6 @@ data class App(
             return _icon
         }
 
-    fun setPreferences(value: AppPreferences) {
-        preferences = value
-
-        _volume = preferences.volume
-        _hidden = preferences.hidden
-        _disableVolumeButtons = preferences.disableVolumeButtons
-    }
-
     private val _players: MutableList<AudioPlaybackConfigurationProxy> = mutableStateListOf()
     val players: List<AudioPlaybackConfigurationProxy> = _players
 

@@ -25,6 +25,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect as RectF
@@ -83,13 +84,6 @@ import kotlin.math.roundToInt
 private val ENTER_TRAVEL_DP = 14.dp
 
 /**
- * How far a bar's own content (its slider and its ringer button) travels
- * as it comes out onto a panel that has already opened, and goes back in
- * before the panel shuts: toward the screen edge the panel came out of.
- */
-private val CONTENT_TRAVEL_DP = 10.dp
-
-/**
  * How far under its final size a disc with no edge to come out of starts
  * (a centred popup). Small, and deliberately not zero: a panel scaled to
  * nothing has no size for its own spring to overshoot around, so it reads
@@ -103,13 +97,6 @@ private const val CENTER_EXPAND_SQUASH = 0.08f
  * other way on the way out. Slight: a knob settling, not a wheel spinning.
  */
 private const val DISC_ARRIVAL_TURN_DEGREES = 20f
-
-/**
- * How far a bar's panel has opened out of its edge when the bar's own
- * content starts coming out onto it. Late, on purpose: the panel opens, and
- * then there is something on it -- the mixer closing, run the other way.
- */
-private const val CONTENT_AT = 0.85f
 
 /**
  * How far along the gesture axis the panel has opened when it starts
@@ -178,12 +165,6 @@ internal class OverlayStage {
 
     /** The disc's arrival in the effects channel: its opacity. */
     val fade = Animatable(0f)
-
-    /** A bar's own content coming out onto its panel once the panel is open. */
-    val contentSlide = Animatable(0f)
-
-    /** [contentSlide]'s own effects channel. */
-    val contentFade = Animatable(0f)
 
     /** Opening, phase one: the panel growing along the axis the user swiped. */
     val along = Animatable(0f)
@@ -587,7 +568,6 @@ internal fun OverlayScene(
     val isDisc = preferences.popupStyle == PopupStyle.Disc
     val edge = preferences.activeAnchor().edge(frame?.rtl ?: false)
     val enterTravelPx = with(density) { ENTER_TRAVEL_DP.toPx() }
-    val contentTravelPx = with(density) { CONTENT_TRAVEL_DP.toPx() }
     val thinPx = PRESENCE_DP * densityScale
     stage.unfolds = !isDisc
     // The same axis the popup's own expand swipe runs along (see
@@ -770,31 +750,16 @@ internal fun OverlayScene(
                 //           scale, never from 0; rotationZ.
                 stage.appear.animateTo(1f, MotionTokens.Spatial.travel())
             } else {
-                val effect = this
-                var contentOut = false
-                // element:  the bar's own content -- its slider and button.
-                // model:    one object coming out onto a panel that is
-                //           already there, from the side of the edge.
-                // token:    MotionTokens.Spatial.cascade + Effects.default.
-                // property: translation toward the edge, and alpha.
-                val bringContent = {
-                    contentOut = true
-                    effect.launch { stage.contentFade.animateTo(1f, MotionTokens.Effects.default()) }
-                    effect.launch { stage.contentSlide.animateTo(1f, MotionTokens.Spatial.cascade()) }
-                }
-                // element:  the bar's panel.
-                // model:    a sheet unfolding out of the side of the screen.
+                // element:  the bar's panel, and its slider and button with it.
+                // model:    a drawer drawn out of the side of the screen: the
+                //           panel and what is printed on it are one object,
+                //           so the content rides the panel's leading edge
+                //           and shows only where the panel is.
                 // token:    MotionTokens.Spatial.travel.
-                // property: its laid-out rectangle, from nothing at the edge
-                //           to its own.
-                stage.appear.animateTo(1f, MotionTokens.Spatial.travel()) {
-                    if (!contentOut && value >= CONTENT_AT) {
-                        bringContent()
-                    }
-                }
-                if (!contentOut) {
-                    bringContent()
-                }
+                // property: the panel's laid-out rectangle, from nothing at
+                //           the edge to its own; the content's translation
+                //           with that edge, clipped to it.
+                stage.appear.animateTo(1f, MotionTokens.Spatial.travel())
             }
         } else {
             if (expanded) {
@@ -835,21 +800,15 @@ internal fun OverlayScene(
                 launch { stage.appear.animateTo(0f, MotionTokens.Spatial.travel()) }
                 stage.fade.animateTo(0f, MotionTokens.Effects.default())
             } else {
-                // The bar's arrival backwards, one step after the other: its
-                // content goes back in, and once it has, the panel shuts into
-                // the edge.
+                // The bar's arrival backwards, as one movement: the panel
+                // shuts into its edge and its slider goes in with it.
                 //
-                // element:  the bar's own content.
-                // model:    one object going back in toward the edge.
-                // token:    MotionTokens.Spatial.cascade + Effects.default.
-                // property: translation toward the edge, and alpha.
-                launch { stage.contentSlide.animateTo(0f, MotionTokens.Spatial.cascade()) }
-                launch { stage.contentFade.animateTo(0f, MotionTokens.Effects.default()) }
-                snapshotFlow { stage.contentFade.value <= STEP_DONE }.first { it }
-                // element:  the bar's panel.
-                // model:    a sheet shutting into the side of the screen.
+                // element:  the bar's panel, and its slider and button with it.
+                // model:    a drawer shutting into the side of the screen.
                 // token:    MotionTokens.Spatial.leave.
-                // property: its laid-out rectangle, down to nothing at the edge.
+                // property: the panel's laid-out rectangle, down to nothing at
+                //           the edge; the content's translation with that
+                //           edge, clipped to it.
                 launch { stage.appear.animateTo(0f, MotionTokens.Spatial.leave()) }
                 snapshotFlow { stage.appear.value <= GONE }.first { it }
             }
@@ -917,19 +876,16 @@ internal fun OverlayScene(
 
     CompositionLocalProvider(
         // A bar's own marks (the mute bar across its glyph) arrive with the
-        // bar's content, not with the panel it comes out onto.
-        LocalArrival provides remember(stage, isDisc) {
-            if (isDisc) {
-                { stage.appear.value }
-            } else {
-                { stage.contentSlide.value }
-            }
-        },
-        LocalArrivalFade provides remember(stage, isDisc) {
+        // bar, on the panel's own spring: its content rides the panel.
+        LocalArrival provides remember(stage) { { stage.appear.value } },
+        // Geometry, not a fade: a bar has no opacity of its own to arrive
+        // with -- what shows of it is how much of its panel there is. The
+        // disc fades on its own channel.
+        LocalArrivalFade provides remember(stage, isDisc, thinPx) {
             if (isDisc) {
                 { stage.fade.value }
             } else {
-                { stage.contentFade.value }
+                { stage.presence(false, thinPx) }
             }
         },
         LocalAmbientEnter provides remember(stage) { { stage.settling.value } },
@@ -1040,37 +996,45 @@ internal fun OverlayScene(
                     Box(
                         Modifier
                             .matchParentSize()
+                            // Nothing of the popup's content outside its panel:
+                            // while a bar's panel opens out of its edge, the
+                            // edge is what the slider comes out from under,
+                            // and while it shuts, what closes over it -- the
+                            // mixer's rows, and every bar, come and go the
+                            // same way.
+                            .clip(panelShape)
                             .wrapContentSize(unbounded = true)
                             .onSizeChanged { stage.compactSize = it }
                             .graphicsLayer {
                                 compositingStrategy = CompositingStrategy.ModulateAlpha
                                 // Pinned where the compact popup sits, not to
                                 // the middle of a panel that is moving: while
-                                // a bar's panel opens out of its edge, and
-                                // while the mixer opens away from it, the
-                                // content stays exactly where it is.
+                                // the mixer opens away from it, the content
+                                // stays exactly where it is.
                                 val panel = stage.panelRect(expanded)
                                 val compact = stage.compactRect
                                 translationX = compact.center.x - panel.center.x
                                 translationY = compact.center.y - panel.center.y
-                                var shown = 1f - stage.handover.value
                                 if (!isDisc) {
                                     // element:  the bar's own content.
-                                    // model:    one object coming out onto its
-                                    //           panel, from the edge's side.
-                                    // token:    MotionTokens.Spatial.cascade.
+                                    // model:    printed on the panel it is
+                                    //           part of: it travels with the
+                                    //           panel's leading edge, the
+                                    //           side away from the screen edge.
+                                    // token:    MotionTokens.Spatial.travel
+                                    //           in, .leave out -- the
+                                    //           panel's own, through [appear].
                                     // property: translation toward the edge.
-                                    val away = (1f - stage.contentSlide.value) * contentTravelPx
+                                    val opening = stage.panelRect(false)
                                     when (edge) {
-                                        ScreenEdge.Left -> translationX -= away
-                                        ScreenEdge.Right -> translationX += away
-                                        ScreenEdge.Top -> translationY -= away
-                                        ScreenEdge.Bottom -> translationY += away
+                                        ScreenEdge.Left -> translationX += opening.right - compact.right
+                                        ScreenEdge.Right -> translationX += opening.left - compact.left
+                                        ScreenEdge.Top -> translationY += opening.bottom - compact.bottom
+                                        ScreenEdge.Bottom -> translationY += opening.top - compact.top
                                         ScreenEdge.None -> Unit
                                     }
-                                    shown *= stage.contentFade.value
                                 }
-                                alpha = shown.coerceIn(0f, 1f)
+                                alpha = (1f - stage.handover.value).coerceIn(0f, 1f)
                             }
                             .then(if (expanded) Modifier.untouchable() else Modifier)
                     ) {

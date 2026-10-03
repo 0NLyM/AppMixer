@@ -198,6 +198,10 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     }
 
     init {
+        appPreferencesStore.whenLoaded {
+            _systemSliderVisibility.putAll(appPreferencesStore.systemSliderVisibility)
+        }
+
         // Tracked outside `start()` on purpose: the customization screen has to
         // work before (and without) Shizuku ever connecting.
         uiPreferencesStore.track { value ->
@@ -244,21 +248,18 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
         ShizukuProvider.requestBinderForNonProviderProcess(context)
     }
 
+    private var started = false
+
     private fun start() {
-        appPreferencesStore.track { first ->
-            for ((packageName, index) in appPreferencesStore.indices) {
-                if (!first) {
-                    // Replace with new reference
-                    getApp(packageName)?.setPreferences(appPreferencesStore.values[index])
-                }
-            }
-
-            _systemSliderVisibility.clear()
-            _systemSliderVisibility.putAll(appPreferencesStore.systemSliderVisibility)
-
-            if (first) {
-                initialize()
-            }
+        // Shizuku can announce itself more than once (its binder arriving,
+        // then the permission being granted): loading and initializing twice
+        // gave the apps preferences from a state that was then replaced,
+        // so what they were changed to was never saved.
+        if (started) {
+            return
         }
+        started = true
+
+        appPreferencesStore.whenLoaded(::initialize)
     }
 }

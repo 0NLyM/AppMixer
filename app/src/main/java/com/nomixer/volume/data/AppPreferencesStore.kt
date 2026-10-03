@@ -1,11 +1,15 @@
 package com.nomixer.volume.data
 
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -13,6 +17,8 @@ import kotlinx.serialization.json.Json
 class AppPreferencesStore(private val dataStore: DataStore<Preferences>) {
     companion object {
         private val key = stringPreferencesKey("apps")
+
+        private const val TAG = "NoMixer.AppPrefs"
 
         private val json = Json { ignoreUnknownKeys = true }
     }
@@ -28,10 +34,6 @@ class AppPreferencesStore(private val dataStore: DataStore<Preferences>) {
 
     private val lock = Any()
     private var state = SerializedState(mutableListOf(), mutableMapOf())
-    val values: List<AppPreferences>
-        get() = state.values
-    val indices: Map<String, Int>
-        get() = synchronized(lock) { state.indices.toMap() }
     fun getSystemSliderVisible(id: String): Boolean {
         return synchronized(lock) { state.systemSliderVisibility[id] ?: true }
     }
@@ -71,23 +73,43 @@ class AppPreferencesStore(private val dataStore: DataStore<Preferences>) {
             }
         }
 
-    fun track(onChange: (first: Boolean) -> Unit) {
-        var first = true
+    private val loaded = CompletableDeferred<Unit>()
 
+    /**
+     * Reads what was saved, once, as the store is made -- and runs [block]
+     * when it has.
+     *
+     * Once, not for every change of the store: this store is the only writer
+     * of its key, so what it reads back after a save is its own echo -- an
+     * older picture than the live one, since the user may have dragged
+     * further since. Swapping that in for the live state (as following the
+     * store used to) gave every [App] a new preferences object and rewound
+     * its volume to whatever the last write to land had held, mid-drag; and
+     * writes made in between went to the old object, and were never saved.
+     */
+    fun whenLoaded(block: () -> Unit) {
         scope.launch {
-            dataStore.data.collect { preferences ->
-                val valueJson = preferences[key]
-                if (valueJson != null) {
-                    synchronized(lock) {
-                        state = json.decodeFromString<SerializedState>(valueJson)
-                    }
-                }
-
-                onChange(first)
-                @Suppress("AssignedValueIsNeverRead")
-                first = false
-            }
+            loaded.await()
+            block()
         }
+    }
+
+    private suspend fun load() {
+        try {
+            val valueJson = dataStore.data.first()[key]
+            if (valueJson != null) {
+                val saved = json.decodeFromString<SerializedState>(valueJson)
+                synchronized(lock) {
+                    // Whatever was changed before the load finished wins
+                    // over what was saved.
+                    saved.systemSliderVisibility.putAll(state.systemSliderVisibility)
+                    state = saved
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Can't read the saved app preferences", e)
+        }
+        loaded.complete(Unit)
     }
 
     fun getOrCreate(packageName: String): AppPreferences {
@@ -104,11 +126,26 @@ class AppPreferencesStore(private val dataStore: DataStore<Preferences>) {
         }
     }
 
-    fun save() {
+    /**
+     * Writes the state as it is by the time the write runs. One writer, so
+     * writes land in order, and a burst of changes (a drag) is one write of
+     * the latest rather than one per step racing each other.
+     */
+    private val saves = Channel<Unit>(Channel.CONFLATED)
+
+    init {
         scope.launch {
-            dataStore.edit { preferences ->
-                preferences[key] = Json.encodeToString(state)
+            load()
+            for (ignored in saves) {
+                val encoded = synchronized(lock) { Json.encodeToString(state) }
+                dataStore.edit { preferences ->
+                    preferences[key] = encoded
+                }
             }
         }
+    }
+
+    fun save() {
+        saves.trySend(Unit)
     }
 }

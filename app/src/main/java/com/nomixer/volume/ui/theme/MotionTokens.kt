@@ -41,9 +41,9 @@ import kotlin.math.sqrt
  * | Bar panel           | a sheet unfolding out of the side of the screen | [Spatial.travel] in, | its laid-out    |
  * |                     |                       | [Spatial.leave] out         | rectangle, from nothing at the edge to |
  * |                     |                       |                             | its own -- the mixer's close, backwards |
- * | Bar content         | one object coming out onto a panel already there | [Spatial.cascade] + | translation   |
- * |                     |                       | [Effects.default]           | toward the edge, and alpha: after the  |
- * |                     |                       |                             | panel on the way in, before it out     |
+ * | Bar content         | printed on its panel: a drawer and what is in it | [Spatial.travel] in, | translation   |
+ * |                     |                       | [Spatial.leave] out, the    | with the panel's leading edge, clipped |
+ * |                     |                       | panel's own                 | to it. No fade, no second spring       |
  * | Disc arrival        | a knob slid out of its edge | [Spatial.travel]      | translation, edge axis only -- no scale. |
  * |                     |                       |                             | It arrives as one object               |
  * | Disc arrival turn   | a knob settling into place | [Spatial.travel], via  | rotationZ of the whole disc, face      |
