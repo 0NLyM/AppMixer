@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.AudioPlaybackConfiguration
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -30,6 +32,10 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     companion object {
         const val SHIZUKU_PACKAGE_NAME = "moe.shizuku.privileged.api"
         private const val TAG = "NoMixer.Manager"
+
+        /** How soon after a playback change a changed level is put back, and how often after that. */
+        private const val REASSERT_FIRST_MS = 250L
+        private const val REASSERT_MS = 500L
     }
 
     enum class ShizukuStatus {
@@ -174,9 +180,41 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
                         }
                         processAudioPlaybackConfigurations(configs)
                     }
+                    keepVolumesApplied(REASSERT_FIRST_MS)
                 }
             }, null
         )
+    }
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val reassertVolumes = object : Runnable {
+        override fun run() {
+            // Only an app that plays alone: the platform ducks whatever is
+            // playing while something else speaks over it (a navigation
+            // prompt, a call), and an app that holds its own level against
+            // that would talk over the prompt.
+            val playing = apps.values.filter { it.isPlaying }
+            val mine = playing.singleOrNull()?.takeIf { it.volume != 1f } ?: return
+            mine.applyVolume(mine.volume)
+            handler.postDelayed(this, REASSERT_MS)
+        }
+    }
+
+    /**
+     * Puts a changed app's level back on its players, now and for as long as
+     * it plays alone.
+     *
+     * A level is set once, when a player appears, and nothing tells us when
+     * the platform undoes it: unducking after a prompt, or fading back in
+     * after another app took focus, sets every player's volume back to
+     * full, a moment after the playback change that said the prompt was
+     * over -- so the app went quietly back to full volume, in the background,
+     * with its slider still showing what the user had chosen.
+     */
+    private fun keepVolumesApplied(delayMillis: Long) {
+        handler.removeCallbacks(reassertVolumes)
+        handler.postDelayed(reassertVolumes, delayMillis)
     }
 
     @SuppressLint("DiscouragedPrivateApi")

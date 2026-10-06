@@ -2338,3 +2338,15 @@ be appended to this file as they land.
   fade and slide in after the panel had opened, and out before it shut. It
   is now printed on the panel: it rides the panel's leading edge on the
   panel's own spring and shows only where the panel is, in and out.
+
+## 2026-10-06 — 1.0.85
+
+- **An app keeps the volume set for it while it plays.** The level was only
+  set when a player appeared; when the platform gave the players back their
+  full volume (after a navigation prompt or a notification had ducked the
+  app, or after another app had taken focus) nothing put it back, so the app
+  went to full volume in the background with its slider unchanged. A changed
+  app that plays alone now has its level set again a moment after each
+  playback change and twice a second while it plays. With another app
+  playing at the same time it is left alone, so the platform's own ducking
+  still works.
