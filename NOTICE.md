@@ -2350,3 +2350,17 @@ be appended to this file as they land.
   playback change and twice a second while it plays. With another app
   playing at the same time it is left alone, so the platform's own ducking
   still works.
+
+## 2026-10-12 — 1.0.86
+
+- **The volume popup works without Shizuku.** The accessibility service
+  refused every volume key while Shizuku was down, so the popup never showed.
+  The keys, the popup and the system sliders now run on the public audio API;
+  only the per-app volumes need Shizuku, and without it they are left out of
+  the mixer without a word.
+- Calls that asked for Shizuku's binder (the Do Not Disturb state, the audio
+  and activity services) go the plain way when it isn't there, instead of
+  failing in its wrapper -- opening the mixer without Shizuku no longer
+  throws. Do Not Disturb changes the platform refuses are left as they were.
+- Without Shizuku the ringer switch goes between ringing and vibrating (silent
+  needs Shizuku's shell call), instead of doing nothing.

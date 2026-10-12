@@ -1,5 +1,6 @@
 package com.nomixer.volume
 
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Parcel
@@ -8,6 +9,7 @@ import com.flyjingfish.android_aop_annotation.ProceedJoinPoint
 import com.flyjingfish.android_aop_annotation.anno.AndroidAopPointCut
 import com.flyjingfish.android_aop_annotation.base.BasePointCut
 import org.joor.Reflect
+import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import java.util.concurrent.Executor
 
@@ -40,6 +42,20 @@ class ToggleableBinderProxy(private val base: IBinder) : IBinder by base {
             }
         }
 
+        /**
+         * Whether Shizuku can carry a call right now. Without it a call that
+         * asked for it goes the plain way instead, as an app's own: what that
+         * is allowed is read all the same, and what it isn't is refused the
+         * way the platform refuses it -- rather than failing in Shizuku's own
+         * wrapper, which throws for a binder it hasn't received.
+         */
+        fun shizukuReady(): Boolean = try {
+            Shizuku.pingBinder() && !Shizuku.isPreV11() &&
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        } catch (_: Throwable) {
+            false
+        }
+
         fun wrap(proxy: Any) {
             Reflect.on(proxy).apply {
                 set("mRemote", get<IBinder>("mRemote").run {
@@ -67,6 +83,6 @@ class ToggleableBinderProxy(private val base: IBinder) : IBinder by base {
     override fun transact(
         code: Int, data: Parcel, reply: Parcel?, flags: Int
     ): Boolean {
-        return (if (enabled) shizukuWrapper else base).transact(code, data, reply, flags)
+        return (if (enabled && shizukuReady()) shizukuWrapper else base).transact(code, data, reply, flags)
     }
 }

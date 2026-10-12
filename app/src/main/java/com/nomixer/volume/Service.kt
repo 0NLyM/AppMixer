@@ -111,13 +111,6 @@ class Service : AccessibilityService() {
         private const val IDLE_TIMEOUT = 5000L
         private const val AUTO_REPEAT_DELAY = 100L
         private const val AUTO_REPEAT_INITIAL_DELAY = 500L
-
-        /**
-         * Floor between "Shizuku isn't connected" toasts, so holding a
-         * volume key (or repeatedly tapping the accessibility button) while
-         * disconnected doesn't spam one every single event.
-         */
-        private const val SHIZUKU_WARNING_COOLDOWN_MS = 10_000L
     }
 
     private val powerManager: PowerManager by lazy { getSystemService(PowerManager::class.java) }
@@ -738,7 +731,13 @@ class Service : AccessibilityService() {
                             // the panel's edge and the inset is room the
                             // rows' shadows and motion can use.
                             AppVolumeList(
-                                apps = manager.apps.values,
+                                // Per-app volumes need Shizuku; without it there are
+                                // none to show, and nothing says so.
+                                apps = if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
+                                    manager.apps.values
+                                } else {
+                                    mutableListOf()
+                                },
                                 showAll = false,
                                 contentPadding = PaddingValues(MIXER_PADDING_DP.dp),
                                 shadowColor = sliderShadowColor,
@@ -923,30 +922,6 @@ class Service : AccessibilityService() {
         }
     }
 
-    private var lastShizukuWarningAtMs = 0L
-
-    /**
-     * The accessibility service can be fully enabled and running yet still
-     * do nothing -- both the volume-key path and the accessibility button
-     * below require Shizuku, and neither said so before. That's read as
-     * "the accessibility service isn't there, only the on-screen button
-     * is" when really the button IS there but tapping it (or a volume key)
-     * silently no-ops. This surfaces the actual reason, rate-limited so it
-     * doesn't spam while Shizuku stays down.
-     */
-    private fun warnShizukuDisconnected() {
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastShizukuWarningAtMs < SHIZUKU_WARNING_COOLDOWN_MS) {
-            return
-        }
-        lastShizukuWarningAtMs = now
-        Toast.makeText(
-            this,
-            "NoMixer can't reach the volume popup: Shizuku isn't connected",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
-
     override fun onServiceConnected() {
         Log.i(TAG, "onServiceConnected")
 
@@ -1020,11 +995,10 @@ class Service : AccessibilityService() {
             return false
         }
 
-        // Ignore if Shizuku is not ready
-        if (manager.shizukuStatus != Manager.ShizukuStatus.Connected) {
-            warnShizukuDisconnected()
-            return false
-        }
+        // No Shizuku needed from here: the keys are this service's own, and
+        // the popup and the system streams run on the public audio API.
+        // Shizuku only reaches the per-app volumes (and, behind them, the
+        // list of apps), which are simply absent while it is down.
 
         // Check foreground task ignorance list -- read straight off this
         // accessibility service's own connection (rootInActiveWindow),

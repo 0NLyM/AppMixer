@@ -39,6 +39,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nomixer.volume.R
+import com.nomixer.volume.ToggleableBinderProxy
 import com.nomixer.volume.ui.theme.LocalButtonCornerPercent
 import com.nomixer.volume.ui.theme.MotionTokens
 import kotlinx.coroutines.launch
@@ -274,13 +275,30 @@ fun RingerModeButton(
                 // no permission needed, and no Do Not Disturb side effect.
                 // Run as a Shizuku shell process, the same way
                 // MainActivity already grants itself permissions.
-                try {
-                    val process = Reflect.onClass(Shizuku::class.java).call(
-                        "newProcess", arrayOf("cmd", "audio", "set-ringer-mode", nextName), null, null
-                    ).get<ShizukuRemoteProcess>()
-                    process.waitFor()
-                } catch (e: Exception) {
-                    Log.w(TAG, "Ringer mode change to $nextName refused", e)
+                //
+                // Without Shizuku there is only the public call, which cannot
+                // reach silent (that is Do Not Disturb's to give): the
+                // switch then goes between ringing and vibrating.
+                if (ToggleableBinderProxy.shizukuReady()) {
+                    try {
+                        val process = Reflect.onClass(Shizuku::class.java).call(
+                            "newProcess", arrayOf("cmd", "audio", "set-ringer-mode", nextName), null, null
+                        ).get<ShizukuRemoteProcess>()
+                        process.waitFor()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Ringer mode change to $nextName refused", e)
+                    }
+                } else {
+                    val plain = if (next == AudioManager.RINGER_MODE_SILENT) {
+                        AudioManager.RINGER_MODE_NORMAL
+                    } else {
+                        next
+                    }
+                    try {
+                        audioManager.ringerMode = plain
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "Ringer mode change to $plain refused", e)
+                    }
                 }
                 ringerMode = audioManager.ringerMode
 

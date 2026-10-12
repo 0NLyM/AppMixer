@@ -483,7 +483,8 @@ class MainActivity : ComponentActivity() {
                                     Text("SHIZUKU NOT INSTALLED", style = MaterialTheme.typography.titleLarge)
                                     Text(
                                         textAlign = TextAlign.Center,
-                                        text = "Please install Shizuku from the Play Store or GitHub"
+                                        text = "Please install Shizuku from the Play Store or GitHub. " +
+                                            "The volume popup works without it; Shizuku is only for per-app volumes."
                                     )
                                     Button(
                                         onClick = {
@@ -520,7 +521,8 @@ class MainActivity : ComponentActivity() {
                                 Text("WAITING FOR SHIZUKU", style = MaterialTheme.typography.titleLarge)
                                 Text(
                                     textAlign = TextAlign.Center,
-                                    text = "Make sure Shizuku is installed and enabled"
+                                    text = "Make sure Shizuku is installed and enabled. " +
+                                        "The volume popup works without it; Shizuku is only for per-app volumes."
                                 )
                             }
 
