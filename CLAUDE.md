@@ -52,10 +52,11 @@ Three tiers, two channels, and nothing else:
 | | `Spatial` (position, scale, rotation) | `Effects` (alpha, colour) |
 |---|---|---|
 | `fast` | press, tick, thumb -- anything a finger steers | a fade keeping up with a finger |
-| `default` | a surface arriving, expanding or leaving | everything else that fades or tints |
+| `default` | a mark drawing itself (the mute bar) | everything else that fades or tints |
 | `defaultSoft` | elements that follow rather than lead | -- |
 
-Plus `Ambient.enter`, which is neither: the light on the glass and the
+Plus the dissolves (`Effects.dissolveIn`, `dissolveOut`, `dissolve`: how a
+surface comes and goes -- see **One arrival**), and `Ambient.enter`, which is neither: the light on the glass and the
 Atmosphere field, settling on a surface that has already arrived. It is the
 one tier slower than the panel, and the one thing that does not ride the
 arrival -- see **Ambient** below.
@@ -69,7 +70,9 @@ flash, and a colour that overshoots is a frame of a colour nobody chose.
 
 - A spring invented at a call site, or one spring per file.
 - `scale` animated from (or to) `0`. Scale around the element's own size.
-- A fade as an element's *principal* entrance. Something has to move.
+- Anything *moving* as the popup arrives, leaves or hands over to the mixer: no
+  slide, no unfolding panel, no scale, no turn (the disc included). The
+  entrance is a dissolve, and it was asked for -- see **One arrival** below.
 - `tween` anywhere in the overlay, and any loop at all. Atmosphere and the
   glass beam run once on `Ambient.enter` and freeze; everything else is a
   phase of the arrival.
@@ -128,40 +131,35 @@ it to what the eye actually resolves (see `SHEEN_STEP_DEGREES` in
 `GlassScrim.kt`, which the glass beam needs because its brushes are built
 in composition). Prefer the draw phase.
 
-### One arrival, one spring
+### One arrival: a dissolve
 
-`LocalArrival` carries how far the overlay has arrived, 0 to 1, for
-anything that phases its own motion off the arrival rather than starting a
-second animation. For the disc that is the single spring that slides it out
-of its edge (turning slightly as it comes) and takes it away at the end. A
-bar arrives as one movement: its **panel** opens out of the screen edge -- a
-laid-out rectangle growing from nothing at the edge to its own size -- and
-its content (the slider, the ringer button) is printed on that panel rather
-than a second object: it rides the panel's leading edge and shows only where
-the panel is (clipped to it), on the panel's own spring, with no fade of its
-own. `LocalArrival` is that same spring. On the way out the panel shuts into
-the edge and takes its content in with it.
+Nothing in the overlay moves as it arrives, leaves or hands over. A popup
+-- a bar or the disc, the mixer -- is there to the degree its own progress
+says, 0 to 1 (`OverlayStage.compactShown`, `mixerShown`), and that is the
+whole of the motion. No panel slides out of an edge or unfolds from one
+rectangle to the other, no row cascades, nothing scales or turns. Each
+surface sits at the rectangle `OverlayGeometry.kt` works out for it
+before anything shows. Only the light on the glass (`Ambient.enter`) still
+travels, as it always did.
 
-The mixer opening is not an arrival -- the panel is already on screen,
-changing shape. The compact popup's content goes at once, where it is (a
-bar, a disc and its ticks alike; the disc's face gives way to the panel
-behind it), and the panel opens in two phases, one per axis, chained so the
-second starts before the first has come to rest (see `OverlayScene`): drawn
-out along the axis the user swiped (`Spatial.turn`), then across it to the
-mixer's full size (`Spatial.travel`). No rotation.
+The dissolve is **stochastic** (`StochasticFade.kt`): the content -- the
+slider and button, the mixer's rows -- comes and goes as a scatter of
+pixels, each switching on at a moment of its own, through an AGSL threshold
+on the layer. It is only applied while the progress is strictly between 0
+and 1; at rest the layer is drawn as it would be without it. The **panel**
+behind it is a plain alpha on the same progress, and the system's blur
+inside it is handed its opacity through `LocalGlassPresence`
+(`Drawable.setAlpha` on the blur drawable) -- that blur is the compositor's,
+not pixels to take a threshold to.
 
-Closing is a **strict sequence** on `Spatial.leave`, each step starting only
-once the one before it has visibly finished: the rows go, bottom first; then
-the panel closes along its edge to the compact popup's own band; then it
-shuts into the screen edge the popup came from -- never a fade. The order of
-the two panel steps is the edge's, not the swipe's (`closingOrder`), so the
-last thing a panel does is always go into its edge. With no edge it closes
-to the popup's band and then shrinks into its middle.
-
-The mixer's rows are the one deliberate exception to "one spring": each row
-is its own object on its own `Spatial.cascade` spring, started
-`MotionTokens.Cascade` later than the one above it (see `RowCascade.kt`). A
-cascade *is* a sequence.
+Three tokens, all critically damped: `Effects.dissolveIn` (quick: a popup is
+asked for with a key), `Effects.dissolveOut` (slower: what leaves is let go
+of), and `Effects.dissolve` for the compact popup handing over to the mixer
+-- the popup's progress down and the mixer's up, together, on one spring, so
+they take exactly as long. Leaving from the mixer dissolves the mixer out;
+there is no closing sequence any more. `LocalArrival` carries the progress
+of the surface a reader is on, for the one mark that draws itself as a
+surface comes in: the mute bar.
 
 ### One window, one panel
 
@@ -173,16 +171,13 @@ resizing a window under an animation is a round trip through the window
 manager that lands a frame early or late, and that was every "snap" this
 overlay ever had.
 
-The compact popup and the mixer are **one panel** (`SharedPanel`, in
-`OverlayScene.kt`): one
-shadow, one face, one rim, whose laid-out rectangle travels from the compact
-popup's to the mixer's (`OverlayStage.panelRect`). Their contents take turns
-inside it. Every destination -- the compact popup's rectangle, the mixer's
-(centred on the display, from the display's own size), the edge a closing
-mixer shuts into -- is
-computed before anything moves, in `OverlayGeometry.kt`. The mixer is as
-wide as the platform makes a window that wraps its content
-(`config_prefDialogWidth`) -- the width it always had.
+The compact popup and the mixer are **two panels**, each at its own
+rectangle for good (`SharedPanel`, in `OverlayScene.kt`: shadow, face, rim)
+-- the compact popup's, and the mixer's, centred on the display, from the
+display's own size -- and each dissolves with what is on it. Every
+destination is computed in `OverlayGeometry.kt`. The mixer is as wide as the
+platform makes a window that wraps its content (`config_prefDialogWidth`) --
+the width it always had.
 
 ### The glass
 
@@ -193,7 +188,7 @@ blur**: each pane draws the window's background-blur drawable
 (`ViewRootImpl.createBackgroundBlurDrawable`, through reflection;
 `SystemGlassBlur.kt`), within its own rounded rectangle. The renderer
 reports where that drawable's node lands every frame, the whole transform
-from the window down included, so the blurred region travels with the panel
+from the window down included, so the blurred region stays with the panel
 in the same frame -- no second window, and the one window still never moves.
 Nothing is captured then. Never `FLAG_BLUR_BEHIND` (it blurs the whole
 screen) or a window's own background blur (the window is the whole screen).
@@ -244,7 +239,7 @@ away the transparent margin some devices hand a window back with
 towards the middle of the screen, with the first capture showing round it
 (`GlassBackdropCompositorTest`). Every pane of glass draws it behind its
 tint, lined up with the screen through the whole root-to-node transform, so
-it stays put on the screen while a panel travels or the disc turns over it
+it stays put on the screen
 -- flat, at the screen's own scale: no lens, which was tried and taken out.
 The arrival waits for the first capture, briefly.
 

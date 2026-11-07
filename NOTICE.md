@@ -2364,3 +2364,25 @@ be appended to this file as they land.
   throws. Do Not Disturb changes the platform refuses are left as they were.
 - Without Shizuku the ringer switch goes between ringing and vibrating (silent
   needs Shizuku's shell call), instead of doing nothing.
+
+## 2026-11-07 — 1.0.87
+
+- **Nothing moves as the popup comes and goes.** The bar's panel no longer
+  unfolds out of the screen edge, the disc no longer slides, turns or grows,
+  the mixer's rows no longer cascade and the panel no longer travels between
+  the compact popup and the mixer. A popup now dissolves in place -- the
+  light on the glass is the one thing that still travels.
+- **A stochastic dissolve.** The content (slider, buttons, rows) comes and
+  goes as a scatter of pixels, each switching on at a moment of its own; the
+  panel behind it fades with it, and the system's blur is handed the same
+  opacity. In is quick, out is slower (`Effects.dissolveIn` / `dissolveOut`).
+- **Compact to mixer is a hand-over.** The compact popup dissolves out as the
+  mixer dissolves in, together, on one spring, so they take exactly as long.
+  Leaving from the mixer is the mixer dissolving out; the closing sequence is
+  gone. The spatial tokens that only these motions used (`travel`, `turn`,
+  `leave`, `cascade`) went with them.
+- **Per-app volumes leave a trail in the diagnostic log.** Players that
+  belong to no app (a process not in the running list, an app that isn't
+  installed, a playback with no player), packages that share one process,
+  each level set on a new player, an app held at its level while it plays
+  alone, and apps playing together (not held) are logged, once each.

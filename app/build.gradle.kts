@@ -45,8 +45,8 @@ android {
         applicationId = "com.nomixer.volume"
         minSdk = 33
         targetSdk = 35
-        versionCode = 99
-        versionName = "1.0.86"
+        versionCode = 100
+        versionName = "1.0.87"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

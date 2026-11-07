@@ -18,6 +18,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.nomixer.volume.data.App
 import com.nomixer.volume.data.AppPreferencesStore
+import com.nomixer.volume.data.DiagnosticLog
 import com.nomixer.volume.data.UiPreferences
 import com.nomixer.volume.data.UiPreferencesStore
 import com.nomixer.volume.system.AudioPlaybackConfigurationProxy
@@ -195,7 +196,20 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
             // prompt, a call), and an app that holds its own level against
             // that would talk over the prompt.
             val playing = apps.values.filter { it.isPlaying }
+            val changed = playing.filter { it.volume != 1f }
+            if (playing.size > 1 && changed.isNotEmpty()) {
+                DiagnosticLog.logOnce(
+                    "AppVol/together/${playing.joinToString { it.packageName }}", "AppVol",
+                    "not holding ${changed.joinToString { it.packageName }}: " +
+                        "${playing.joinToString { it.packageName }} play together"
+                )
+            }
             val mine = playing.singleOrNull()?.takeIf { it.volume != 1f } ?: return
+            DiagnosticLog.logOnce(
+                "AppVol/hold/${mine.packageName}/${mine.volume}", "AppVol",
+                "holding ${mine.packageName} at ${"%.2f".format(mine.volume)} " +
+                    "(${mine.players.size} player(s)) while it plays alone"
+            )
             mine.applyVolume(mine.volume)
             handler.postDelayed(this, REASSERT_MS)
         }
@@ -226,10 +240,36 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
             val proxy = AudioPlaybackConfigurationProxy(config)
 
             val pid = proxy.clientPid
-            val process = runningProcesses.find { process -> process.pid == pid } ?: continue
+            val process = runningProcesses.find { process -> process.pid == pid }
+            if (process == null) {
+                // Which app a player belongs to is read off the process that
+                // opened it: a player whose process is not in the list (an
+                // app that has only just started, a helper process) belongs
+                // to nobody here, and its app's volume never reaches it.
+                DiagnosticLog.logOnce(
+                    "AppVol/no-process/$pid", "AppVol✗",
+                    "a player of pid $pid (type ${proxy.playerType}) is in no running app process: left alone"
+                )
+                continue
+            }
 
-            val packageName = process.pkgList[0] ?: continue
-            val app = getApp(packageName) ?: continue
+            val packages = process.pkgList
+            val packageName = packages?.firstOrNull() ?: continue
+            if (packages.size > 1) {
+                DiagnosticLog.logOnce(
+                    "AppVol/shared/$pid", "AppVol",
+                    "pid $pid (${process.processName}) hosts ${packages.size} packages " +
+                        "(${packages.joinToString()}): its players go to $packageName"
+                )
+            }
+            val app = getApp(packageName)
+            if (app == null) {
+                DiagnosticLog.logOnce(
+                    "AppVol/no-app/$packageName", "AppVol✗",
+                    "pid $pid belongs to $packageName, which isn't among the installed apps: left alone"
+                )
+                continue
+            }
 
             app.addPlayer(proxy)
         }

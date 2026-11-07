@@ -35,7 +35,6 @@ import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.GlassBackdrop
 import com.nomixer.volume.compose.GlassBackdropCompositor
 import com.nomixer.volume.compose.GlassShrinker
-import com.nomixer.volume.compose.cascadeRow
 import com.nomixer.volume.data.GLASS_BACKDROP_BLUR_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupStyle
@@ -280,7 +279,7 @@ private fun SomeApp() {
     }
 }
 
-/** Seven pill-shaped rows on the real cascade, standing in for the mixer's. */
+/** Seven pill-shaped rows, standing in for the mixer's. */
 @Composable
 private fun StandInRows() {
     Column(Modifier.fillMaxWidth().padding(MIXER_PADDING_DP.dp)) {
@@ -288,7 +287,6 @@ private fun StandInRows() {
             val rowHeight = if (i == 2) 64.dp else 48.dp
             Box(
                 Modifier
-                    .cascadeRow(i)
                     .fillMaxWidth()
                     .height(rowHeight)
                     .background(Color(0xFF3A3A3A), RoundedCornerShape(24.dp))

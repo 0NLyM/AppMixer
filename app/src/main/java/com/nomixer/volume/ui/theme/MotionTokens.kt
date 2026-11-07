@@ -38,38 +38,16 @@ import kotlin.math.sqrt
  *
  * | element             | model                 | token                       | property                              |
  * |---------------------|-----------------------|-----------------------------|---------------------------------------|
- * | Bar panel           | a sheet unfolding out of the side of the screen | [Spatial.travel] in, | its laid-out    |
- * |                     |                       | [Spatial.leave] out         | rectangle, from nothing at the edge to |
- * |                     |                       |                             | its own -- the mixer's close, backwards |
- * | Bar content         | printed on its panel: a drawer and what is in it | [Spatial.travel] in, | translation   |
- * |                     |                       | [Spatial.leave] out, the    | with the panel's leading edge, clipped |
- * |                     |                       | panel's own                 | to it. No fade, no second spring       |
- * | Disc arrival        | a knob slid out of its edge | [Spatial.travel]      | translation, edge axis only -- no scale. |
- * |                     |                       |                             | It arrives as one object               |
- * | Disc arrival turn   | a knob settling into place | [Spatial.travel], via  | rotationZ of the whole disc, face      |
- * |                     |                       | the arrival                 | included: forward into place on the   |
- * |                     |                       |                             | way in, back the other way on the way |
- * |                     |                       |                             | out. The one turning glass -- asked for |
- * | Centered disc       | a knob growing in place | [Spatial.travel]          | uniform scale, never from 0           |
- * | Mixer open, phase 1 | one sheet drawn out the way the finger went | [Spatial.turn] | its laid-out rectangle, along  |
- * |                     |                       |                             | the swipe's axis; corner radius (disc  |
- * |                     |                       |                             | only, quantised). No rotation          |
- * | Mixer open, phase 2 | the same sheet unfolding to full size | [Spatial.travel] | its laid-out rectangle, across  |
- * |                     |                       |                             | the swipe's axis -- started before     |
- * |                     |                       |                             | phase 1 has come to rest               |
- * | Mixer close         | a drawer shutting into the side of the screen | [Spatial.leave] | its laid-out rectangle, in  |
- * |                     |                       |                             | strict steps: rows gone, then across,  |
- * |                     |                       |                             | then along, down to nothing at the     |
- * |                     |                       |                             | edge it came from. No fade             |
- * | Mixer row           | a row sliding out from under its neighbour | [Spatial.cascade] + | translationY, one pitch, |
- * |                     |                       | [Effects.default], each row | + alpha. One row at a time, see       |
- * |                     |                       | started [Cascade] later     | [Cascade]. Ring's row carries its     |
- * |                     |                       |                             | ringer and Do Not Disturb switches    |
- * | Hand-over           | --                    | [Effects.fast]              | alpha: the compact popup's content    |
- * |                     |                       |                             | going at once, where it is, as the    |
- * |                     |                       |                             | mixer is asked for; the disc's face   |
- * |                     |                       |                             | giving way to the panel behind it     |
- * | Panel opacity       | --                    | [Effects.default]           | alpha (never a spatial spring)        |
+ * | Popup arriving      | a surface coming into being: panel and what is on it, none of it moving | [Effects.dissolveIn] | dissolve progress -- a stochastic |
+ * |                     |                       |                             | per-pixel threshold on the content, alpha on |
+ * |                     |                       |                             | the panel behind it. Nothing translates, |
+ * |                     |                       |                             | scales or turns, the disc included    |
+ * | Popup leaving       | the same surface let go of | [Effects.dissolveOut]    | the same progress, run back: slower   |
+ * |                     |                       |                             | than it came, and no step after another |
+ * | Compact -> mixer    | one surface handing over to another, both in place | [Effects.dissolve] | the compact popup's progress down and |
+ * |                     |                       |                             | the mixer's up, together, on one spring: |
+ * |                     |                       |                             | the same duration both ways. No panel |
+ * |                     |                       |                             | travels between the two rectangles    |
  * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction: 1:1 under a finger,    |
  * |                     |                       |                             | magnetised to the nearest step on     |
  * |                     |                       |                             | release, velocity-retargeted          |
@@ -212,96 +190,6 @@ object MotionTokens {
             if (reducedMotion) snap() else spring(dampingRatio = SOFT_DAMPING, stiffness = SOFT_STIFFNESS)
 
         /**
-         * [default] again, and the same character -- but for a 0..1 value
-         * that is **multiplied up into real pixels** before it is drawn:
-         * the popup's own arrival and the mixer's morph, which between them
-         * carry a whole panel across the display.
-         *
-         * A spring stops as soon as it is within its visibility threshold
-         * and jumps the rest of the way. The usual one percent is nothing
-         * on a scale or an alpha, but one percent of a morph that travels
-         * four hundred pixels to the middle of the screen is a four-pixel
-         * jump, landing exactly at the end of the journey -- which is what
-         * a panel snapping into place at the last moment actually is. The
-         * same reasoning [Ambient.enter] needs its own threshold for, and
-         * for the same reason: the number being animated is not the number
-         * being drawn.
-         *
-         * Float rather than generic, because a threshold only means
-         * anything against the type it is measured in.
-         */
-        fun travel(): FiniteAnimationSpec<Float> =
-            if (reducedMotion) {
-                snap()
-            } else {
-                spring(
-                    dampingRatio = TRAVEL_DAMPING,
-                    stiffness = TRAVEL_STIFFNESS,
-                    visibilityThreshold = TRAVEL_THRESHOLD
-                )
-            }
-
-        /**
-         * The first phase of the mixer opening -- the panel drawn out along
-         * the axis the user swiped -- and the last of its closing, shutting
-         * into the edge it came from. Softer and slower than [travel],
-         * because it is the part there is most to watch in -- and on the same
-         * fine threshold, since a panel's journey is multiplied up from 0..1.
-         */
-        fun turn(): FiniteAnimationSpec<Float> =
-            if (reducedMotion) {
-                snap()
-            } else {
-                spring(
-                    dampingRatio = TURN_DAMPING,
-                    stiffness = TURN_STIFFNESS,
-                    visibilityThreshold = TRAVEL_THRESHOLD
-                )
-            }
-
-        /**
-         * One mixer row sliding out from under the row above it -- see
-         * [Cascade]. [defaultSoft]'s own character (a row follows, it does
-         * not lead) but slower, so each row's own journey is long enough to
-         * be seen as one object moving rather than as a flicker in a list,
-         * and on the fine threshold, because it is a one-row-high
-         * translation multiplied up from 0..1.
-         */
-        fun cascade(): FiniteAnimationSpec<Float> =
-            if (reducedMotion) {
-                snap()
-            } else {
-                spring(
-                    dampingRatio = CASCADE_DAMPING,
-                    stiffness = CASCADE_STIFFNESS,
-                    visibilityThreshold = TRAVEL_THRESHOLD
-                )
-            }
-
-        /**
-         * Anything leaving, one step after another: a mixer's rows gone, its
-         * panel closing across, then shutting into its edge; a bar's panel
-         * shutting after its content. Critically damped -- a panel shutting
-         * into the side of the screen has nowhere past the edge to overshoot
-         * to -- and stiffer than [travel], because every exit here is a
-         * *sequence* of steps and a leaving panel shouldn't linger over any
-         * of them. On the fine threshold: it is a panel's journey,
-         * multiplied up from 0..1.
-         */
-        fun leave(): FiniteAnimationSpec<Float> =
-            if (reducedMotion) {
-                snap()
-            } else {
-                spring(
-                    dampingRatio = 1f,
-                    stiffness = LEAVE_STIFFNESS,
-                    visibilityThreshold = TRAVEL_THRESHOLD
-                )
-            }
-
-        private const val LEAVE_STIFFNESS = 420f
-
-        /**
          * The screen behind the glass gliding after its own content as it
          * scrolls, from one look at the screen to the next (a third of a
          * second apart). Critically damped -- content behind glass
@@ -377,31 +265,6 @@ object MotionTokens {
             if (reducedMotion) snap() else spring(dampingRatio = 1f, stiffness = FOLLOW_SETTLE_STIFFNESS)
 
         private const val FOLLOW_SETTLE_STIFFNESS = 20f
-
-        private const val CASCADE_DAMPING = 0.9f
-        private const val CASCADE_STIFFNESS = 140f
-
-        /** See [travel]: a 0..1 that is drawn as hundreds of pixels needs a threshold to match. */
-        private const val TRAVEL_THRESHOLD = 1f / 4096f
-
-        /**
-         * Softer and markedly slower than [default]'s own 300, and
-         * deliberately: these two carry a whole panel across the display
-         * and lay a bar down flat on the way. At the panel tier's own
-         * stiffness the entrance was over before the rows unfolding inside
-         * it could be seen at all -- the mixer simply existed, and the only
-         * thing anyone could watch was whatever happened to be slower.
-         *
-         * Damped just short of critical rather than at [default]'s 0.86:
-         * a small overshoot is momentum on something the size of a
-         * button, and a wobble on something the size of a panel.
-         */
-        private const val TRAVEL_DAMPING = 0.92f
-        private const val TRAVEL_STIFFNESS = 120f
-
-        /** Phase one of the opening, slower still: it is the whole of what there is to watch. */
-        private const val TURN_DAMPING = 0.95f
-        private const val TURN_STIFFNESS = 90f
 
         /**
          * [fast]'s own constants as a value, for
@@ -481,24 +344,34 @@ object MotionTokens {
          */
         fun <T> follow(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 130f)
 
+        /**
+         * A surface -- a panel and everything on it -- coming into being, as
+         * a stochastic dissolve (see `Modifier.stochasticFade`): quick. A
+         * popup is asked for with a key, and it has no business making
+         * anyone wait for it.
+         */
+        fun <T> dissolveIn(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = DISSOLVE_IN_STIFFNESS)
+
+        /**
+         * The same dissolve going the other way, and less quick than
+         * [dissolveIn]: something that is leaving is let go of, not cut.
+         */
+        fun <T> dissolveOut(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = DISSOLVE_OUT_STIFFNESS)
+
+        /**
+         * One surface handing over to another -- the compact popup to the
+         * mixer -- as the same dissolve in both directions at once, on the
+         * same spring: the one that appears and the one that goes take
+         * exactly as long, and nothing in either moves.
+         */
+        fun <T> dissolve(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = DISSOLVE_STIFFNESS)
+
+        private const val DISSOLVE_IN_STIFFNESS = 1100f
+        private const val DISSOLVE_OUT_STIFFNESS = 380f
+        private const val DISSOLVE_STIFFNESS = 560f
+
         /** Colour roles crossfading when the user picks a new one. */
         val color: FiniteAnimationSpec<Color> = default()
-    }
-
-    /**
-     * The mixer's rows arriving one at a time: each row is its own object on
-     * its own [Spatial.cascade] spring (plus an [Effects.default] fade), and
-     * each starts this much later than the row before it. The one place in
-     * the overlay where a delay is part of the motion -- a cascade *is* a
-     * sequence, and the gap between two rows starting is what makes them
-     * read as several things rather than one sheet growing.
-     */
-    object Cascade {
-        /** How much later each row starts than the one above it, on the way in. */
-        const val STEP_IN_MILLIS = 65L
-
-        /** The same gap on the way out, bottom row first -- quicker, a leaving panel shouldn't linger. */
-        const val STEP_OUT_MILLIS = 30L
     }
 
     /**
@@ -594,42 +467,19 @@ object MotionTokens {
 }
 
 /**
- * How far the overlay has arrived, 0 to 1, on the spring that brings the
- * compact popup out of its edge and takes the whole overlay away at the end
- * (see Service.kt). Anything that phases its own motion off the arrival
+ * How far the surface a reader is drawn on has come into being, 0 to 1: the
+ * compact popup's own dissolve for what is on the compact popup, the mixer's
+ * for what is on the mixer (see OverlayScene). Anything that phases its own
+ * drawing off the arrival -- the mute bar drawing itself across a glyph --
  * reads it from here rather than starting a second animation of its own,
- * which keeps every part of the arrival on one curve and makes every exit
- * the entrance backwards for free.
- *
- * The mixer's own opening is not an arrival -- the panel is already there,
- * changing shape -- so it is not in here: see the "Mixer open" rows of the
- * table above, and [Cascade] for its rows.
+ * which keeps every part of an arrival on one curve and makes every exit the
+ * entrance backwards for free.
  *
  * A function rather than a value, so a reader can take it in its own draw
  * phase and repaint without recomposing. Defaults to fully arrived, for
  * anywhere outside the overlay (the settings screen's preview).
- *
- * This is the **spatial** half of the arrival, and only things that move
- * may read it. Anything fading reads [LocalArrivalFade] instead -- see
- * [MotionTokens] on why the two channels are never the same spring.
  */
 val LocalArrival = compositionLocalOf<() -> Float> { { 1f } }
-
-/**
- * The effects half of the same arrival: how opaque the overlay is, 0 to 1,
- * from its own critically damped spring.
- *
- * Separate from [LocalArrival] on purpose. They start together and are the
- * same transition, but a fade has no mass -- an alpha carried by a spatial
- * spring overshoots past 1, which the compositor clamps, so the panel sits
- * at full opacity for the length of the overshoot and then eases off it.
- * That reads as a flicker at the end of an otherwise clean arrival, and it
- * is the whole reason alpha has a channel of its own.
- *
- * A function, and defaulting to fully opaque, for the same reasons
- * [LocalArrival] is.
- */
-val LocalArrivalFade = compositionLocalOf<() -> Float> { { 1f } }
 
 /**
  * How far the overlay's *ambient* entrance has run, 0 to 1 -- the light on

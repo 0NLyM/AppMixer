@@ -146,6 +146,10 @@ data class App(
         isPlayer = true
 
         if (!config.hasPlayer) {
+            DiagnosticLog.logOnce(
+                "AppVol/no-player/$packageName", "AppVol✗",
+                "$packageName has a playback with no player to set the volume on (type ${config.playerType})"
+            )
             return
         }
 
@@ -157,7 +161,15 @@ data class App(
         // Apply volume to potentially new player
         if (!config.setVolume(_volume)) {
             // Player is dead, don't add it
+            DiagnosticLog.log("AppVol✗", "$packageName: a player was already gone when its volume was set")
             return
+        }
+        if (_volume != 1f) {
+            DiagnosticLog.logOnce(
+                "AppVol/set/$packageName/${config.clientPid}/$_volume", "AppVol",
+                "$packageName: ${"%.2f".format(_volume)} set on a new player " +
+                    "(pid ${config.clientPid}, type ${config.playerType}, ${config.playerState})"
+            )
         }
 
         _players.add(config)
@@ -175,6 +187,9 @@ data class App(
             }
         }
         // Remove dead players
+        if (deadPlayers.isNotEmpty()) {
+            DiagnosticLog.log("AppVol✗", "$packageName: ${deadPlayers.size} player(s) gone when ${"%.2f".format(value)} was set")
+        }
         _players.removeAll(deadPlayers)
     }
 

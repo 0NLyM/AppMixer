@@ -30,9 +30,31 @@ object DiagnosticLog {
         _entries.update { current -> (current + Entry(System.currentTimeMillis(), tag, message)).takeLast(MAX_ENTRIES) }
     }
 
+    private val seen = HashSet<String>()
+
+    /**
+     * [log], but once for each [key] -- for something that is true over and
+     * over (every playback change says the same player has no app) and would
+     * otherwise push everything else out of the log.
+     */
+    fun logOnce(key: String, tag: String, message: String) {
+        val first = synchronized(seen) {
+            if (seen.size >= MAX_KEYS) {
+                seen.clear()
+            }
+            seen.add(key)
+        }
+        if (first) {
+            log(tag, message)
+        }
+    }
+
     fun clear() {
         _entries.value = emptyList()
+        synchronized(seen) { seen.clear() }
     }
+
+    private const val MAX_KEYS = 500
 }
 
 private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)

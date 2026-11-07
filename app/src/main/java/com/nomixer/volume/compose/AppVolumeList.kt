@@ -191,15 +191,7 @@ fun AppVolumeList(
                         showOptions = false,
                         shadowColor = shadowColor,
                         onChange = onChange,
-                        // Part of the same cascade the system rows above
-                        // are, carrying on after the places they take. The
-                        // cascade moves each row by a transform and never
-                        // touches its layout, so `animateItem` -- which
-                        // animates layout -- has nothing to fight with and
-                        // can stay on the whole time.
-                        modifier = Modifier
-                            .cascadeRow(MIXER_SYSTEM_ROW_SLOTS + index)
-                            .animateItem()
+                        modifier = Modifier.animateItem()
                     )
                 }
             } else if (showEmpty) {

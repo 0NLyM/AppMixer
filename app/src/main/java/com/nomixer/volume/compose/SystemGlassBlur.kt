@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalView
 import com.nomixer.volume.data.DiagnosticLog
 import java.lang.reflect.Method
+import kotlin.math.roundToInt
 
 private const val TAG = "SystemGlassBlur"
 
@@ -39,7 +40,11 @@ private const val TAG = "SystemGlassBlur"
 internal fun Modifier.systemGlassBlur(radiusPx: Int, shape: Shape): Modifier {
     val view = LocalView.current
     val blur = remember(view) { SystemBlurDrawable.create(view) } ?: return this
+    val presence = LocalGlassPresence.current
     return drawBehind {
+        // The blur is the compositor's, not pixels drawn here: a pane that is
+        // coming or going has to hand it its opacity.
+        blur.opacity((presence().coerceIn(0f, 1f) * 255f).roundToInt())
         blur.update(
             width = size.width.toInt(),
             height = size.height.toInt(),
@@ -74,6 +79,14 @@ private class SystemBlurDrawable(
     private val setCornerRadius: Method
 ) {
     private var radius = -1
+    private var alpha = -1
+
+    fun opacity(value: Int) {
+        if (value != alpha) {
+            alpha = value
+            drawable.alpha = value
+        }
+    }
     private val corners = FloatArray(4) { -1f }
 
     fun update(width: Int, height: Int, radiusPx: Int, corners: FloatArray) {
