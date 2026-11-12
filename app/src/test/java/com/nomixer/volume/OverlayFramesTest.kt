@@ -35,6 +35,7 @@ import com.nomixer.volume.compose.CollapsedVolumePopup
 import com.nomixer.volume.compose.GlassBackdrop
 import com.nomixer.volume.compose.GlassBackdropCompositor
 import com.nomixer.volume.compose.GlassShrinker
+import com.nomixer.volume.compose.cascadeRow
 import com.nomixer.volume.data.GLASS_BACKDROP_BLUR_MAX_DP
 import com.nomixer.volume.data.PopupAnchor
 import com.nomixer.volume.data.PopupStyle
@@ -221,6 +222,16 @@ class OverlayFramesTest {
 
     @Test fun verticalBar() = film("vbar", UiPreferences(popupStyle = PopupStyle.VerticalBar))
 
+    @Test fun verticalBarMoving() = film(
+        "vbar-moving",
+        UiPreferences(popupStyle = PopupStyle.VerticalBar, dissolveAnimation = false)
+    )
+
+    @Test fun discMoving() = film(
+        "disc-moving",
+        UiPreferences(popupStyle = PopupStyle.Disc, dissolveAnimation = false)
+    )
+
     @Test fun horizontalBar() = film("hbar", UiPreferences(popupStyle = PopupStyle.HorizontalBar))
 
     @Test fun horizontalBarTop() = film(
@@ -279,7 +290,7 @@ private fun SomeApp() {
     }
 }
 
-/** Seven pill-shaped rows, standing in for the mixer's. */
+/** Seven pill-shaped rows (on the cascade, in the moving animation), standing in for the mixer's. */
 @Composable
 private fun StandInRows() {
     Column(Modifier.fillMaxWidth().padding(MIXER_PADDING_DP.dp)) {
@@ -287,6 +298,7 @@ private fun StandInRows() {
             val rowHeight = if (i == 2) 64.dp else 48.dp
             Box(
                 Modifier
+                    .cascadeRow(i)
                     .fillMaxWidth()
                     .height(rowHeight)
                     .background(Color(0xFF3A3A3A), RoundedCornerShape(24.dp))

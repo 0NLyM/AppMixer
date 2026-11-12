@@ -89,7 +89,7 @@ private const val GONE = 0.004f
  * parameters); everything happens inside it.
  */
 @Stable
-internal class OverlayStage {
+internal class DissolveStage {
     /** How much of the compact popup there is, 0 to 1: its panel and everything on it. */
     val compactShown = Animatable(0f)
 
@@ -129,7 +129,7 @@ internal class OverlayStage {
  * and the glass stays lined up with the screen.
  */
 @Composable
-private fun SharedPanel(
+internal fun SharedPanel(
     preferences: UiPreferences,
     shape: Shape,
     showBackground: Boolean,
@@ -252,7 +252,7 @@ private fun MixerGlassRim(
  * the mixer's own rows would otherwise reach straight through and move a
  * volume on a panel nobody can interact with any more.
  */
-private fun Modifier.untouchable(): Modifier = this.pointerInput(Unit) {
+internal fun Modifier.untouchable(): Modifier = this.pointerInput(Unit) {
     awaitPointerEventScope {
         while (true) {
             awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
@@ -261,7 +261,46 @@ private fun Modifier.untouchable(): Modifier = this.pointerInput(Unit) {
 }
 
 /**
- * The whole overlay: the compact popup, and the mixer it opens into.
+ * The whole overlay, in whichever animation the user picked
+ * ([UiPreferences.dissolveAnimation]): the dissolve, in which nothing moves
+ * ([DissolveOverlayScene]), or the earlier one, in which a panel opens out of
+ * its edge and the mixer unfolds from it ([MovingOverlayScene]). Both take
+ * exactly what the platform hands the overlay, and both answer to the same
+ * calls, so the service has nothing to tell them apart by.
+ */
+@Composable
+internal fun OverlayScene(
+    preferences: UiPreferences,
+    visible: Boolean,
+    frame: WindowFrame?,
+    mixerWidthPx: Int,
+    atmosphereColors: Pair<Color, Color>?,
+    glassBackdrop: GlassBackdrop?,
+    glassBackdropPending: Boolean,
+    systemBlurRadiusPx: Int = 0,
+    touchBounds: Rect,
+    onExpanded: () -> Unit,
+    onHidden: () -> Unit,
+    compact: @Composable (onExpand: () -> Unit) -> Unit,
+    mixer: @Composable (sliderShadowColor: Color) -> Unit
+) {
+    if (preferences.dissolveAnimation) {
+        DissolveOverlayScene(
+            preferences, visible, frame, mixerWidthPx, atmosphereColors, glassBackdrop,
+            glassBackdropPending, systemBlurRadiusPx, touchBounds, onExpanded, onHidden, compact, mixer
+        )
+    } else {
+        MovingOverlayScene(
+            preferences, visible, frame, mixerWidthPx, atmosphereColors, glassBackdrop,
+            glassBackdropPending, systemBlurRadiusPx, touchBounds, onExpanded, onHidden, compact, mixer
+        )
+    }
+}
+
+/**
+ * The whole overlay, dissolving: the compact popup, and the mixer it opens
+ * into -- the default animation; the earlier one, with things moving, is
+ * [MovingOverlayScene].
  *
  * The choreography:
  *
@@ -282,7 +321,7 @@ private fun Modifier.untouchable(): Modifier = this.pointerInput(Unit) {
  * mixer themselves -- so this is the whole of the motion and nothing else.
  */
 @Composable
-internal fun OverlayScene(
+internal fun DissolveOverlayScene(
     preferences: UiPreferences,
     /** Whether the overlay should be arriving (true) or leaving. */
     visible: Boolean,
@@ -313,7 +352,7 @@ internal fun OverlayScene(
     /** The mixer's rows, handed the colour of the shadow each slider casts. */
     mixer: @Composable (sliderShadowColor: Color) -> Unit
 ) {
-    val stage = remember { OverlayStage() }
+    val stage = remember { DissolveStage() }
     var expanded by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val densityScale = density.density
@@ -560,7 +599,7 @@ internal fun OverlayScene(
                         }
                         Box(
                             Modifier
-                                .stochasticFade { stage.compactShown.value }
+                                .stochasticFade(preferences.dissolveIntensity) { stage.compactShown.value }
                                 .then(if (expanded) Modifier.untouchable() else Modifier)
                         ) {
                             compact(onExpand)
@@ -591,7 +630,7 @@ internal fun OverlayScene(
                                     alpha = stage.mixerShown.value.coerceIn(0f, 1f)
                                 }
                         )
-                        Box(Modifier.stochasticFade { stage.mixerShown.value }) {
+                        Box(Modifier.stochasticFade(preferences.dissolveIntensity) { stage.mixerShown.value }) {
                             CompositionLocalProvider(
                                 LocalContentColor provides MaterialTheme.colorScheme.onBackground
                             ) {

@@ -48,6 +48,40 @@ import kotlin.math.sqrt
  * |                     |                       |                             | the mixer's up, together, on one spring: |
  * |                     |                       |                             | the same duration both ways. No panel |
  * |                     |                       |                             | travels between the two rectangles    |
+ * |                     |                       |                             |                                       |
+ * | **The earlier animation, kept for the switch (UiPreferences.dissolveAnimation off):** |
+ * | Bar panel           | a sheet unfolding out of the side of the screen | [Spatial.travel] in, | its laid-out    |
+ * |                     |                       | [Spatial.leave] out         | rectangle, from nothing at the edge to |
+ * |                     |                       |                             | its own -- the mixer's close, backwards |
+ * | Bar content         | printed on its panel: a drawer and what is in it | [Spatial.travel] in, | translation   |
+ * |                     |                       | [Spatial.leave] out, the    | with the panel's leading edge, clipped |
+ * |                     |                       | panel's own                 | to it. No fade, no second spring       |
+ * | Disc arrival        | a knob slid out of its edge | [Spatial.travel]      | translation, edge axis only -- no scale. |
+ * |                     |                       |                             | It arrives as one object               |
+ * | Disc arrival turn   | a knob settling into place | [Spatial.travel], via  | rotationZ of the whole disc, face      |
+ * |                     |                       | the arrival                 | included: forward into place on the   |
+ * |                     |                       |                             | way in, back the other way on the way |
+ * |                     |                       |                             | out. The one turning glass -- asked for |
+ * | Centered disc       | a knob growing in place | [Spatial.travel]          | uniform scale, never from 0           |
+ * | Mixer open, phase 1 | one sheet drawn out the way the finger went | [Spatial.turn] | its laid-out rectangle, along  |
+ * |                     |                       |                             | the swipe's axis; corner radius (disc  |
+ * |                     |                       |                             | only, quantised). No rotation          |
+ * | Mixer open, phase 2 | the same sheet unfolding to full size | [Spatial.travel] | its laid-out rectangle, across  |
+ * |                     |                       |                             | the swipe's axis -- started before     |
+ * |                     |                       |                             | phase 1 has come to rest               |
+ * | Mixer close         | a drawer shutting into the side of the screen | [Spatial.leave] | its laid-out rectangle, in  |
+ * |                     |                       |                             | strict steps: rows gone, then across,  |
+ * |                     |                       |                             | then along, down to nothing at the     |
+ * |                     |                       |                             | edge it came from. No fade             |
+ * | Mixer row           | a row sliding out from under its neighbour | [Spatial.cascade] + | translationY, one pitch, |
+ * |                     |                       | [Effects.default], each row | + alpha. One row at a time, see       |
+ * |                     |                       | started [Cascade] later     | [Cascade]. Ring's row carries its     |
+ * |                     |                       |                             | ringer and Do Not Disturb switches    |
+ * | Hand-over           | --                    | [Effects.fast]              | alpha: the compact popup's content    |
+ * |                     |                       |                             | going at once, where it is, as the    |
+ * |                     |                       |                             | mixer is asked for; the disc's face   |
+ * |                     |                       |                             | giving way to the panel behind it     |
+ * | Panel opacity       | --                    | [Effects.default]           | alpha (never a spatial spring)        |
  * | Disc fill           | a knob under a thumb  | [Spatial.tick]              | fill fraction: 1:1 under a finger,    |
  * |                     |                       |                             | magnetised to the nearest step on     |
  * |                     |                       |                             | release, velocity-retargeted          |
@@ -190,6 +224,96 @@ object MotionTokens {
             if (reducedMotion) snap() else spring(dampingRatio = SOFT_DAMPING, stiffness = SOFT_STIFFNESS)
 
         /**
+         * [default] again, and the same character -- but for a 0..1 value
+         * that is **multiplied up into real pixels** before it is drawn:
+         * the popup's own arrival and the mixer's morph, which between them
+         * carry a whole panel across the display.
+         *
+         * A spring stops as soon as it is within its visibility threshold
+         * and jumps the rest of the way. The usual one percent is nothing
+         * on a scale or an alpha, but one percent of a morph that travels
+         * four hundred pixels to the middle of the screen is a four-pixel
+         * jump, landing exactly at the end of the journey -- which is what
+         * a panel snapping into place at the last moment actually is. The
+         * same reasoning [Ambient.enter] needs its own threshold for, and
+         * for the same reason: the number being animated is not the number
+         * being drawn.
+         *
+         * Float rather than generic, because a threshold only means
+         * anything against the type it is measured in.
+         */
+        fun travel(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = TRAVEL_DAMPING,
+                    stiffness = TRAVEL_STIFFNESS,
+                    visibilityThreshold = TRAVEL_THRESHOLD
+                )
+            }
+
+        /**
+         * The first phase of the mixer opening -- the panel drawn out along
+         * the axis the user swiped -- and the last of its closing, shutting
+         * into the edge it came from. Softer and slower than [travel],
+         * because it is the part there is most to watch in -- and on the same
+         * fine threshold, since a panel's journey is multiplied up from 0..1.
+         */
+        fun turn(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = TURN_DAMPING,
+                    stiffness = TURN_STIFFNESS,
+                    visibilityThreshold = TRAVEL_THRESHOLD
+                )
+            }
+
+        /**
+         * One mixer row sliding out from under the row above it -- see
+         * [Cascade]. [defaultSoft]'s own character (a row follows, it does
+         * not lead) but slower, so each row's own journey is long enough to
+         * be seen as one object moving rather than as a flicker in a list,
+         * and on the fine threshold, because it is a one-row-high
+         * translation multiplied up from 0..1.
+         */
+        fun cascade(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = CASCADE_DAMPING,
+                    stiffness = CASCADE_STIFFNESS,
+                    visibilityThreshold = TRAVEL_THRESHOLD
+                )
+            }
+
+        /**
+         * Anything leaving, one step after another: a mixer's rows gone, its
+         * panel closing across, then shutting into its edge; a bar's panel
+         * shutting after its content. Critically damped -- a panel shutting
+         * into the side of the screen has nowhere past the edge to overshoot
+         * to -- and stiffer than [travel], because every exit here is a
+         * *sequence* of steps and a leaving panel shouldn't linger over any
+         * of them. On the fine threshold: it is a panel's journey,
+         * multiplied up from 0..1.
+         */
+        fun leave(): FiniteAnimationSpec<Float> =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = 1f,
+                    stiffness = LEAVE_STIFFNESS,
+                    visibilityThreshold = TRAVEL_THRESHOLD
+                )
+            }
+
+        private const val LEAVE_STIFFNESS = 420f
+
+        /**
          * The screen behind the glass gliding after its own content as it
          * scrolls, from one look at the screen to the next (a third of a
          * second apart). Critically damped -- content behind glass
@@ -265,6 +389,31 @@ object MotionTokens {
             if (reducedMotion) snap() else spring(dampingRatio = 1f, stiffness = FOLLOW_SETTLE_STIFFNESS)
 
         private const val FOLLOW_SETTLE_STIFFNESS = 20f
+
+        private const val CASCADE_DAMPING = 0.9f
+        private const val CASCADE_STIFFNESS = 140f
+
+        /** See [travel]: a 0..1 that is drawn as hundreds of pixels needs a threshold to match. */
+        private const val TRAVEL_THRESHOLD = 1f / 4096f
+
+        /**
+         * Softer and markedly slower than [default]'s own 300, and
+         * deliberately: these two carry a whole panel across the display
+         * and lay a bar down flat on the way. At the panel tier's own
+         * stiffness the entrance was over before the rows unfolding inside
+         * it could be seen at all -- the mixer simply existed, and the only
+         * thing anyone could watch was whatever happened to be slower.
+         *
+         * Damped just short of critical rather than at [default]'s 0.86:
+         * a small overshoot is momentum on something the size of a
+         * button, and a wobble on something the size of a panel.
+         */
+        private const val TRAVEL_DAMPING = 0.92f
+        private const val TRAVEL_STIFFNESS = 120f
+
+        /** Phase one of the opening, slower still: it is the whole of what there is to watch. */
+        private const val TURN_DAMPING = 0.95f
+        private const val TURN_STIFFNESS = 90f
 
         /**
          * [fast]'s own constants as a value, for
@@ -375,6 +524,22 @@ object MotionTokens {
     }
 
     /**
+     * The mixer's rows arriving one at a time: each row is its own object on
+     * its own [Spatial.cascade] spring (plus an [Effects.default] fade), and
+     * each starts this much later than the row before it. The one place in
+     * the overlay where a delay is part of the motion -- a cascade *is* a
+     * sequence, and the gap between two rows starting is what makes them
+     * read as several things rather than one sheet growing.
+     */
+    object Cascade {
+        /** How much later each row starts than the one above it, on the way in. */
+        const val STEP_IN_MILLIS = 65L
+
+        /** The same gap on the way out, bottom row first -- quicker, a leaving panel shouldn't linger. */
+        const val STEP_OUT_MILLIS = 30L
+    }
+
+    /**
      * The light on the glass and the Atmosphere field: the two things in
      * the overlay that are neither a surface moving nor a colour changing,
      * but a *condition* of a surface settling down.
@@ -469,7 +634,9 @@ object MotionTokens {
 /**
  * How far the surface a reader is drawn on has come into being, 0 to 1: the
  * compact popup's own dissolve for what is on the compact popup, the mixer's
- * for what is on the mixer (see OverlayScene). Anything that phases its own
+ * for what is on the mixer (see DissolveOverlayScene) -- or, in the earlier
+ * animation, the arrival spring of the bar's content or of the disc (see
+ * MovingOverlayScene). Anything that phases its own
  * drawing off the arrival -- the mute bar drawing itself across a glyph --
  * reads it from here rather than starting a second animation of its own,
  * which keeps every part of an arrival on one curve and makes every exit the

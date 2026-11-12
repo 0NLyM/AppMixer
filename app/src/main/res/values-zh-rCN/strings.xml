@@ -56,6 +56,11 @@
     <string name="offset_horizontal">水平偏移</string>
     <string name="offset_vertical">垂直偏移</string>
 
+    <string name="popup_animation">动画</string>
+    <string name="popup_animation_description">弹窗出现和消失的方式。溶解：没有任何东西移动，弹窗以像素颗粒的方式淡入淡出，紧凑弹窗在混音器出现的同时退场。关闭：使用之前的动画，面板从屏幕边缘展开，混音器由它延伸而出。</string>
+    <string name="popup_animation_dissolve">溶解动画</string>
+    <string name="popup_animation_intensity">溶解强度</string>
+
     <string name="popup_appearance">大小与形状</string>
     <string name="popup_appearance_description">弹窗的大小，以及面板、滑块轨道和按钮的圆角程度。</string>
     <string name="popup_size">大小</string>

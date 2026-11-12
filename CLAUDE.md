@@ -70,9 +70,10 @@ flash, and a colour that overshoots is a frame of a colour nobody chose.
 
 - A spring invented at a call site, or one spring per file.
 - `scale` animated from (or to) `0`. Scale around the element's own size.
-- Anything *moving* as the popup arrives, leaves or hands over to the mixer: no
-  slide, no unfolding panel, no scale, no turn (the disc included). The
-  entrance is a dissolve, and it was asked for -- see **One arrival** below.
+- Anything *moving* as the popup arrives, leaves or hands over to the mixer, in
+  the dissolve (the default): no slide, no unfolding panel, no scale, no turn
+  (the disc included). It was asked for -- see **One arrival** below. The
+  earlier animation, which does move, is behind a switch and stays as it was.
 - `tween` anywhere in the overlay, and any loop at all. Atmosphere and the
   glass beam run once on `Ambient.enter` and freeze; everything else is a
   phase of the arrival.
@@ -152,14 +153,60 @@ inside it is handed its opacity through `LocalGlassPresence`
 (`Drawable.setAlpha` on the blur drawable) -- that blur is the compositor's,
 not pixels to take a threshold to.
 
+`UiPreferences.dissolveIntensity` (0..1, a slider in the settings, default 1)
+is how much of the dissolve is grain: 1 is every pixel switching on at a
+moment of its own, 0 a plain fade of the same progress. The grain is a pixel
+or two (0.6 dp, rounded to whole pixels). The switch
+`dissolveAnimation` (default on) chooses between this and the earlier
+animation below.
+
 Three tokens, all critically damped: `Effects.dissolveIn` (quick: a popup is
 asked for with a key), `Effects.dissolveOut` (slower: what leaves is let go
 of), and `Effects.dissolve` for the compact popup handing over to the mixer
 -- the popup's progress down and the mixer's up, together, on one spring, so
 they take exactly as long. Leaving from the mixer dissolves the mixer out;
-there is no closing sequence any more. `LocalArrival` carries the progress
+there is no closing sequence. `LocalArrival` carries the progress
 of the surface a reader is on, for the one mark that draws itself as a
 surface comes in: the mute bar.
+
+### The earlier animation, behind the switch
+
+`UiPreferences.dissolveAnimation` off brings back the animation the overlay had
+before the dissolve, whole, in `MovingOverlayScene.kt` (`OverlayScene` in
+`OverlayScene.kt` picks between the two, and the two share `SharedPanel`).
+The rules against moving things above are the dissolve's; this one moves, as
+it always did. In it `LocalArrival` carries how far the overlay has arrived, 0 to 1, for
+anything that phases its own motion off the arrival rather than starting a
+second animation. For the disc that is the single spring that slides it out
+of its edge (turning slightly as it comes) and takes it away at the end. A
+bar arrives as one movement: its **panel** opens out of the screen edge -- a
+laid-out rectangle growing from nothing at the edge to its own size -- and
+its content (the slider, the ringer button) is printed on that panel rather
+than a second object: it rides the panel's leading edge and shows only where
+the panel is (clipped to it), on the panel's own spring, with no fade of its
+own. `LocalArrival` is that same spring. On the way out the panel shuts into
+the edge and takes its content in with it.
+
+The mixer opening is not an arrival -- the panel is already on screen,
+changing shape. The compact popup's content goes at once, where it is (a
+bar, a disc and its ticks alike; the disc's face gives way to the panel
+behind it), and the panel opens in two phases, one per axis, chained so the
+second starts before the first has come to rest (see `MovingOverlayScene`): drawn
+out along the axis the user swiped (`Spatial.turn`), then across it to the
+mixer's full size (`Spatial.travel`). No rotation.
+
+Closing is a **strict sequence** on `Spatial.leave`, each step starting only
+once the one before it has visibly finished: the rows go, bottom first; then
+the panel closes along its edge to the compact popup's own band; then it
+shuts into the screen edge the popup came from -- never a fade. The order of
+the two panel steps is the edge's, not the swipe's (`closingOrder`), so the
+last thing a panel does is always go into its edge. With no edge it closes
+to the popup's band and then shrinks into its middle.
+
+The mixer's rows are the one deliberate exception to "one spring": each row
+is its own object on its own `Spatial.cascade` spring, started
+`MotionTokens.Cascade` later than the one above it (see `RowCascade.kt`). A
+cascade *is* a sequence.
 
 ### One window, one panel
 
@@ -171,13 +218,15 @@ resizing a window under an animation is a round trip through the window
 manager that lands a frame early or late, and that was every "snap" this
 overlay ever had.
 
-The compact popup and the mixer are **two panels**, each at its own
+In the dissolve the compact popup and the mixer are **two panels**, each at its own
 rectangle for good (`SharedPanel`, in `OverlayScene.kt`: shadow, face, rim)
 -- the compact popup's, and the mixer's, centred on the display, from the
 display's own size -- and each dissolves with what is on it. Every
 destination is computed in `OverlayGeometry.kt`. The mixer is as wide as the
 platform makes a window that wraps its content (`config_prefDialogWidth`) --
-the width it always had.
+the width it always had. In the earlier animation they are one panel, whose
+rectangle travels from the compact popup's to the mixer's
+(`MovingStage.panelRect`).
 
 ### The glass
 

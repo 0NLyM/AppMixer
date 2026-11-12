@@ -18,6 +18,10 @@ const val BUTTON_CORNER_RADIUS_MAX = 50
  */
 const val POPUP_BACKGROUND_OPACITY_MIN = 0.01f
 
+/** Bottom and top of the dissolve's own intensity slider (see [UiPreferences.dissolveIntensity]). */
+const val DISSOLVE_INTENSITY_MIN = 0f
+const val DISSOLVE_INTENSITY_MAX = 1f
+
 /** Bottom and top of the glass panel's own blur slider (see [UiPreferences.glassBlurStrength]). */
 const val GLASS_BLUR_MIN = 0f
 const val GLASS_BLUR_MAX = 1f
@@ -336,6 +340,18 @@ data class UiPreferences(
      * out of.
      */
     val expandedMixerCentered: Boolean = false,
+    /**
+     * How the popup arrives, leaves and opens into the mixer: by a dissolve
+     * in which nothing moves (`true`, the default), or by the earlier
+     * animation, with a panel opening out of its edge and the mixer
+     * unfolding from it (`false`). One shared switch for every style.
+     */
+    val dissolveAnimation: Boolean = true,
+    /**
+     * How much of the dissolve is grain, 0 (a plain fade) to 1 (every pixel
+     * switching on at a moment of its own). Only the dissolve has it.
+     */
+    val dissolveIntensity: Float = 1f,
     /**
      * How strongly the glass panel is frosted, 0 (crisp) to 1 (a heavy soft
      * frost): how blurred the screen captured behind it is, up to

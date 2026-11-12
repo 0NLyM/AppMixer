@@ -57,6 +57,11 @@
     <string name="expanded_mixer_centered">Center expanded mixer</string>
     <string name="expanded_mixer_centered_description">When you expand the popup into the full mixer, open it centered on screen instead of anchored where the collapsed popup was.</string>
 
+    <string name="popup_animation">Animation</string>
+    <string name="popup_animation_description">How the popup comes and goes. Dissolve: nothing moves, the popup fades in and out in a scatter of pixels, and the compact popup gives way to the mixer as it appears. Off: the earlier animation, with the panel opening out of its edge and the mixer unfolding from it.</string>
+    <string name="popup_animation_dissolve">Dissolve animation</string>
+    <string name="popup_animation_intensity">Dissolve intensity</string>
+
     <string name="popup_appearance">Size &amp; shape</string>
     <string name="popup_appearance_description">How big the popup is, and how rounded its panel, slider tracks and buttons are.</string>
     <string name="popup_size">Size</string>

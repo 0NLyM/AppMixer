@@ -43,6 +43,14 @@ internal fun isCallMode(mode: Int): Boolean {
     return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
 }
 
+/**
+ * How many places in the mixer's cascade (see [RowCascade]) the system rows
+ * take, so the app rows below them carry on counting after them. The
+ * cascade orders rows by these numbers rather than counting them, so a
+ * system row that is hidden leaves no gap.
+ */
+internal const val MIXER_SYSTEM_ROW_SLOTS = 5
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SystemVolumePanel(
@@ -83,6 +91,7 @@ fun SystemVolumePanel(
                     icon = Icons.Default.PhoneInTalk,
                     name = stringResource(R.string.stream_call),
                     audioManager = audioManager,
+                    modifier = Modifier.cascadeRow(0),
                     shadowColor = shadowColor,
                     footer = {
                         SliderVisibilityFooter(
@@ -109,6 +118,7 @@ fun SystemVolumePanel(
                 useVolumeGlyph = true,
                 name = stringResource(R.string.stream_media),
                 audioManager = audioManager,
+                modifier = Modifier.cascadeRow(1),
                 shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(
@@ -129,6 +139,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.RingVolume,
                 name = stringResource(R.string.stream_ring),
                 audioManager = audioManager,
+                modifier = Modifier.cascadeRow(2),
                 shadowColor = shadowColor,
                 footer = {
                     RingFooter(
@@ -150,6 +161,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.Alarm,
                 name = stringResource(R.string.stream_alarm),
                 audioManager = audioManager,
+                modifier = Modifier.cascadeRow(3),
                 shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(
@@ -170,6 +182,7 @@ fun SystemVolumePanel(
                 icon = Icons.Default.NotificationsNone,
                 name = stringResource(R.string.stream_notification),
                 audioManager = audioManager,
+                modifier = Modifier.cascadeRow(4),
                 shadowColor = shadowColor,
                 footer = {
                     SliderVisibilityFooter(

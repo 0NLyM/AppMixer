@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 private const val TAG = "StochasticFade"
 
@@ -22,14 +24,19 @@ private const val TAG = "StochasticFade"
  */
 internal val LocalGlassPresence = compositionLocalOf<() -> Float> { { 1f } }
 
-/** The size of one grain of the dissolve, in dp. */
-private const val GRAIN_DP = 1.5f
+/**
+ * The size of one grain of the dissolve, in dp -- fine: a grain is a pixel or
+ * two on a phone (see [stochasticFade], which rounds it to whole pixels).
+ */
+private const val GRAIN_DP = 0.6f
 
 /**
  * Every pixel of the layer gets a threshold of its own from a fixed noise,
  * and shows only once [progress] has passed it. The ramp is a little wider
  * than a single threshold, so the grain is a pale scatter rather than a
  * hard salt and pepper; at 0 nothing is shown at all and at 1 all of it is.
+ * [intensity] blends that scatter with a plain fade of the same progress:
+ * 1 is all grain, 0 no grain at all.
  *
  * A hash of the grain's own cell rather than a texture: nothing to load, and
  * no lattice to see (the usual dither patterns have one, and it showed).
@@ -38,10 +45,12 @@ private const val DISSOLVE_SHADER = """
 uniform shader content;
 uniform float progress;
 uniform float grain;
+uniform float intensity;
 half4 main(float2 p) {
     float2 q = floor(p / grain);
     float n = fract(sin(dot(q, float2(127.1, 311.7))) * 43758.5453123);
-    float a = clamp((progress * 1.2 - n) / 0.2, 0.0, 1.0);
+    float scatter = clamp((progress * 1.2 - n) / 0.2, 0.0, 1.0);
+    float a = mix(progress, scatter, intensity);
     return content.eval(p) * half(a);
 }
 """
@@ -63,10 +72,13 @@ half4 main(float2 p) {
  * token:    MotionTokens.Effects.dissolveIn / dissolveOut / dissolve, through
  *           the progress it is handed.
  * property: the dissolve's progress.
+ *
+ * [intensity], 0 to 1, is how much of it is grain (see [DISSOLVE_SHADER]).
  */
 @Composable
-internal fun Modifier.stochasticFade(shown: () -> Float): Modifier {
-    val grain = LocalDensity.current.density * GRAIN_DP
+internal fun Modifier.stochasticFade(intensity: Float, shown: () -> Float): Modifier {
+    // Whole pixels, at least one: a grain that straddles pixels is a smear.
+    val grain = max(1f, (LocalDensity.current.density * GRAIN_DP).roundToInt().toFloat())
     val shader = remember(grain) {
         try {
             RuntimeShader(DISSOLVE_SHADER).also { it.setFloatUniform("grain", grain) }
@@ -93,6 +105,7 @@ internal fun Modifier.stochasticFade(shown: () -> Float): Modifier {
             else -> {
                 alpha = 1f
                 shader.setFloatUniform("progress", progress)
+                shader.setFloatUniform("intensity", intensity.coerceIn(0f, 1f))
                 renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
             }
         }

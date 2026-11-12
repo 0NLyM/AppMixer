@@ -79,6 +79,8 @@ import com.nomixer.volume.data.DISC_EDGE_GAP_DP
 import com.nomixer.volume.data.DISC_TICK_CORNER_MAX
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_MAX
 import com.nomixer.volume.data.ATMOSPHERE_GRAIN_MIN
+import com.nomixer.volume.data.DISSOLVE_INTENSITY_MAX
+import com.nomixer.volume.data.DISSOLVE_INTENSITY_MIN
 import com.nomixer.volume.data.GLASS_BLUR_MAX
 import com.nomixer.volume.data.GLASS_BLUR_MIN
 import com.nomixer.volume.data.GLASS_LIGHT_ANGLE_MAX
@@ -1279,6 +1281,33 @@ fun CustomizationScreen(
                 }
             )
 
+            // One shared pair of settings, like the switch above: how the
+            // popup comes and goes is about the popup, not about any style.
+            SectionHeader(stringResource(R.string.popup_animation))
+            Text(
+                text = stringResource(R.string.popup_animation_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            ToggleSetting(
+                label = stringResource(R.string.popup_animation_dissolve),
+                checked = preferences.dissolveAnimation,
+                onCheckedChange = { checked ->
+                    onUpdate { it.copy(dissolveAnimation = checked) }
+                }
+            )
+            if (preferences.dissolveAnimation) {
+                SliderSetting(
+                    label = stringResource(R.string.popup_animation_intensity),
+                    valueLabel = "${(preferences.dissolveIntensity * 100).roundToInt()}%",
+                    value = preferences.dissolveIntensity,
+                    valueRange = DISSOLVE_INTENSITY_MIN..DISSOLVE_INTENSITY_MAX,
+                    onValueChange = { value ->
+                        onUpdate { it.copy(dissolveIntensity = value) }
+                    }
+                )
+            }
+
             SectionHeader(stringResource(R.string.popup_appearance))
             Text(
                 text = stringResource(R.string.popup_appearance_description),
@@ -1585,6 +1614,8 @@ fun CustomizationScreen(
                             atmosphereGrainIntensity = defaults.atmosphereGrainIntensity,
                             atmosphereGrainSize = defaults.atmosphereGrainSize,
                             expandedMixerCentered = defaults.expandedMixerCentered,
+                            dissolveAnimation = defaults.dissolveAnimation,
+                            dissolveIntensity = defaults.dissolveIntensity,
                             popupShowValue = defaults.popupShowValue,
                             discPopupShowValue = defaults.discPopupShowValue,
                             popupShowIcon = defaults.popupShowIcon,

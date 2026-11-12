@@ -2386,3 +2386,17 @@ be appended to this file as they land.
   installed, a playback with no player), packages that share one process,
   each level set on a new player, an app held at its level while it plays
   alone, and apps playing together (not held) are logged, once each.
+
+## 2026-11-12 — 1.0.88
+
+- **A switch between the two animations.** "Dissolve animation" in the
+  settings (Popup, under Animation) chooses between the dissolve of 1.0.87,
+  in which nothing moves, and the earlier animation, with the panel opening
+  out of its edge, the disc sliding and the mixer unfolding from the popup.
+  The earlier one is back whole (`MovingOverlayScene`), with the motion
+  tokens and the row cascade it was built on; the dissolve is the default.
+- **A slider for the dissolve's intensity.** 0 is a plain fade of the same
+  progress, 100% every pixel switching on at a moment of its own; it shows
+  only while the dissolve is on.
+- **Finer grain.** A grain is 0.6 dp, a pixel or two on a phone, where it
+  was 1.5 dp.
